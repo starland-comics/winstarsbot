@@ -1,9 +1,7 @@
 import asyncio
-from datetime import datetime
 import json
 import urllib.parse
 import httpx
-from curl_cffi import requests as cffi_requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +16,7 @@ BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"  # Токен от 
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"    # HTTPS URL твоего хостинга
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com" # Ссылка на Firebase RTDB
 
-app = FastAPI(title="WinStars Betting Platform", version="16.0")
+app = FastAPI(title="WinStars Betting Platform", version="17.0")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -68,6 +66,7 @@ def verify_telegram_data(init_data: str) -> dict:
     except Exception:
         return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
 
+# --- МОДЕЛИ ДАННЫХ ---
 class BetCreateRequest(BaseModel):
     user_id: int
     match_id: str
@@ -105,112 +104,16 @@ async def firebase_post(path: str, data: dict):
         resp = await client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
         return resp.json()
 
-# --- ЗАЩИЩЕННЫЙ СКРАППЕР SOFASCORE (ВСЕ ЛИГИ + РЕАЛЬНЫЕ КЭФЫ) ---
-async def fetch_sofascore_line():
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    url = f"https://www.sofascore.com/api/v1/sport/football/scheduled-events/{today_str}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Referer": "https://www.sofascore.com/",
-        "Origin": "https://www.sofascore.com"
-    }
-    
-    real_matches = {}
-    try:
-        def get_data():
-            resp = cffi_requests.get(url, headers=headers, impersonate="chrome120", timeout=10)
-            if resp.status_code == 200:
-                return resp.json()
-            return None
-
-        data = await asyncio.to_thread(get_data)
-        if data and "events" in data:
-            events = data["events"]
-            count = 0
-            for ev in events:
-                match_id = ev.get("id")
-                home = ev.get("homeTeam", {}).get("name", "Хозяева")
-                away = ev.get("awayTeam", {}).get("name", "Гости")
-                tournament = ev.get("tournament", {}).get("name", "Лига")
-                status_type = ev.get("status", {}).get("type")
-                
-                status_str = "Скоро"
-                score_str = "VS"
-                home_score = ev.get("homeScore", {}).get("current", 0)
-                away_score = ev.get("awayScore", {}).get("current", 0)
-                
-                if status_type == "inprogress":
-                    status_str = "LIVE"
-                    score_str = f"{home_score} : {away_score}"
-                elif status_type == "finished":
-                    status_str = "FT"
-                    score_str = f"{home_score} : {away_score}"
-
-                odds = {"П1": 1.90, "X": 3.40, "П2": 3.80}
-                try:
-                    odds_url = f"https://www.sofascore.com/api/v1/event/{match_id}/odds/1/all"
-                    def get_odds():
-                        r = cffi_requests.get(odds_url, headers=headers, impersonate="chrome120", timeout=3)
-                        if r.status_code == 200:
-                            return r.json()
-                        return None
-                    odds_data = await asyncio.to_thread(get_odds)
-                    if odds_data and "markets" in odds_data:
-                        for market in odds_data["markets"]:
-                            if market.get("marketName") == "Full time":
-                                for choice in market.get("choices", []):
-                                    name = choice.get("name")
-                                    dec = choice.get("initialDecimalValue") or choice.get("decimalValue")
-                                    if name == "1" and dec: odds["П1"] = float(dec)
-                                    elif name == "X" and dec: odds["X"] = float(dec)
-                                    elif name == "2" and dec: odds["П2"] = float(dec)
-                except:
-                    pass
-
-                real_matches[f"sofa_{match_id}"] = {
-                    "title": f"{home} vs {away}",
-                    "league": tournament,
-                    "status": status_str,
-                    "score": score_str,
-                    "odds": odds
-                }
-                count += 1
-                if count >= 20:
-                    break
-
-            if real_matches:
-                await firebase_put("matches", real_matches)
-                print(f"🔥 Успешно синхронизировано матчей с Sofascore: {len(real_matches)}")
-                return
-    except Exception as e:
-        print(f"⚠️ Ошибка скрапера Sofascore: {e}")
-
-    # Резервная линия при временных сетевых ограничениях хостинга
-    fallback = {
-        "match_fb_1": {
-            "title": "Реал Мадрид vs Барселона",
-            "league": "Ла Лига",
-            "status": "LIVE 70'",
-            "score": "2 : 1",
-            "odds": {"П1": 1.85, "X": 3.50, "П2": 4.10}
-        }
-    }
-    await firebase_put("matches", fallback)
-
-async def scraper_worker():
-    while True:
-        await fetch_sofascore_line()
-        await asyncio.sleep(60) # Обновление линии раз в минуту
-
+# --- ЗАПУСК БЭКЕНДА ---
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 Запуск бэкенда WinStars...")
+    print("🚀 Запуск бэкенда WinStars (без встроенного скраппера)...")
+    # Создаем базовый промокод, если его нет
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     
-    asyncio.create_task(scraper_worker())
+    # Запускаем только бота (поллинг)
     asyncio.create_task(dp.start_polling(bot))
 
 # --- API ЭНДПОИНТЫ ---
@@ -241,6 +144,7 @@ async def sync_user(initData: str = Query("")):
 
 @app.get("/api/matches")
 async def get_matches():
+    # Просто читаем данные, которые запихал скраппер Fonbet
     matches = await firebase_get("matches")
     return {"matches": matches or {}}
 
