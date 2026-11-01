@@ -2,7 +2,7 @@ name: WinStars Scraper
 
 on:
   schedule:
-    - cron: '*/30 * * * * *' # Каждые 5 минут
+    - cron: '*/1 * * * *' # Только 5 полей. Раз в 5 минут.
   workflow_dispatch:      # Кнопка ручного запуска
 
 jobs:
