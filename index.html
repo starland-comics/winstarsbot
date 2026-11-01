@@ -67,7 +67,7 @@
     .score { font-size: 1.4rem; font-weight: 800; letter-spacing: 2px; color: var(--accent); }
 
     .odds-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .odd-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+    .odd-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: background 0.3s; }
     .odd-name { font-size: 0.7rem; color: var(--text-muted); }
     .odd-val { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
 
@@ -145,21 +145,11 @@
   </header>
 
   <main>
-    <!-- TAB 1: EVENTS -->
+    <!-- TAB 1: EVENTS (Скраппер матчей в реальном времени) -->
     <div class="tab-content active" id="tab-events">
-      <div class="section-title">Футбол — Live & Предстоящие</div>
-      <div class="match-card">
-        <div class="match-header"><span class="live-tag"><div class="live-dot"></div> LIVE 64'</span><span>Лига Чемпионов</span></div>
-        <div class="teams-container">
-          <div class="team"><div class="team-logo">RM</div><div class="team-name">Реал Мадрид</div></div>
-          <div class="score">2 : 1</div>
-          <div class="team"><div class="team-logo">MC</div><div class="team-name">Ман Сити</div></div>
-        </div>
-        <div class="odds-grid">
-          <div class="odd-btn" onclick="placeBetPrompt('Реал Мадрид vs Ман Сити', 'П1', 1.85)"><span class="odd-name">П1</span><span class="odd-val">1.85</span></div>
-          <div class="odd-btn" onclick="placeBetPrompt('Реал Мадрид vs Ман Сити', 'X', 3.40)"><span class="odd-name">X</span><span class="odd-val">3.40</span></div>
-          <div class="odd-btn" onclick="placeBetPrompt('Реал Мадрид vs Ман Сити', 'П2', 4.10)"><span class="odd-name">П2</span><span class="odd-val">4.10</span></div>
-        </div>
+      <div class="section-title">Футбол — Live & Предстоящие (Flashscore)</div>
+      <div id="matches-container">
+        <!-- Сюда динамически подгружаются матчи и меняются кэфы скраппером -->
       </div>
     </div>
 
@@ -169,21 +159,19 @@
         <div class="pill-tab active" onclick="switchBetSubTab(this, 'active-bets')">Позиции</div>
         <div class="pill-tab" onclick="switchBetSubTab(this, 'history-bets')">История</div>
       </div>
-      <div id="active-bets">
-        <!-- Динамические реальные ставки пользователя -->
-      </div>
+      <div id="active-bets"></div>
       <div id="history-bets" style="display: none;">
         <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">История пуста</div>
       </div>
     </div>
 
-    <!-- TAB 3: CHAT -->
+    <!-- TAB 3: CHAT (Внутренний чат бота через WebSocket) -->
     <div class="tab-content" id="tab-chat" style="height: 100%;">
       <div class="chat-container">
         <div class="chat-messages" id="chat-box"></div>
         <div class="chat-input-area">
           <div class="input-group" style="margin-bottom: 0;">
-            <input type="text" id="chat-input" placeholder="Написать в чат...">
+            <input type="text" id="chat-input" placeholder="Написать в чат бота...">
           </div>
           <button class="btn-submit" style="width: auto; padding: 0 16px;" onclick="sendChatMessage()">
             <svg class="icon" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
@@ -192,14 +180,14 @@
       </div>
     </div>
 
-    <!-- TAB 4: CASHIER -->
+    <!-- TAB 4: CASHIER (Реальные Telegram Stars инвойсы) -->
     <div class="tab-content" id="tab-cashier">
       <div class="section-title">Пополнение звёзд (Telegram Stars)</div>
       <div class="input-group">
         <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        <input type="number" placeholder="Количество звёзд..." id="deposit-amount">
+        <input type="number" placeholder="Количество звёзд (например, 50)..." id="deposit-amount">
       </div>
-      <button class="btn-submit" style="margin-bottom: 24px;" onclick="handleDeposit()">Пополнить баланс</button>
+      <button class="btn-submit" style="margin-bottom: 24px;" onclick="handleTelegramInvoice()">Оплатить через Telegram Stars</button>
 
       <div class="section-title">Активация промокода</div>
       <div class="input-group">
@@ -268,8 +256,8 @@
 
     let currentUser = null;
     let ws = null;
+    let previousOdds = {}; // Для подсветки изменения коэффициентов скраппером
 
-    // Мгновенная установка имени и аватара из Telegram WebApp объектов
     const tgUser = tg?.initDataUnsafe?.user;
     if (tgUser) {
       document.getElementById("profile-name").innerText = tgUser.first_name || "Игрок";
@@ -291,9 +279,62 @@
           updateUI();
           loadUserBets();
           initWebSocket();
+          loadMatches();
+          setInterval(loadMatches, 15000); // Подтягиваем матчи и кэфы скраппера каждые 15 сек
         }
       } catch (err) {
         console.error("Ошибка синхронизации:", err);
+      }
+    }
+
+    // Загрузка матчей из базы (куда их пишет скраппер)
+    async function loadMatches() {
+      try {
+        const res = await fetch('/api/matches');
+        const data = await res.json();
+        const container = document.getElementById('matches-container');
+        if (!data.matches) return;
+
+        container.innerHTML = '';
+        Object.entries(data.matches).forEach(([matchId, match]) => {
+          const isLive = match.status.includes('LIVE');
+          const card = document.createElement('div');
+          card.className = 'match-card';
+          
+          let oddsHtml = '';
+          Object.entries(match.odds).forEach(([outcome, coeff]) => {
+            // Проверка на изменение кэфа (анимация подсветки)
+            const oldCoeff = previousOdds[`${matchId}_${outcome}`];
+            let highlightClass = '';
+            if (oldCoeff && oldCoeff !== coeff) {
+              highlightClass = coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.3);' : 'background: rgba(239, 68, 68, 0.3);';
+            }
+            previousOdds[`${matchId}_${outcome}`] = coeff;
+
+            oddsHtml += `
+              <div class="odd-btn" style="${highlightClass}" onclick="placeBetPrompt('${matchId}', '${match.title}', '${outcome}', ${coeff})">
+                <span class="odd-name">${outcome}</span>
+                <span class="odd-val">${coeff}</span>
+              </div>
+            `;
+          });
+
+          card.innerHTML = `
+            <div class="match-header">
+              ${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${match.status}</span>`}
+              <span>Футбол</span>
+            </div>
+            <div class="teams-container">
+              <div class="team"><div class="team-logo">ФК</div><div class="team-name">${match.title.split(' vs ')[0]}</div></div>
+              <div class="score">${match.score}</div>
+              <div class="team"><div class="team-logo">ФК</div><div class="team-name">${match.title.split(' vs ')[1]}</div></div>
+            </div>
+            <div class="odds-grid">${oddsHtml}</div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (e) {
+        console.error("Ошибка загрузки матчей:", e);
       }
     }
 
@@ -310,7 +351,6 @@
         document.getElementById("profile-avatar").src = currentUser.photo_url;
       }
 
-      // График прибыли и цвета
       const profitEl = document.getElementById("chart-total");
       const profit = currentUser.profit || 0;
       profitEl.innerText = `${profit > 0 ? '+' : ''}${profit} ★`;
@@ -366,8 +406,8 @@
       }
     }
 
-    async function placeBetPrompt(matchTitle, outcome, coeff) {
-      const amountStr = prompt(`Сделать ставку на "${outcome}" (${coeff})\nВведите сумму в звездах (★):`, "50");
+    async function placeBetPrompt(matchId, matchTitle, outcome, coeff) {
+      const amountStr = prompt(`Ставка на "${outcome}" (${coeff})\nВведите сумму в звездах (★):`, "50");
       if (!amountStr) return;
       const amount = parseInt(amountStr);
       if (isNaN(amount) || amount <= 0) {
@@ -381,6 +421,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: currentUser.user_id,
+            match_id: matchId,
             match_title: matchTitle,
             outcome: outcome,
             coefficient: coeff,
@@ -395,13 +436,50 @@
           loadUserBets();
           alert(data.message);
         } else {
-          alert(data.detail || "Ошибка размещения ставки");
+          alert(data.detail || "Ошибка ставки");
         }
       } catch (err) {
-        alert("Ошибка соединения с сервером");
+        alert("Ошибка соединения");
       }
     }
 
+    // Реальное пополнение через Telegram Stars Инвойсы
+    async function handleTelegramInvoice() {
+      const amount = parseInt(document.getElementById('deposit-amount').value);
+      if (!amount || amount <= 0) {
+        alert("Введите корректное количество звёзд");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/cashier/invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: currentUser.user_id, amount: amount })
+        });
+        const data = await res.json();
+        
+        if (res.ok && data.invoice_link) {
+          if (tg && tg.openInvoice) {
+            // Открытие нативного инвойса оплаты Telegram Stars внутри приложения
+            tg.openInvoice(data.invoice_link, async (status) => {
+              if (status === "paid") {
+                alert("Оплата прошла успешно! Баланс скоро обновится.");
+                setTimeout(() => location.reload(), 2000);
+              }
+            });
+          } else {
+            window.open(data.invoice_link, '_blank');
+          }
+        } else {
+          alert(data.detail || "Ошибка создания инвойса");
+        }
+      } catch (e) {
+        alert("Ошибка соединения с платежным шлюзом");
+      }
+    }
+
+    // Исправленный внутренний WebSocket чат
     function initWebSocket() {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
@@ -409,6 +487,10 @@
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         appendChatMessage(msg.first_name, msg.text);
+      };
+
+      ws.onclose = () => {
+        setTimeout(initWebSocket, 3000); // Автопереподключение при обрыве
       };
 
       fetch('/api/chat/history')
@@ -440,7 +522,7 @@
     function sendChatMessage() {
       const input = document.getElementById('chat-input');
       const text = input.value.trim();
-      if (!text || !currentUser || !ws) return;
+      if (!text || !currentUser || !ws || ws.readyState !== WebSocket.OPEN) return;
 
       ws.send(JSON.stringify({
         user_id: currentUser.user_id,
@@ -472,16 +554,6 @@
         }
       } catch (err) {
         alert("Ошибка соединения");
-      }
-    }
-
-    function handleDeposit() {
-      const amount = parseInt(document.getElementById('deposit-amount').value);
-      if (amount && amount > 0) {
-        currentUser.balance += amount;
-        updateUI();
-        alert(`Баланс успешно пополнен на ${amount} ★`);
-        document.getElementById('deposit-amount').value = '';
       }
     }
 
