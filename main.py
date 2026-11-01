@@ -92,8 +92,11 @@ async def firebase_get(path: str):
 async def firebase_put(path: str, data: dict):
     async with httpx.AsyncClient() as client:
         resp = await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-        print(f"🔥 Firebase PUT [{path}]: status {resp.status_code}")
-        return resp.json()
+        print(f"🔥 Firebase PUT [{path}]: статус {resp.status_code}, ответ: {resp.text}")
+        try:
+            return resp.json()
+        except:
+            return {}
 
 async def firebase_patch(path: str, data: dict):
     async with httpx.AsyncClient() as client:
