@@ -16,13 +16,6 @@ HEADERS = {
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("fonbet")
 
-async def firebase_put(path: str, data: any):
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-            return resp.status_code == 200
-        except: return False
-
 def get_fonbet_data(url):
     try:
         r = cffi_requests.get(url, headers=HEADERS, impersonate="chrome120", timeout=15)
@@ -33,7 +26,7 @@ def get_fonbet_data(url):
     return None
 
 async def main():
-    logger.info("🔄 Запуск парсера Fonbet...")
+    logger.info("🔄 Запуск парсера Fonbet (Отладка)...")
     list_url = f"{BASE_URL}/events/listBase?scopeMarket=1600&lang=ru"
     data = await asyncio.to_thread(get_fonbet_data, list_url)
     
@@ -42,66 +35,13 @@ async def main():
         return
 
     events = data.get("events", [])
-    
-    # Ищем первый футбольный матч для отладки
-    football_events = [e for e in events if e.get("sport") == "Футбол" or e.get("sportId") == 1]
-    logger.info(f"Всего событий: {len(events)}. Из них футбольных: {len(football_events)}")
+    logger.info(f"Всего событий: {len(events)}")
 
-    if football_events:
-        sample = football_events[0]
-        logger.info(f"Пример футбольного матча (ID {sample.get('id')}):")
-        # Выводим ключи, которые есть в матче
-        logger.info(f"Доступные ключи: {list(sample.keys())}")
-        
-        # Проверяем наличие customFactors
-        if "customFactors" in sample:
-            logger.info(f"customFactors найден! Пример: {json.dumps(sample['customFactors'][:1], ensure_ascii=False)}")
-        elif "factors" in sample:
-            logger.info(f"factors найден! Пример: {json.dumps(sample['factors'][:1], ensure_ascii=False)}")
-        else:
-            logger.info("⚠️ В матче НЕТ поля customFactors или factors. Кэфы нужно запрашивать отдельно.")
-
-    matches = {}
-    # Проходимся по всем футбольным матчам
-    for ev in football_events:
-        team1 = ev.get("team1", "Хозяева")
-        team2 = ev.get("team2", "Гости")
-        
-        odds = {"1": None, "X": None, "2": None}
-        
-        # Пытаемся найти кэфы в customFactors (стандарт Fonbet)
-        factors_list = []
-        if "customFactors" in ev:
-            for cf in ev["customFactors"]:
-                factors_list.extend(cf.get("factors", []))
-        elif "factors" in ev:
-            factors_list = ev["factors"]
-
-        for factor in factors_list:
-            f_id = factor.get("f")
-            v = factor.get("v")
-            if f_id == 921: odds["1"] = v
-            elif f_id == 922: odds["X"] = v
-            elif f_id == 923: odds["2"] = v
-
-        # Если нет кэфов в списке, может, они в другом формате?
-        # Пока сохраняем только те, где есть все 3 кэфа
-        if odds["1"] and odds["X"] and odds["2"]:
-            matches[f"fon_{ev['id']}"] = {
-                "title": f"{team1} vs {team2}",
-                "league": ev.get("sport", "Футбол"),
-                "status": "LIVE" if ev.get("live") else "Скоро",
-                "score": "VS",
-                "odds": odds
-            }
-
-    logger.info(f"✅ Собрано {len(matches)} матчей с коэффициентами 1X2.")
-    
-    if matches:
-        if await firebase_put("matches", matches):
-            logger.info("🔥 Линия Fonbet обновлена в Firebase!")
-    else:
-        logger.warning("Матчей с кэфами 1X2 не найдено. Смотри отладочную информацию выше.")
+    if events:
+        sample = events[0]
+        logger.info("🔍 ПРИМЕР ПЕРВОГО СОБЫТИЯ (сырой JSON):")
+        # Выводим весь JSON первого матча, чтобы увидеть все поля
+        logger.info(json.dumps(sample, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
     asyncio.run(main())
