@@ -24,6 +24,7 @@
       --text-muted: #8a819b;
       --green: #10b981;
       --red: #ef4444;
+      --gray: #8a819b;
       --nav-height: 64px;
       --header-height: 60px;
       --radius: 16px;
@@ -35,12 +36,8 @@
     .bg-noise { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.03; pointer-events: none; z-index: 999; }
 
     header {
-      height: var(--header-height);
-      background: rgba(19, 15, 30, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between;
+      height: var(--header-height); background: rgba(19, 15, 30, 0.8); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;
       padding: 0 16px; position: fixed; top: 0; left: 0; right: 0; z-index: 100;
     }
 
@@ -55,8 +52,8 @@
     .tab-content.active { display: block; opacity: 1; }
 
     .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
     .section-title { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; font-weight: 700; }
+    
     .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
     .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
     .live-tag { color: var(--red); font-weight: 700; display: flex; align-items: center; gap: 4px; }
@@ -71,9 +68,7 @@
 
     .odds-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .odd-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
-    .odd-btn.selected { background: var(--accent); border-color: var(--accent); }
     .odd-name { font-size: 0.7rem; color: var(--text-muted); }
-    .odd-btn.selected .odd-name { color: rgba(255,255,255,0.8); }
     .odd-val { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
 
     .pill-tabs { display: flex; background: var(--bg-card); padding: 4px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px; }
@@ -84,6 +79,7 @@
     .chart-val { font-size: 1.8rem; font-weight: 800; margin: 4px 0 12px 0; }
     .chart-val.negative { color: var(--red); }
     .chart-val.positive { color: var(--green); }
+    .chart-val.neutral { color: var(--gray); }
     .svg-chart { width: 100%; height: 120px; overflow: visible; }
 
     .input-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -143,7 +139,7 @@
         <span id="header-balance">0 ★</span>
       </div>
       <div class="avatar-btn" id="avatar-trigger">
-        <img id="user-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=WinStarUser" alt="Avatar">
+        <img id="user-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=Default" alt="Avatar">
       </div>
     </div>
   </header>
@@ -160,9 +156,9 @@
           <div class="team"><div class="team-logo">MC</div><div class="team-name">Ман Сити</div></div>
         </div>
         <div class="odds-grid">
-          <div class="odd-btn" onclick="selectOdd(this)"><span class="odd-name">П1</span><span class="odd-val">1.85</span></div>
-          <div class="odd-btn" onclick="selectOdd(this)"><span class="odd-name">X</span><span class="odd-val">3.40</span></div>
-          <div class="odd-btn" onclick="selectOdd(this)"><span class="odd-name">П2</span><span class="odd-val">4.10</span></div>
+          <div class="odd-btn" onclick="placeBetPrompt('Реал Мадрид vs Ман Сити', 'П1', 1.85)"><span class="odd-name">П1</span><span class="odd-val">1.85</span></div>
+          <div class="odd-btn" onclick="placeBetPrompt('Реал Мадрид vs Ман Сити', 'X', 3.40)"><span class="odd-name">X</span><span class="odd-val">3.40</span></div>
+          <div class="odd-btn" onclick="placeBetPrompt('Реал Мадрид vs Ман Сити', 'П2', 4.10)"><span class="odd-name">П2</span><span class="odd-val">4.10</span></div>
         </div>
       </div>
     </div>
@@ -174,28 +170,10 @@
         <div class="pill-tab" onclick="switchBetSubTab(this, 'history-bets')">История</div>
       </div>
       <div id="active-bets">
-        <div class="history-card">
-          <div>
-            <div style="font-weight: 700; font-size: 0.9rem;">Реал Мадрид vs Ман Сити</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">Ставка: П1 @ 1.85</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-weight: 800; color: var(--accent);">50 ★</div>
-            <div style="font-size: 0.7rem; color: var(--green);">Активна</div>
-          </div>
-        </div>
+        <!-- Динамические реальные ставки пользователя -->
       </div>
       <div id="history-bets" style="display: none;">
-        <div class="history-card">
-          <div>
-            <div style="font-weight: 700; font-size: 0.9rem;">Лацио vs Кальяри</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">Ставка: ТМ 2.5</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-weight: 800; color: var(--green);">+48 ★</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted);">17.10</div>
-          </div>
-        </div>
+        <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">История пуста</div>
       </div>
     </div>
 
@@ -254,10 +232,10 @@
 
       <div class="chart-card">
         <div class="section-title" style="margin: 0;">Прибыль за 30 дней</div>
-        <div class="chart-val negative" id="chart-total">-255 ★</div>
+        <div class="chart-val neutral" id="chart-total">0 ★</div>
         <svg class="svg-chart" viewBox="0 0 300 100" preserveAspectRatio="none">
-          <path d="M 0,20 Q 50,40 100,25 T 200,70 T 300,90 L 300,100 L 0,100 Z" fill="rgba(239, 68, 68, 0.3)" />
-          <path d="M 0,20 Q 50,40 100,25 T 200,70 T 300,90" fill="none" stroke="#ef4444" stroke-width="3" stroke-linecap="round" />
+          <path id="chart-fill" d="M 0,50 L 300,50 L 300,100 L 0,100 Z" fill="rgba(138, 129, 155, 0.2)" />
+          <path id="chart-path" d="M 0,50 L 300,50" fill="none" stroke="#8a819b" stroke-width="3" stroke-linecap="round" />
         </svg>
       </div>
 
@@ -291,7 +269,17 @@
     let currentUser = null;
     let ws = null;
 
-    // Синхронизация при загрузке с бэкендом
+    // Мгновенная установка имени и аватара из Telegram WebApp объектов
+    const tgUser = tg?.initDataUnsafe?.user;
+    if (tgUser) {
+      document.getElementById("profile-name").innerText = tgUser.first_name || "Игрок";
+      document.getElementById("profile-username").innerText = "@" + (tgUser.username || "user");
+      if (tgUser.photo_url) {
+        document.getElementById("user-avatar").src = tgUser.photo_url;
+        document.getElementById("profile-avatar").src = tgUser.photo_url;
+      }
+    }
+
     async function initApp() {
       try {
         const initData = tg?.initData || "";
@@ -301,6 +289,7 @@
         if (data.status === "ok") {
           currentUser = data.user;
           updateUI();
+          loadUserBets();
           initWebSocket();
         }
       } catch (err) {
@@ -315,15 +304,104 @@
       document.getElementById("profile-username").innerText = "@" + (currentUser.username || "user");
       document.getElementById("stat-winrate").innerText = `${Math.round((currentUser.wins / (currentUser.total_bets || 1)) * 100)}%`;
       document.getElementById("stat-count").innerText = currentUser.total_bets;
-      document.getElementById("chart-total").innerText = `${currentUser.profit} ★`;
       
       if (currentUser.photo_url) {
         document.getElementById("user-avatar").src = currentUser.photo_url;
         document.getElementById("profile-avatar").src = currentUser.photo_url;
       }
+
+      // График прибыли и цвета
+      const profitEl = document.getElementById("chart-total");
+      const profit = currentUser.profit || 0;
+      profitEl.innerText = `${profit > 0 ? '+' : ''}${profit} ★`;
+      
+      const chartPath = document.getElementById("chart-path");
+      const chartFill = document.getElementById("chart-fill");
+
+      if (profit > 0) {
+        profitEl.className = "chart-val positive";
+        chartPath.setAttribute("stroke", "#10b981");
+        chartFill.setAttribute("fill", "rgba(16, 185, 129, 0.2)");
+      } else if (profit < 0) {
+        profitEl.className = "chart-val negative";
+        chartPath.setAttribute("stroke", "#ef4444");
+        chartFill.setAttribute("fill", "rgba(239, 68, 68, 0.2)");
+      } else {
+        profitEl.className = "chart-val neutral";
+        chartPath.setAttribute("stroke", "#8a819b");
+        chartFill.setAttribute("fill", "rgba(138, 129, 155, 0.2)");
+      }
     }
 
-    // WebSocket для чата
+    async function loadUserBets() {
+      if (!currentUser) return;
+      try {
+        const res = await fetch(`/api/user/bets?user_id=${currentUser.user_id}`);
+        const data = await res.json();
+        const activeBetsContainer = document.getElementById('active-bets');
+        activeBetsContainer.innerHTML = '';
+
+        if (!data.bets || data.bets.length === 0) {
+          activeBetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">Нет активных позиций</div>';
+          return;
+        }
+
+        data.bets.forEach(bet => {
+          const card = document.createElement('div');
+          card.className = 'history-card';
+          card.innerHTML = `
+            <div>
+              <div style="font-weight: 700; font-size: 0.9rem;">${bet.match_title}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Ставка: ${bet.outcome} @ ${bet.coefficient}</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-weight: 800; color: var(--accent);">${bet.amount} ★</div>
+              <div style="font-size: 0.7rem; color: var(--green);">Активна</div>
+            </div>
+          `;
+          activeBetsContainer.appendChild(card);
+        });
+      } catch (err) {
+        console.error("Ошибка загрузки ставок", err);
+      }
+    }
+
+    async function placeBetPrompt(matchTitle, outcome, coeff) {
+      const amountStr = prompt(`Сделать ставку на "${outcome}" (${coeff})\nВведите сумму в звездах (★):`, "50");
+      if (!amountStr) return;
+      const amount = parseInt(amountStr);
+      if (isNaN(amount) || amount <= 0) {
+        alert("Введите корректную сумму");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/bets/place', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: currentUser.user_id,
+            match_title: matchTitle,
+            outcome: outcome,
+            coefficient: coeff,
+            amount: amount
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          currentUser.balance = data.new_balance;
+          currentUser.total_bets += 1;
+          updateUI();
+          loadUserBets();
+          alert(data.message);
+        } else {
+          alert(data.detail || "Ошибка размещения ставки");
+        }
+      } catch (err) {
+        alert("Ошибка соединения с сервером");
+      }
+    }
+
     function initWebSocket() {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
@@ -333,8 +411,15 @@
         appendChatMessage(msg.first_name, msg.text);
       };
 
-      // Загрузить историю чата (если сохранена)
-      fetch('/api/chat/history').then(r => r.json()).catch(() => {});
+      fetch('/api/chat/history')
+        .then(r => r.json())
+        .then(data => {
+          const chatBox = document.getElementById('chat-box');
+          chatBox.innerHTML = '';
+          if (data.messages) {
+            data.messages.forEach(m => appendChatMessage(m.first_name, m.text));
+          }
+        }).catch(() => {});
     }
 
     function appendChatMessage(name, text) {
@@ -386,7 +471,7 @@
           alert(data.detail || "Ошибка промокода");
         }
       } catch (err) {
-        alert("Ошибка соединения с сервером");
+        alert("Ошибка соединения");
       }
     }
 
@@ -400,7 +485,6 @@
       }
     }
 
-    // Навигация и шторка
     function switchTab(el, tabId) {
       document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
@@ -421,7 +505,7 @@
     const overlay = document.getElementById('overlay');
     document.getElementById('avatar-trigger').addEventListener('click', () => { drawer.classList.add('open'); overlay.classList.add('open'); });
     function closeDrawer() { drawer.classList.remove('open'); overlay.classList.remove('open'); }
-    function selectOdd(btn) { btn.classList.toggle('selected'); }
+    
     function switchBetSubTab(el, subTabId) {
       document.querySelectorAll('.pill-tab').forEach(t => t.classList.remove('active'));
       el.classList.add('active');
