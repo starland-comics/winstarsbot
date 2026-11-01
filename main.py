@@ -9,12 +9,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
 
-BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"  # Укажи токен своего бота
-WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"    # Твой реальный HTTPS URL хостинга
+BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"  # Токен твоего бота
+WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"    # Твой HTTPS URL хостинга
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
 app = FastAPI()
@@ -35,6 +35,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def serve_index():
     return FileResponse("static/index.html")
 
+# WebSocket Менеджер для внутреннего чата бота
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -44,11 +45,15 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
-            await connection.send_text(json.dumps(message))
+            try:
+                await connection.send_text(json.dumps(message))
+            except:
+                pass
 
 manager = ConnectionManager()
 
@@ -75,9 +80,14 @@ class PromoRequest(BaseModel):
 
 class BetCreateRequest(BaseModel):
     user_id: int
+    match_id: str
     match_title: str
     outcome: str
     coefficient: float
+    amount: int
+
+class InvoiceRequest(BaseModel):
+    user_id: int
     amount: int
 
 async def firebase_get(path: str):
@@ -100,12 +110,42 @@ async def firebase_post(path: str, data: dict):
         resp = await client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
         return resp.json()
 
+# --- ФОНОВЫЙ СКРАППЕР И АВТОМАТИЗАЦИЯ МАТЧЕЙ ---
+async def flashscore_scraper_worker():
+    """Фоновый скраппер: обновляет коэффициенты, счета и проверяет завершенные матчи"""
+    while True:
+        try:
+            # Демо-данные скраппера (здесь подключается твой парсер Flashscore JSON-эндпоинтов)
+            live_matches = {
+                "match_1": {
+                    "title": "Реал Мадрид vs Ман Сити",
+                    "status": "LIVE 68'",
+                    "score": "2 : 1",
+                    "odds": {"П1": 1.75, "X": 3.50, "П2": 4.20}
+                },
+                "match_2": {
+                    "title": "Арсенал vs Челси",
+                    "status": "Сегодня 22:00",
+                    "score": "VS",
+                    "odds": {"П1": 2.10, "X": 3.10, "П2": 3.50}
+                }
+            }
+            await firebase_put("matches", live_matches)
+        except Exception as e:
+            print("Ошибка скраппера:", e)
+        await asyncio.sleep(15) # Обновление каждые 15 секунд
+
 @app.on_event("startup")
 async def startup_event():
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
-    asyncio.create_task(dp.start_polling(bot))
+    
+    # Запускаем фоновый скраппер и бота
+    async asyncio.create_task(flashscore_scraper_worker())
+    async asyncio.create_task(dp.start_polling(bot))
+
+# --- API ЭНДПОИНТЫ ---
 
 @app.get("/api/user/sync")
 async def sync_user(initData: str = Query("")):
@@ -113,7 +153,6 @@ async def sync_user(initData: str = Query("")):
     user_id = str(user_data.get("id", 12345678))
     
     existing_user = await firebase_get(f"users/{user_id}")
-    
     if not existing_user:
         default_user = {
             "user_id": user_id,
@@ -132,13 +171,17 @@ async def sync_user(initData: str = Query("")):
         
     return {"status": "ok", "user": user_info}
 
+@app.get("/api/matches")
+async def get_matches():
+    matches = await firebase_get("matches")
+    return {"matches": matches or {}}
+
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
     bets_dict = await firebase_get(f"users/{user_id}/bets")
     if not bets_dict:
         return {"bets": []}
-    bets_list = [{"id": k, **v} for k, v in bets_dict.items()]
-    return {"bets": bets_list}
+    return {"bets": [{"id": k, **v} for k, v in bets_dict.items()]}
 
 @app.post("/api/bets/place")
 async def place_bet(req: BetCreateRequest):
@@ -154,6 +197,7 @@ async def place_bet(req: BetCreateRequest):
     total_bets = user.get("total_bets", 0) + 1
     
     bet_data = {
+        "match_id": req.match_id,
         "match_title": req.match_title,
         "outcome": req.outcome,
         "coefficient": req.coefficient,
@@ -162,12 +206,30 @@ async def place_bet(req: BetCreateRequest):
     }
     
     await firebase_post(f"users/{req.user_id}/bets", bet_data)
-    await firebase_patch(f"users/{req.user_id}", {
-        "balance": new_balance,
-        "total_bets": total_bets
-    })
+    await firebase_patch(f"users/{req.user_id}", {"balance": new_balance, "total_bets": total_bets})
     
-    return {"status": "ok", "new_balance": new_balance, "message": "Ставка принята!"}
+    return {"status": "ok", "new_balance": new_balance, "message": "Ставка успешно принята!"}
+
+@app.post("/api/cashier/invoice")
+async def create_invoice(req: InvoiceRequest):
+    """Создание ссылки на оплату Telegram Stars с зашитым Payload для возврата средств игроку"""
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Неверная сумма")
+    
+    payload = f"topup_{req.user_id}_{req.amount}"
+    prices = [LabeledPrice(label="Звёзды WinStars", amount=req.amount)] # 1 звезда = 1 единица amount в Telegram Stars
+    
+    try:
+        invoice_link = await bot.create_invoice_link(
+            title="Пополнение баланса WinStars",
+            description=f"Пополнение баланса на {req.amount} Telegram Stars (★)",
+            payload=payload,
+            currency="XTR", # Официальный код валюты для Telegram Stars
+            prices=prices
+        )
+        return {"status": "ok", "invoice_link": invoice_link}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/cashier/promo")
 async def activate_promo(req: PromoRequest):
@@ -207,6 +269,28 @@ async def websocket_endpoint(websocket: WebSocket):
             await manager.broadcast(msg_data)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+# --- TELEGRAM STARS ПЛАТЕЖНЫЕ ХЕНДЛЕРЫ ---
+@dp.pre_checkout_query()
+async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@dp.message(F.successful_payment)
+async def process_successful_payment(message: types.Message):
+    """Обработка успешной оплаты: ловим Payload, вытаскиваем ID юзера и сумму, зачисляем в Firebase"""
+    payment = message.successful_payment
+    payload = payment.invoice_payload # Пример: topup_12345678_50
+    
+    if payload.startswith("topup_"):
+        parts = payload.split("_")
+        user_id = parts[1]
+        amount = int(parts[2])
+        
+        user = await firebase_get(f"users/{user_id}")
+        if user:
+            new_balance = user.get("balance", 0) + amount
+            await firebase_patch(f"users/{user_id}", {"balance": new_balance})
+            await message.answer(f"✅ Успешно! Баланс пополнен на {amount} ★. Обновите мини-приложение.")
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
