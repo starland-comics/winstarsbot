@@ -115,9 +115,7 @@
         <div class="pill-tab" onclick="switchBetSubTab(this, 'history-bets')">История</div>
       </div>
       <div id="active-bets"></div>
-      <div id="history-bets" style="display: none;">
-        <div id="history-list"></div>
-      </div>
+      <div id="history-bets" style="display: none;"><div id="history-list"></div></div>
     </div>
 
     <div class="tab-content" id="tab-chat" style="height: 100%;">
@@ -211,21 +209,30 @@
       try {
         const res = await fetch(`${API_BASE_URL}/api/matches`);
         const data = await res.json();
+        
         if (data.matches) {
-          allMatchesRaw = Object.entries(data.matches).filter(([id, m]) => id !== 'match_fb_1' && m.odds).map(([id, m]) => ({ id, ...m }));
+          allMatchesRaw = Object.entries(data.matches)
+            .filter(([id, m]) => {
+              if (id === 'match_fb_1' || !m || !m.odds || !m.status) return false;
+              return true;
+            })
+            .map(([id, m]) => ({ id, ...m }));
+            
           updateLeagueDropdown(); renderMatches();
         }
       } catch (e) { console.error("Ошибка загрузки матчей:", e); }
     }
 
     function updateLeagueDropdown() {
-      const leagues = new Set(allMatchesRaw.map(m => m.league || 'Футбол'));
-      const sortedLeagues = Array.from(leagues).sort((a, b) => (LEAGUE_PRIORITY[a] || 99) - (LEAGUE_PRIORITY[b] || 99));
-      const select = document.getElementById('league-select');
-      const currentVal = select.value;
-      select.innerHTML = '<option value="all">Все лиги</option>';
-      sortedLeagues.forEach(l => { select.innerHTML += `<option value="${l}">${l}</option>`; });
-      select.value = currentVal || 'all'; currentLeague = select.value;
+      try {
+        const leagues = new Set(allMatchesRaw.map(m => m.league || 'Футбол'));
+        const sortedLeagues = Array.from(leagues).sort((a, b) => (LEAGUE_PRIORITY[a] || 99) - (LEAGUE_PRIORITY[b] || 99));
+        const select = document.getElementById('league-select');
+        const currentVal = select.value;
+        select.innerHTML = '<option value="all">Все лиги</option>';
+        sortedLeagues.forEach(l => { select.innerHTML += `<option value="${l}">${l}</option>`; });
+        select.value = currentVal || 'all'; currentLeague = select.value;
+      } catch (e) { console.error(e); }
     }
 
     function setMode(mode) {
@@ -239,40 +246,51 @@
       currentLeague = document.getElementById('league-select').value;
       const container = document.getElementById('matches-container');
       container.innerHTML = '';
+      
       let filtered = allMatchesRaw.filter(m => {
-        const modeMatch = currentMode === 'live' ? m.status.includes('LIVE') : !m.status.includes('LIVE');
+        const isLive = m.status.includes('LIVE');
+        const modeMatch = currentMode === 'live' ? isLive : !isLive;
         return modeMatch && (currentLeague === 'all' || m.league === currentLeague);
       });
+      
       filtered.sort((a, b) => (LEAGUE_PRIORITY[a.league] || 99) - (LEAGUE_PRIORITY[b.league] || 99) || (a.start_time || 0) - (b.start_time || 0));
 
-      if (filtered.length === 0) { container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding: 20px;">Матчей не найдено</div>'; return; }
+      if (filtered.length === 0) { 
+        container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding: 20px;">Матчей не найдено</div>'; 
+        return; 
+      }
 
       filtered.forEach(match => {
-        const isLive = match.status.includes('LIVE');
-        const card = document.createElement('div'); card.className = 'match-card';
-        const oddsOrder = ['1', 'X', '2']; const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
-        let oddsHtml = '';
-        oddsOrder.forEach(outcome => {
-          const coeff = match.odds[outcome]; if (!coeff) return;
-          const oldCoeff = previousOdds[`${match.id}_${outcome}`];
-          let highlightStyle = (oldCoeff && oldCoeff !== coeff) ? (coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
-          previousOdds[`${match.id}_${outcome}`] = coeff;
-          oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${outcomeNames[outcome]}', ${coeff})"><span class="odd-name">${outcomeNames[outcome]}</span><span class="odd-val">${coeff}</span></div>`;
-        });
+        try {
+          const isLive = match.status.includes('LIVE');
+          const card = document.createElement('div'); card.className = 'match-card';
+          const oddsOrder = ['1', 'X', '2']; const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
+          let oddsHtml = '';
+          
+          oddsOrder.forEach(outcome => {
+            const coeff = match.odds[outcome]; if (!coeff) return;
+            const oldCoeff = previousOdds[`${match.id}_${outcome}`];
+            let highlightStyle = (oldCoeff && oldCoeff !== coeff) ? (coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
+            previousOdds[`${match.id}_${outcome}`] = coeff;
+            oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${outcomeNames[outcome]}', ${coeff})"><span class="odd-name">${outcomeNames[outcome]}</span><span class="odd-val">${coeff}</span></div>`;
+          });
 
-        const homeName = match.home || 'Хозяева'; const awayName = match.away || 'Гости';
-        const homeLogoHtml = match.homeLogo ? `<img src="${match.homeLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
-        const awayLogoHtml = match.awayLogo ? `<img src="${match.awayLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
+          const homeName = match.home || 'Хозяева'; const awayName = match.away || 'Гости';
+          const homeLogoHtml = match.homeLogo ? `<img src="${match.homeLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+          const awayLogoHtml = match.awayLogo ? `<img src="${match.awayLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
-        card.innerHTML = `
-          <div class="match-header">${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${match.status}</span>`}<span>${match.league || 'Футбол'}</span></div>
-          <div class="teams-container">
-            <div class="team">${homeLogoHtml}<div class="team-name">${homeName}</div></div>
-            <div class="score">${match.score || 'VS'}</div>
-            <div class="team">${awayLogoHtml}<div class="team-name">${awayName}</div></div>
-          </div>
-          <div class="odds-grid">${oddsHtml}</div>`;
-        container.appendChild(card);
+          card.innerHTML = `
+            <div class="match-header">${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${match.status}</span>`}<span>${match.league || 'Футбол'}</span></div>
+            <div class="teams-container">
+              <div class="team">${homeLogoHtml}<div class="team-name">${homeName}</div></div>
+              <div class="score">${match.score || 'VS'}</div>
+              <div class="team">${awayLogoHtml}<div class="team-name">${awayName}</div></div>
+            </div>
+            <div class="odds-grid">${oddsHtml}</div>`;
+          container.appendChild(card);
+        } catch (err) {
+          console.error("Ошибка рендера карточки:", err, match);
+        }
       });
     }
 
@@ -362,17 +380,11 @@
         data.bets.forEach(bet => {
           const isActive = bet.status === 'active';
           const html = `<div class="history-card"><div><div style="font-weight:700;">${bet.match_title}</div><div style="font-size:0.75rem; color:var(--text-muted);">${bet.outcome} @ ${bet.coefficient}</div></div><div style="text-align:right;"><div style="font-weight:800; color:var(--accent);">${bet.amount} ★</div></div></div>`;
-          
-          if (isActive) {
-            container.innerHTML += html;
-          } else {
-            historyContainer.innerHTML += html;
-          }
+          if (isActive) { container.innerHTML += html; } else { historyContainer.innerHTML += html; }
         });
         
         if (container.innerHTML === '') container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Нет активных позиций</div>';
         if (historyContainer.innerHTML === '') historyContainer.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">История пуста</div>';
-        
       } catch (err) {}
     }
 
