@@ -40,7 +40,6 @@ async def fetch_event_odds(event_id, sem):
         data = await asyncio.to_thread(get_fonbet_data, detail_url)
         if not data: return None
         
-        # Ищем первый валидный набор 1X2
         custom_factors = data.get("customFactors", [])
         for cf in custom_factors:
             factors = cf.get("factors", [])
@@ -52,15 +51,29 @@ async def fetch_event_odds(event_id, sem):
                 elif f_id == 922: odds["X"] = v
                 elif f_id == 923: odds["2"] = v
             
-            # Если есть все три кэфа, возвращаем их (берем первую линию)
             if odds["1"] and odds["X"] and odds["2"]:
                 return odds
         return None
 
 async def main():
-    logger.info("🔄 Запуск финального парсера Fonbet...")
+    logger.info("🔄 Запуск парсера Fonbet с логотипами...")
     
-    # 1. Получаем список всех событий
+    # 1. Загружаем справочник лиг (чтобы знать названия турниров)
+    logger.info("Загружаем список лиг...")
+    sports_url = f"{BASE_URL}/sports?lang=ru"
+    sports_data = await asyncio.to_thread(get_fonbet_data, sports_url)
+    
+    leagues_map = {}
+    if sports_data and "sports" in sports_data:
+        for sport in sports_data["sports"]:
+            for region in sport.get("regions", []):
+                for comp in region.get("competitions", []):
+                    # Мапим ID турнира на его название
+                    leagues_map[comp.get("id")] = comp.get("name", "Турнир")
+    
+    logger.info(f"Загружено лиг: {len(leagues_map)}")
+
+    # 2. Получаем список всех событий
     list_url = f"{BASE_URL}/events/listBase?scopeMarket=1600&lang=ru"
     data = await asyncio.to_thread(get_fonbet_data, list_url)
     
@@ -71,45 +84,47 @@ async def main():
     events = data.get("events", [])
     logger.info(f"Всего событий в базе: {len(events)}")
 
-    # 2. Фильтруем только те, где есть команды и матч не завершен давно
     now = int(time.time())
     valid_events = []
     for ev in events:
         if ev.get("team1") and ev.get("team2"):
             start = ev.get("startTime", 0)
-            # Берем матчи, которые начнутся в будущем или начались не более 3 часов назад
-            if start > now - 10800: 
+            if start > now - 10800: # Берем актуальные матчи
                 valid_events.append(ev)
                 
-    logger.info(f"Матчей для парсинга (актуальные): {len(valid_events)}")
+    logger.info(f"Матчей для парсинга: {len(valid_events)}")
 
-    # 3. Скачиваем кэфы для каждого матча параллельно
-    sem = asyncio.Semaphore(10) # 10 запросов одновременно
+    # 3. Скачиваем кэфы
+    sem = asyncio.Semaphore(10)
     tasks = [fetch_event_odds(ev["id"], sem) for ev in valid_events]
-
-    logger.info("Скачиваем коэффициенты... Это может занять 1-2 минуты.")
     results = await asyncio.gather(*tasks)
 
     # 4. Формируем итоговый JSON
     matches = {}
     for ev, odds in zip(valid_events, results):
         if odds:
+            # Формируем ссылки на логотипы
+            home_logo = f"https://static.fon.bet/team_logos/{ev.get('team1Id')}.png"
+            away_logo = f"https://static.fon.bet/team_logos/{ev.get('team2Id')}.png"
+            
+            # Ищем название лиги по ID
+            league_name = leagues_map.get(ev.get("sportId"), "Футбол")
+
             matches[f"fon_{ev['id']}"] = {
-                "title": f"{ev['team1']} vs {ev['team2']}",
-                "league": "Спорт", # Если нужно, можем потом вытащить точное название
+                "title": f"{ev['team1']} - {ev['team2']}",
+                "home": ev['team1'],
+                "away": ev['team2'],
+                "homeLogo": home_logo,
+                "awayLogo": away_logo,
+                "league": league_name, # Теперь тут будет "РПЛ" или "АПЛ"
                 "status": "LIVE" if ev.get("place") == "live" else "Скоро",
                 "start_time": ev.get("startTime"),
                 "odds": odds
             }
 
-    logger.info(f"✅ Собрано {len(matches)} матчей с коэффициентами 1X2.")
+    logger.info(f"✅ Собрано {len(matches)} матчей с кэфами и логотипами.")
     
     # 5. Сохраняем в Firebase
     if matches:
         if await firebase_put("matches", matches):
             logger.info("🔥 Линия WinStars успешно обновлена в Firebase!")
-    else:
-        logger.warning("Матчей с кэфами не найдено.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
