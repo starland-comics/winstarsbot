@@ -1,123 +1,135 @@
 import asyncio
-import logging
 import time
 import httpx
+import json
 from curl_cffi import requests as cffi_requests
 
-FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 BASE_URL = "https://line-lb51.bk6bba-resources.com"
-
-HEADERS = {
+FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
+FONBET_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json",
     "Referer": "https://www.fon.bet/",
 }
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("fonbet")
+LEAGUES_CACHE = {}
+LEAGUES_LAST_UPDATE = 0
 
-async def firebase_put(path: str, data: any):
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-            return resp.status_code == 200
-        except Exception as e:
-            logger.error(f"Firebase error: {e}")
-            return False
-
-def get_fonbet_data(url):
+def get_fonbet_data_sync(url):
     try:
-        r = cffi_requests.get(url, headers=HEADERS, impersonate="chrome120", timeout=15)
+        r = cffi_requests.get(url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=10)
         if r.status_code == 200:
             return r.json()
-    except Exception:
+    except:
         pass
     return None
 
-async def fetch_event_odds(event_id, sem):
-    async with sem:
-        detail_url = f"{BASE_URL}/events/event?eventId={event_id}&scopeMarket=1600&lang=ru"
-        data = await asyncio.to_thread(get_fonbet_data, detail_url)
-        if not data: return None
-        
-        custom_factors = data.get("customFactors", [])
-        for cf in custom_factors:
-            factors = cf.get("factors", [])
-            odds = {"1": None, "X": None, "2": None}
-            for f in factors:
-                f_id = f.get("f")
-                v = f.get("v")
-                if f_id == 921: odds["1"] = v
-                elif f_id == 922: odds["X"] = v
-                elif f_id == 923: odds["2"] = v
-            
-            if odds["1"] and odds["X"] and odds["2"]:
-                return odds
-        return None
-
-async def main():
-    logger.info("🔄 Запуск парсера Fonbet...")
+async def update_leagues_cache():
+    global LEAGUES_CACHE, LEAGUES_LAST_UPDATE
+    url = f"{BASE_URL}/sports?lang=ru"
+    data = await asyncio.to_thread(get_fonbet_data_sync, url)
     
-    sports_url = f"{BASE_URL}/sports?lang=ru"
-    sports_data = await asyncio.to_thread(get_fonbet_data, sports_url)
-    
-    leagues_map = {}
-    if sports_data and "sports" in sports_data:
-        for sport in sports_data["sports"]:
+    if data and "sports" in data:
+        new_cache = {}
+        for sport in data["sports"]:
+            if sport.get("name") != "Футбол": continue # Только футбол
             for region in sport.get("regions", []):
                 for comp in region.get("competitions", []):
-                    leagues_map[comp.get("id")] = comp.get("name", "Турнир")
+                    cid = comp.get("id")
+                    if cid:
+                        new_cache[int(cid)] = comp.get("name", "Турнир")
+        if new_cache:
+            LEAGUES_CACHE = new_cache
+            LEAGUES_LAST_UPDATE = time.time()
+            print(f"✅ [Scraper] Лиги обновлены: {len(LEAGUES_CACHE)}")
+
+async def fetch_odds_and_score(event_id, sem):
+    async with sem:
+        url = f"{BASE_URL}/events/event?eventId={event_id}&scopeMarket=1600&lang=ru"
+        data = await asyncio.to_thread(get_fonbet_data_sync, url)
+        if not data: return None
+        
+        odds = {"1": None, "X": None, "2": None}
+        for cf in data.get("customFactors", []):
+            for f in cf.get("factors", []):
+                fid, v = f.get("f"), f.get("v")
+                if fid == 921: odds["1"] = v
+                elif fid == 922: odds["X"] = v
+                elif fid == 923: odds["2"] = v
+            if odds["1"] and odds["X"] and odds["2"]:
+                break
+        
+        if not odds["1"]: return None
+        
+        event_info = data.get("event", {})
+        score1 = event_info.get("score1")
+        score2 = event_info.get("score2")
+        minute = event_info.get("time", "")
+        place = event_info.get("place", "line")
+        
+        score_str = f"{score1} : {score2}" if score1 is not None and place == "live" else "VS"
+        status_str = f"LIVE {minute}'" if place == "live" else "Скоро"
+        
+        return odds, score_str, status_str
+
+async def firebase_put(path: str, data: any):
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+        except Exception as e:
+            print(f"[Scraper] Firebase Error: {e}")
+
+async def fonbet_worker():
+    print("🔄 [Scraper] Запуск фонового парсера...")
+    global LEAGUES_LAST_UPDATE
     
-    list_url = f"{BASE_URL}/events/listBase?scopeMarket=1600&lang=ru"
-    data = await asyncio.to_thread(get_fonbet_data, list_url)
-    
-    if not data or "events" not in data:
-        logger.error("Не удалось получить список матчей.")
-        return
+    while True:
+        try:
+            if not LEAGUES_CACHE or (time.time() - LEAGUES_LAST_UPDATE > 3600):
+                await update_leagues_cache()
 
-    events = data.get("events", [])
-    now = int(time.time())
-    valid_events = []
-    for ev in events:
-        if ev.get("team1") and ev.get("team2"):
-            start = ev.get("startTime", 0)
-            if start > now - 10800: 
-                valid_events.append(ev)
-
-    sem = asyncio.Semaphore(10)
-    tasks = [fetch_event_odds(ev["id"], sem) for ev in valid_events]
-    
-    logger.info(f"Скачиваем коэффициенты для {len(valid_events)} матчей...")
-    results = await asyncio.gather(*tasks)
-
-    matches = {}
-    for ev, odds in zip(valid_events, results):
-        if odds:
-            home_logo = f"https://static.fon.bet/team_logos/{ev.get('team1Id')}.png"
-            away_logo = f"https://static.fon.bet/team_logos/{ev.get('team2Id')}.png"
-            league_name = leagues_map.get(ev.get("sportId"), "Футбол")
-
-            matches[f"fon_{ev['id']}"] = {
-                "title": f"{ev['team1']} - {ev['team2']}",
-                "home": ev['team1'],
-                "away": ev['team2'],
-                "homeLogo": home_logo,
-                "awayLogo": away_logo,
-                "league": league_name,
-                "status": "LIVE" if ev.get("place") == "live" else "Скоро",
-                "score": "VS",
-                "start_time": ev.get("startTime"),
-                "odds": odds
-            }
-
-    logger.info(f"✅ Собрано {len(matches)} матчей с кэфами.")
-    
-    # ВАЖНО: Если нашли матчи, перезаписываем базу. Если нет - оставляем как есть.
-    if matches:
-        if await firebase_put("matches", matches):
-            logger.info("🔥 Линия WinStars обновлена в Firebase!")
-    else:
-        logger.warning("Матчей с кэфами не найдено. База не тронута.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            list_url = f"{BASE_URL}/events/listBase?scopeMarket=1600&lang=ru"
+            data = await asyncio.to_thread(get_fonbet_data_sync, list_url)
+            
+            if data and "events" in data:
+                events = data.get("events", [])
+                now = time.time()
+                valid_events = []
+                for ev in events:
+                    if int(ev.get("sportId", 0)) in LEAGUES_CACHE and ev.get("team1") and ev.get("team2"):
+                        start = ev.get("startTime", 0)
+                        if start > now - 10800:
+                            valid_events.append(ev)
+                
+                sem = asyncio.Semaphore(20)
+                tasks = [fetch_odds_and_score(ev["id"], sem) for ev in valid_events]
+                results = await asyncio.gather(*tasks)
+                
+                matches = {}
+                for ev, res in zip(valid_events, results):
+                    if res:
+                        odds, score, status = res
+                        league_id = int(ev.get("sportId", 0))
+                        league_name = LEAGUES_CACHE.get(league_id, "Футбол")
+                        
+                        matches[f"fon_{ev['id']}"] = {
+                            "title": f"{ev['team1']} - {ev['team2']}",
+                            "home": ev['team1'],
+                            "away": ev['team2'],
+                            "homeLogo": f"https://static.fon.bet/team_logos/{ev.get('team1Id')}.png",
+                            "awayLogo": f"https://static.fon.bet/team_logos/{ev.get('team2Id')}.png",
+                            "league": league_name,
+                            "status": status,
+                            "score": score,
+                            "start_time": ev.get("startTime"),
+                            "odds": odds
+                        }
+                
+                if matches:
+                    await firebase_put("matches", matches)
+                    print(f"✅ [Scraper] Обновлено {len(matches)} матчей")
+                    
+        except Exception as e:
+            print(f"[Scraper] Ошибка: {e}")
+            
+        await asyncio.sleep(30)
