@@ -5,7 +5,6 @@ import httpx
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from aiogram import Bot, Dispatcher, types, F
@@ -28,6 +27,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ГЛОБАЛЬНЫЙ КЛИЕНТ ДЛЯ HTTP (ЭКОНОМИТ ПАМЯТЬ)
+http_client = httpx.AsyncClient(timeout=10.0)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await http_client.aclose()
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -38,9 +44,12 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            try: await connection.send_text(json.dumps(message))
-            except: pass
+        # Копируем список, чтобы избежать ошибки при изменении во время цикла
+        for connection in list(self.active_connections):
+            try: 
+                await connection.send_text(json.dumps(message))
+            except: 
+                pass
 
 manager = ConnectionManager()
 
@@ -62,28 +71,29 @@ class PromoRequest(BaseModel):
     user_id: int; code: str
 
 async def firebase_get(path: str):
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{FIREBASE_DB_URL}/{path}.json")
+    try:
+        resp = await http_client.get(f"{FIREBASE_DB_URL}/{path}.json")
         return resp.json()
+    except: return None
 
 async def firebase_put(path: str, data: dict):
-    async with httpx.AsyncClient() as client:
-        resp = await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-        return resp.json()
+    try:
+        await http_client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+    except: pass
 
 async def firebase_patch(path: str, data: dict):
-    async with httpx.AsyncClient() as client:
-        resp = await client.patch(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-        return resp.json()
+    try:
+        await http_client.patch(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+    except: pass
 
 async def firebase_post(path: str, data: dict):
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-        return resp.json()
+    try:
+        await http_client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+    except: pass
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 [Main] Запуск WinStars API (без скраппера)...")
+    print("🚀 [Main] Запуск WinStars API...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
@@ -132,7 +142,6 @@ async def place_bet(req: BetCreateRequest):
 async def create_invoice(req: InvoiceRequest):
     payload = f"topup_{req.user_id}_{req.amount}"
     try:
-        print(f"💳 Создание инвойса: user={req.user_id}, amount={req.amount}")
         link = await bot.create_invoice_link(
             title="WinStars", 
             description=f"Пополнение на {req.amount} ★", 
@@ -140,11 +149,10 @@ async def create_invoice(req: InvoiceRequest):
             currency="XTR", 
             prices=[LabeledPrice(label="Звёзды", amount=req.amount)]
         )
-        print("✅ Инвойс создан успешно")
         return {"status": "ok", "invoice_link": link}
     except Exception as e:
-        print(f"❌ ОШИБКА TELEGRAM API: {e}")
-        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+        print(f"❌ ОШИБКА TELEGRAM: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/cashier/promo")
 async def activate_promo(req: PromoRequest):
@@ -172,6 +180,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await manager.broadcast(msg_data)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)
 
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
@@ -196,4 +206,4 @@ async def cmd_start(message: types.Message):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("SERVER_PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
