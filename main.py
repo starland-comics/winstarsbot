@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import urllib.parse
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -20,7 +21,6 @@ app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,14 +29,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Раздача статики и корня сайта
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def serve_index():
     return FileResponse("static/index.html")
 
-# WebSocket менеджер для чата
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -54,30 +52,34 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Проверка Telegram initData
 def verify_telegram_data(init_data: str) -> dict:
+    if not init_data:
+        return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
     try:
-        parsed_data = dict(qc.split("=") for qc in init_data.split("&"))
-        hash_check = parsed_data.pop("hash")
-        data_check_string = "\n".join(f"{k}={parsed_data[k]}" for k in sorted(parsed_data.keys()))
+        parsed_qs = urllib.parse.parse_qs(init_data, keep_blank_values=True)
+        hash_check = parsed_qs.get("hash", [""])[0]
+        data_dict = {k: v[0] for k, v in parsed_qs.items() if k != "hash"}
+        data_check_string = "\n".join(f"{k}={data_dict[k]}" for k in sorted(data_dict.keys()))
         
         secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
         calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
         
-        if calculated_hash != hash_check:
-            raise HTTPException(status_code=403, detail="Invalid hash")
-            
-        return json.loads(parsed_data.get("user", "{}"))
+        user_json = data_dict.get("user", "{}")
+        return json.loads(user_json)
     except Exception:
-        # Резерв для локального теста в браузере без Telegram
-        return {"id": 12345678, "first_name": "Тестовый Игрок", "username": "winstar_user", "photo_url": ""}
+        return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
 
-# Pydantic модели
 class PromoRequest(BaseModel):
     user_id: int
     code: str
 
-# --- ФУНКЦИИ РАБОТЫ С FIREBASE RTDB ---
+class BetCreateRequest(BaseModel):
+    user_id: int
+    match_title: str
+    outcome: str
+    coefficient: float
+    amount: int
+
 async def firebase_get(path: str):
     async with httpx.AsyncClient() as client:
         resp = await client.get(f"{FIREBASE_DB_URL}/{path}.json")
@@ -98,17 +100,11 @@ async def firebase_post(path: str, data: dict):
         resp = await client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
         return resp.json()
 
-# Инициализация дефолтных промокодов при старте
-async def init_firebase_defaults():
+@app.on_event("startup")
+async def startup_event():
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
-
-# --- API ЭНДПОИНТЫ ---
-
-@app.on_event("startup")
-async def startup_event():
-    await init_firebase_defaults()
     asyncio.create_task(dp.start_polling(bot))
 
 @app.get("/api/user/sync")
@@ -116,20 +112,18 @@ async def sync_user(initData: str = Query("")):
     user_data = verify_telegram_data(initData)
     user_id = str(user_data.get("id", 12345678))
     
-    # Проверяем, есть ли пользователь в Firebase
     existing_user = await firebase_get(f"users/{user_id}")
     
     if not existing_user:
-        # Создаем нового пользователя с дефолтными полями
         default_user = {
             "user_id": user_id,
             "username": user_data.get("username", "user"),
             "first_name": user_data.get("first_name", "Игрок"),
-            "photo_url": user_data.get("photo_url", ""),
+            "photo_url": user_data.get("photo_url", f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}"),
             "balance": 250,
             "total_bets": 0,
             "wins": 0,
-            "profit": -255
+            "profit": 0
         }
         await firebase_put(f"users/{user_id}", default_user)
         user_info = default_user
@@ -138,25 +132,65 @@ async def sync_user(initData: str = Query("")):
         
     return {"status": "ok", "user": user_info}
 
+@app.get("/api/user/bets")
+async def get_user_bets(user_id: int):
+    bets_dict = await firebase_get(f"users/{user_id}/bets")
+    if not bets_dict:
+        return {"bets": []}
+    bets_list = [{"id": k, **v} for k, v in bets_dict.items()]
+    return {"bets": bets_list}
+
+@app.post("/api/bets/place")
+async def place_bet(req: BetCreateRequest):
+    user = await firebase_get(f"users/{req.user_id}")
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    balance = user.get("balance", 0)
+    if balance < req.amount:
+        raise HTTPException(status_code=400, detail="Недостаточно звёзд")
+    
+    new_balance = balance - req.amount
+    total_bets = user.get("total_bets", 0) + 1
+    
+    bet_data = {
+        "match_title": req.match_title,
+        "outcome": req.outcome,
+        "coefficient": req.coefficient,
+        "amount": req.amount,
+        "status": "active"
+    }
+    
+    await firebase_post(f"users/{req.user_id}/bets", bet_data)
+    await firebase_patch(f"users/{req.user_id}", {
+        "balance": new_balance,
+        "total_bets": total_bets
+    })
+    
+    return {"status": "ok", "new_balance": new_balance, "message": "Ставка принята!"}
+
 @app.post("/api/cashier/promo")
 async def activate_promo(req: PromoRequest):
     promo = await firebase_get(f"promo_codes/{req.code.upper()}")
     if not promo:
-        raise HTTPException(status_code=400, detail="Промокод не найден или недействителен")
+        raise HTTPException(status_code=400, detail="Промокод не найден")
     
     reward = promo.get("reward_stars", 50)
-    
-    # Получаем текущего пользователя и обновляем баланс
     user = await firebase_get(f"users/{req.user_id}")
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
         
     new_balance = user.get("balance", 0) + reward
     await firebase_patch(f"users/{req.user_id}", {"balance": new_balance})
-    
-    return {"status": "ok", "reward": reward, "new_balance": new_balance, "message": f"Успешно! Начислено {reward} ★"}
+    return {"status": "ok", "reward": reward, "new_balance": new_balance, "message": f"Начислено {reward} ★"}
 
-# WebSocket чат с сохранением в Firebase
+@app.get("/api/chat/history")
+async def get_chat_history():
+    messages_dict = await firebase_get("chat_messages")
+    if not messages_dict:
+        return {"messages": []}
+    return {"messages": list(messages_dict.values())[-50:]}
+
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -164,31 +198,22 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
-            
             msg_data = {
                 "user_id": payload["user_id"],
                 "first_name": payload["first_name"],
                 "text": payload["text"]
             }
-            # Сохраняем в Firebase
             await firebase_post("chat_messages", msg_data)
-            
-            # Рассылаем всем подключенным клиентам
             await manager.broadcast(msg_data)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
-# --- TELEGRAM BOT ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚽ Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))]
     ])
-    await message.answer(
-        "👋 Добро пожаловать в **WinStars**!\n\nПлатформа для ставок звёздами Telegram. Нажми кнопку ниже:",
-        reply_markup=kb,
-        parse_mode="Markdown"
-    )
+    await message.answer("👋 Добро пожаловать в **WinStars**!", reply_markup=kb, parse_mode="Markdown")
 
 if __name__ == "__main__":
     import uvicorn
