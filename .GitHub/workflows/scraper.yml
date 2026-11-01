@@ -1,9 +1,7 @@
-name: WinStars Fonbet Scraper
+name: WinStars Scraper
 
 on:
-  schedule:
-    - cron: '*/5 * * * *' # Каждые 5 минут
-  workflow_dispatch:      # Кнопка для ручного запуска
+  workflow_dispatch:
 
 jobs:
   scrape:
