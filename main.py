@@ -13,7 +13,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import database as db
 
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
-WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"  # HTTPS ссылка на твой хостинг
+WEBAPP_URL = "https://starland-comics.github.io/winstarsbot"  # HTTPS ссылка на твой хостинг
 
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
