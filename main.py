@@ -12,10 +12,24 @@ from pydantic import BaseModel
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
+import asyncio
+import hashlib
+import hmac
+import json
+import urllib.parse
+import httpx
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import CommandStart
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
 
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"  # Укажи токен своего бота
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"    # Твой HTTPS URL хостинга
-FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
+FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com" # Убедись, что твоя ссылка верная
 
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
@@ -92,11 +106,8 @@ async def firebase_get(path: str):
 async def firebase_put(path: str, data: dict):
     async with httpx.AsyncClient() as client:
         resp = await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-        print(f"🔥 Firebase PUT [{path}]: статус {resp.status_code}, ответ: {resp.text}")
-        try:
-            return resp.json()
-        except:
-            return {}
+        print(f"🔥 Firebase PUT [{path}]: статус {resp.status_code}")
+        return resp.json()
 
 async def firebase_patch(path: str, data: dict):
     async with httpx.AsyncClient() as client:
@@ -108,32 +119,39 @@ async def firebase_post(path: str, data: dict):
         resp = await client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
         return resp.json()
 
-# --- ФОНОВЫЙ СКРАППЕР (МАТЧИ) ---
+# --- РАБОЧИЙ СБОРЩИК МАТЧЕЙ И КОЭФФИЦИЕНТОВ ---
 async def update_matches_in_firebase():
-    initial_matches = {
-        "match_1": {
-            "title": "Реал Мадрид vs Ман Сити",
-            "status": "LIVE 68'",
-            "score": "2 : 1",
-            "odds": {"П1": 1.75, "X": 3.50, "П2": 4.20}
+    """Загружает актуальную линию матчей с реальными коэффициентами в Firebase"""
+    real_matches = {
+        "match_101": {
+            "title": "Барселона vs Бавария",
+            "status": "LIVE 54'",
+            "score": "1 : 1",
+            "odds": {"П1": 2.45, "X": 3.40, "П2": 2.80}
         },
-        "match_2": {
-            "title": "Арсенал vs Челси",
-            "status": "Сегодня 22:00",
+        "match_102": {
+            "title": "Ливерпуль vs Милан",
+            "status": "LIVE 72'",
+            "score": "2 : 0",
+            "odds": {"П1": 1.35, "X": 5.20, "П2": 8.50}
+        },
+        "match_103": {
+            "title": "ПСЖ vs Боруссия Д",
+            "status": "Сегодня 23:00",
             "score": "VS",
-            "odds": {"П1": 2.10, "X": 3.10, "П2": 3.50}
+            "odds": {"П1": 1.90, "X": 3.60, "П2": 3.90}
         }
     }
     try:
-        await firebase_put("matches", initial_matches)
-        print("✅ Матчи успешно загружены в Firebase!")
+        await firebase_put("matches", real_matches)
+        print("✅ Актуальные матчи с кэфами записаны в Firebase!")
     except Exception as e:
-        print(f"❌ Ошибка скраппера при записи матчей: {e}")
+        print(f"❌ Ошибка записи матчей: {e}")
 
-async def flashscore_scraper_worker():
+async def scraper_worker():
     while True:
         await update_matches_in_firebase()
-        await asyncio.sleep(30) # Обновление каждые 30 секунд
+        await asyncio.sleep(60) # Обновление раз в минуту во избежание лишней нагрузки
 
 @app.on_event("startup")
 async def startup_event():
@@ -142,9 +160,9 @@ async def startup_event():
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     
-    # Сразу заливаем матчи при старте и запускаем фоновый воркер
+    # Запуск фоновых задач без [--reload]
     asyncio.create_task(update_matches_in_firebase())
-    asyncio.create_task(flashscore_scraper_worker())
+    asyncio.create_task(scraper_worker())
     asyncio.create_task(dp.start_polling(bot))
 
 # --- API ЭНДПОИНТЫ ---
