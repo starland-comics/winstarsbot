@@ -132,10 +132,19 @@ async def place_bet(req: BetCreateRequest):
 async def create_invoice(req: InvoiceRequest):
     payload = f"topup_{req.user_id}_{req.amount}"
     try:
-        link = await bot.create_invoice_link(title="WinStars", description=f"Пополнение на {req.amount} ★", payload=payload, currency="XTR", prices=[LabeledPrice(label="Звёзды", amount=req.amount)])
+        print(f"💳 Создание инвойса: user={req.user_id}, amount={req.amount}")
+        link = await bot.create_invoice_link(
+            title="WinStars", 
+            description=f"Пополнение на {req.amount} ★", 
+            payload=payload, 
+            currency="XTR", 
+            prices=[LabeledPrice(label="Звёзды", amount=req.amount)]
+        )
+        print("✅ Инвойс создан успешно")
         return {"status": "ok", "invoice_link": link}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ ОШИБКА TELEGRAM API: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
 
 @app.post("/api/cashier/promo")
 async def activate_promo(req: PromoRequest):
