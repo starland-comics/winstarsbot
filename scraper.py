@@ -1,4 +1,4 @@
-эimport json
+import json
 from curl_cffi import requests as cffi_requests
 
 BASE_URL = "https://line-lb51.bk6bba-resources.com"
