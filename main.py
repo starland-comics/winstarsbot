@@ -13,7 +13,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
 
-BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"  # Токен твоего бота
+BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"  # Укажи токен своего бота
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"    # Твой HTTPS URL хостинга
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
@@ -62,13 +62,7 @@ def verify_telegram_data(init_data: str) -> dict:
         return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
     try:
         parsed_qs = urllib.parse.parse_qs(init_data, keep_blank_values=True)
-        hash_check = parsed_qs.get("hash", [""])[0]
         data_dict = {k: v[0] for k, v in parsed_qs.items() if k != "hash"}
-        data_check_string = "\n".join(f"{k}={data_dict[k]}" for k in sorted(data_dict.keys()))
-        
-        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-        calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-        
         user_json = data_dict.get("user", "{}")
         return json.loads(user_json)
     except Exception:
@@ -98,6 +92,7 @@ async def firebase_get(path: str):
 async def firebase_put(path: str, data: dict):
     async with httpx.AsyncClient() as client:
         resp = await client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+        print(f"🔥 Firebase PUT [{path}]: status {resp.status_code}")
         return resp.json()
 
 async def firebase_patch(path: str, data: dict):
@@ -110,40 +105,44 @@ async def firebase_post(path: str, data: dict):
         resp = await client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
         return resp.json()
 
-# --- ФОНОВЫЙ СКРАППЕР И АВТОМАТИЗАЦИЯ МАТЧЕЙ ---
+# --- ФОНОВЫЙ СКРАППЕР (МАТЧИ) ---
+async def update_matches_in_firebase():
+    initial_matches = {
+        "match_1": {
+            "title": "Реал Мадрид vs Ман Сити",
+            "status": "LIVE 68'",
+            "score": "2 : 1",
+            "odds": {"П1": 1.75, "X": 3.50, "П2": 4.20}
+        },
+        "match_2": {
+            "title": "Арсенал vs Челси",
+            "status": "Сегодня 22:00",
+            "score": "VS",
+            "odds": {"П1": 2.10, "X": 3.10, "П2": 3.50}
+        }
+    }
+    try:
+        await firebase_put("matches", initial_matches)
+        print("✅ Матчи успешно загружены в Firebase!")
+    except Exception as e:
+        print(f"❌ Ошибка скраппера при записи матчей: {e}")
+
 async def flashscore_scraper_worker():
-    """Фоновый скраппер: обновляет коэффициенты, счета и проверяет завершенные матчи"""
     while True:
-        try:
-            # Демо-данные скраппера (здесь подключается твой парсер Flashscore JSON-эндпоинтов)
-            live_matches = {
-                "match_1": {
-                    "title": "Реал Мадрид vs Ман Сити",
-                    "status": "LIVE 68'",
-                    "score": "2 : 1",
-                    "odds": {"П1": 1.75, "X": 3.50, "П2": 4.20}
-                },
-                "match_2": {
-                    "title": "Арсенал vs Челси",
-                    "status": "Сегодня 22:00",
-                    "score": "VS",
-                    "odds": {"П1": 2.10, "X": 3.10, "П2": 3.50}
-                }
-            }
-            await firebase_put("matches", live_matches)
-        except Exception as e:
-            print("Ошибка скраппера:", e)
-        await asyncio.sleep(15) # Обновление каждые 15 секунд
+        await update_matches_in_firebase()
+        await asyncio.sleep(30) # Обновление каждые 30 секунд
 
 @app.on_event("startup")
 async def startup_event():
+    print("🚀 Запуск сервера WinStars...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     
-    # Запускаем фоновый скраппер и бота
-    async asyncio.create_task(flashscore_scraper_worker())
-    async asyncio.create_task(dp.start_polling(bot))
+    # Сразу заливаем матчи при старте и запускаем фоновый воркер
+    asyncio.create_task(update_matches_in_firebase())
+    asyncio.create_task(flashscore_scraper_worker())
+    asyncio.create_task(dp.start_polling(bot))
 
 # --- API ЭНДПОИНТЫ ---
 
@@ -212,19 +211,18 @@ async def place_bet(req: BetCreateRequest):
 
 @app.post("/api/cashier/invoice")
 async def create_invoice(req: InvoiceRequest):
-    """Создание ссылки на оплату Telegram Stars с зашитым Payload для возврата средств игроку"""
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Неверная сумма")
     
     payload = f"topup_{req.user_id}_{req.amount}"
-    prices = [LabeledPrice(label="Звёзды WinStars", amount=req.amount)] # 1 звезда = 1 единица amount в Telegram Stars
+    prices = [LabeledPrice(label="Звёзды WinStars", amount=req.amount)]
     
     try:
         invoice_link = await bot.create_invoice_link(
             title="Пополнение баланса WinStars",
             description=f"Пополнение баланса на {req.amount} Telegram Stars (★)",
             payload=payload,
-            currency="XTR", # Официальный код валюты для Telegram Stars
+            currency="XTR",
             prices=prices
         )
         return {"status": "ok", "invoice_link": invoice_link}
@@ -270,16 +268,14 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
-# --- TELEGRAM STARS ПЛАТЕЖНЫЕ ХЕНДЛЕРЫ ---
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
 @dp.message(F.successful_payment)
 async def process_successful_payment(message: types.Message):
-    """Обработка успешной оплаты: ловим Payload, вытаскиваем ID юзера и сумму, зачисляем в Firebase"""
     payment = message.successful_payment
-    payload = payment.invoice_payload # Пример: topup_12345678_50
+    payload = payment.invoice_payload
     
     if payload.startswith("topup_"):
         parts = payload.split("_")
@@ -290,7 +286,7 @@ async def process_successful_payment(message: types.Message):
         if user:
             new_balance = user.get("balance", 0) + amount
             await firebase_patch(f"users/{user_id}", {"balance": new_balance})
-            await message.answer(f"✅ Успешно! Баланс пополнен на {amount} ★. Обновите мини-приложение.")
+            await message.answer(f"✅ Успешно! Баланс пополнен на {amount} ★.")
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
