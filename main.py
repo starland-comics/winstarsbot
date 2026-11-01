@@ -271,4 +271,10 @@ async def cmd_start(message: types.Message):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+
+    # Хостинг сам передает нужный порт в переменную SERVER_PORT
+    port = int(os.environ.get("SERVER_PORT", 8000))
+    
+    # Обязательно host="0.0.0.0", иначе прокси хостинга не сможет достучаться
+    uvicorn.run(app, host="0.0.0.0", port=port)
