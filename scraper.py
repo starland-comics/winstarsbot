@@ -60,35 +60,43 @@ async def main():
         events = data.get("events", [])
         print(f"🔍 Всего событий: {len(events)}")
         
-        # ДИНАМИЧЕСКИЙ СБОР ЛИГ (из tournamentInfos)
+        # ДИНАМИЧЕСКИЙ СБОР ЛИГ
         leagues_map = {}
-        for t in data.get("tournamentInfos", []):
-            # В Fonbet названия лиг лежат в поле "name" (или "rusName")
-            name = t.get("rusName") or t.get("name")
-            if name:
-                leagues_map[t["id"]] = name
         
-        # Если вдруг tournamentInfos пуст, пробуем sports
-        if not leagues_map and "sports" in data:
-            for sport in data["sports"]:
-                if sport.get("name") == "Футбол":
-                    for region in sport.get("regions", []):
-                        for comp in region.get("competitions", []):
-                            name = comp.get("rusName") or comp.get("name")
-                            if name:
-                                leagues_map[comp["id"]] = name
-                                
+        # Пытаемся вытащить из sports
+        for s in data.get("sports", []):
+            if s.get("kind") == 1 or s.get("name") == "Футбол":
+                for region in s.get("regions", []):
+                    for comp in region.get("competitions", []):
+                        cid = comp.get("id")
+                        cname = comp.get("name") or comp.get("rusName")
+                        if cid and cname:
+                            leagues_map[cid] = cname
+                            
+        # Если пусто, пробуем tournamentInfos
+        if not leagues_map:
+            for t in data.get("tournamentInfos", []):
+                cid = t.get("id")
+                cname = t.get("name") or t.get("rusName")
+                if cid and cname:
+                    leagues_map[cid] = cname
+
         print(f"✅ Загружено названий лиг: {len(leagues_map)}")
 
         now = time.time()
         valid_events = []
         for ev in events:
-            # sportId в Fonbet - это ID турнира (лиги)
-            if int(ev.get("sportId", 0)) in leagues_map and ev.get("team1") and ev.get("team2"):
+            # kind == 1 это футбол. Фильтруем строго по нему!
+            if ev.get("kind") == 1 and ev.get("team1") and ev.get("team2"):
                 if ev.get("startTime", 0) > now - 10800:
                     valid_events.append(ev)
         
         print(f"⚽ Футбольных матчей: {len(valid_events)}")
+        
+        if not valid_events:
+            print("⚠️ Футбольные матчи не найдены. Пример первого события:")
+            if events:
+                print(f"kind: {events[0].get('kind')} | sportId: {events[0].get('sportId')}")
         
         sem = asyncio.Semaphore(20)
         tasks = [fetch_odds_and_score(ev["id"], sem) for ev in valid_events]
@@ -99,7 +107,7 @@ async def main():
             if res:
                 odds, score, status = res
                 league_id = int(ev.get("sportId", 0))
-                league_name = leagues_map.get(league_id, "Футбол")
+                league_name = leagues_map.get(league_id, f"Лига {league_id}")
                 
                 matches[f"fon_{ev['id']}"] = {
                     "title": f"{ev['team1']} - {ev['team2']}",
