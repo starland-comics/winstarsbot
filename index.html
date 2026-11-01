@@ -31,14 +31,14 @@
     }
     
     .team-logo-img {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  object-fit: contain;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border);
-  padding: 4px; /* Небольшой отступ, чтобы логотип не прилипал к краям */
-}
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      object-fit: contain;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      padding: 4px;
+    }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-dark); color: var(--text-main); overflow: hidden; height: 100vh; width: 100vw; }
@@ -155,11 +155,11 @@
   </header>
 
   <main>
-    <!-- TAB 1: EVENTS (Скраппер матчей в реальном времени) -->
+    <!-- TAB 1: EVENTS -->
     <div class="tab-content active" id="tab-events">
-      <div class="section-title">Футбол — Live & Предстоящие (Flashscore)</div>
+      <div class="section-title">Футбол — Live & Предстоящие</div>
       <div id="matches-container">
-        <!-- Сюда динамически подгружаются матчи и меняются кэфы скраппером -->
+        <div style="text-align:center; color:var(--text-muted); padding: 20px;">Загрузка матчей...</div>
       </div>
     </div>
 
@@ -175,13 +175,13 @@
       </div>
     </div>
 
-    <!-- TAB 3: CHAT (Внутренний чат бота через WebSocket) -->
+    <!-- TAB 3: CHAT -->
     <div class="tab-content" id="tab-chat" style="height: 100%;">
       <div class="chat-container">
         <div class="chat-messages" id="chat-box"></div>
         <div class="chat-input-area">
           <div class="input-group" style="margin-bottom: 0;">
-            <input type="text" id="chat-input" placeholder="Написать в чат бота...">
+            <input type="text" id="chat-input" placeholder="Написать в чат...">
           </div>
           <button class="btn-submit" style="width: auto; padding: 0 16px;" onclick="sendChatMessage()">
             <svg class="icon" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
@@ -190,7 +190,7 @@
       </div>
     </div>
 
-    <!-- TAB 4: CASHIER (Реальные Telegram Stars инвойсы) -->
+    <!-- TAB 4: CASHIER -->
     <div class="tab-content" id="tab-cashier">
       <div class="section-title">Пополнение звёзд (Telegram Stars)</div>
       <div class="input-group">
@@ -261,12 +261,15 @@
   </div>
 
   <script>
+    // ⚠️ ТВОЙ СЕРВЕР НА BOT-HOSTING
+    const API_BASE_URL = 'https://117n5o4nai.apps.bot-hosting.cloud';
+
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
 
     let currentUser = null;
     let ws = null;
-    let previousOdds = {}; // Для подсветки изменения коэффициентов скраппером
+    let previousOdds = {}; 
 
     const tgUser = tg?.initDataUnsafe?.user;
     if (tgUser) {
@@ -281,7 +284,7 @@
     async function initApp() {
       try {
         const initData = tg?.initData || "";
-        const res = await fetch(`/api/user/sync?initData=${encodeURIComponent(initData)}`);
+        const res = await fetch(`${API_BASE_URL}/api/user/sync?initData=${encodeURIComponent(initData)}`);
         const data = await res.json();
         
         if (data.status === "ok") {
@@ -290,92 +293,95 @@
           loadUserBets();
           initWebSocket();
           loadMatches();
-          setInterval(loadMatches, 15000); // Подтягиваем матчи и кэфы скраппера каждые 15 сек
+          setInterval(loadMatches, 15000);
         }
       } catch (err) {
         console.error("Ошибка синхронизации:", err);
       }
     }
 
-    // Загрузка матчей из базы (куда их пишет скраппер)
-async function loadMatches() {
-  try {
-    const res = await fetch('/api/matches');
-    const data = await res.json();
-    const container = document.getElementById('matches-container');
-    if (!data.matches) return;
-
-    container.innerHTML = '';
-    
-    // Сортируем матчи по времени (сначала ближайшие)
-    const sortedMatches = Object.entries(data.matches).sort((a, b) => {
-       return (a[1].start_time || 0) - (b[1].start_time || 0);
-    });
-
-    sortedMatches.forEach(([matchId, match]) => {
-      const isLive = match.status.includes('LIVE');
-      const card = document.createElement('div');
-      card.className = 'match-card';
-      
-      // Красивые названия для исходов
-      const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
-      
-      let oddsHtml = '';
-      Object.entries(match.odds).forEach(([outcome, coeff]) => {
-        if (!coeff) return; // Пропускаем пустые кэфы
+    async function loadMatches() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/matches`);
+        const data = await res.json();
+        const container = document.getElementById('matches-container');
         
-        // Проверка на изменение кэфа (анимация подсветки)
-        const oldCoeff = previousOdds[`${matchId}_${outcome}`];
-        let highlightStyle = '';
-        if (oldCoeff && oldCoeff !== coeff) {
-          highlightStyle = coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5);' : 'background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);';
+        if (!data.matches || Object.keys(data.matches).length === 0) {
+           container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding: 20px;">Матчи загружаются...</div>';
+           return;
         }
-        previousOdds[`${matchId}_${outcome}`] = coeff;
 
-        oddsHtml += `
-          <div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${matchId}', '${match.title}', '${outcomeNames[outcome] || outcome}', ${coeff})">
-            <span class="odd-name">${outcomeNames[outcome] || outcome}</span>
-            <span class="odd-val">${coeff}</span>
-          </div>
-        `;
-      });
-
-      // Логика для логотипов (если картинка не загрузилась, показываем первые 2 буквы)
-      const homeName = match.home || 'Хозяева';
-      const awayName = match.away || 'Гости';
-      
-      const homeLogoHtml = match.homeLogo 
-        ? `<img src="${match.homeLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>`
-        : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+        container.innerHTML = '';
         
-      const awayLogoHtml = match.awayLogo 
-        ? `<img src="${match.awayLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>`
-        : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
+        const sortedMatches = Object.entries(data.matches).sort((a, b) => {
+           return (a[1].start_time || 0) - (b[1].start_time || 0);
+        });
 
-      card.innerHTML = `
-        <div class="match-header">
-          ${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${match.status}</span>`}
-          <span>${match.league || 'Футбол'}</span> <!-- Теперь тут РПЛ, АПЛ и т.д. -->
-        </div>
-        <div class="teams-container">
-          <div class="team">
-            ${homeLogoHtml}
-            <div class="team-name">${homeName}</div>
-          </div>
-          <div class="score">${match.score || 'VS'}</div>
-          <div class="team">
-            ${awayLogoHtml}
-            <div class="team-name">${awayName}</div>
-          </div>
-        </div>
-        <div class="odds-grid">${oddsHtml}</div>
-      `;
-      container.appendChild(card);
-    });
-  } catch (e) {
-    console.error("Ошибка загрузки матчей:", e);
-  }
-}
+        sortedMatches.forEach(([matchId, match]) => {
+          if (matchId === 'match_fb_1') return; 
+
+          const isLive = (match.status || '').toUpperCase().includes('LIVE');
+          const card = document.createElement('div');
+          card.className = 'match-card';
+          
+          const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
+          
+          let oddsHtml = '';
+          if (match.odds) {
+            Object.entries(match.odds).forEach(([outcome, coeff]) => {
+              if (!coeff) return; 
+              
+              const oldCoeff = previousOdds[`${matchId}_${outcome}`];
+              let highlightStyle = '';
+              if (oldCoeff && oldCoeff !== coeff) {
+                highlightStyle = coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5);' : 'background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);';
+              }
+              previousOdds[`${matchId}_${outcome}`] = coeff;
+
+              oddsHtml += `
+                <div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${matchId}', '${match.title}', '${outcomeNames[outcome] || outcome}', ${coeff})">
+                  <span class="odd-name">${outcomeNames[outcome] || outcome}</span>
+                  <span class="odd-val">${coeff}</span>
+                </div>
+              `;
+            });
+          }
+
+          const homeName = match.home || 'Хозяева';
+          const awayName = match.away || 'Гости';
+          
+          const homeLogoHtml = match.homeLogo 
+            ? `<img src="${match.homeLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>`
+            : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+            
+          const awayLogoHtml = match.awayLogo 
+            ? `<img src="${match.awayLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>`
+            : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
+
+          card.innerHTML = `
+            <div class="match-header">
+              ${isLive ? `<span class="live-tag"><div class="live-dot"></div> LIVE</span>` : `<span>${match.status || 'Скоро'}</span>`}
+              <span>${match.league || 'Футбол'}</span>
+            </div>
+            <div class="teams-container">
+              <div class="team">
+                ${homeLogoHtml}
+                <div class="team-name">${homeName}</div>
+              </div>
+              <div class="score">${match.score || 'VS'}</div>
+              <div class="team">
+                ${awayLogoHtml}
+                <div class="team-name">${awayName}</div>
+              </div>
+            </div>
+            <div class="odds-grid">${oddsHtml}</div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (e) {
+        console.error("Ошибка загрузки матчей:", e);
+      }
+    }
 
     async function placeBetPrompt(matchId, matchTitle, outcome, coeff) {
       const amountStr = prompt(`Ставка на "${outcome}" (${coeff})\nВведите сумму в звездах (★):`, "50");
@@ -387,7 +393,7 @@ async function loadMatches() {
       }
 
       try {
-        const res = await fetch('/api/bets/place', {
+        const res = await fetch(`${API_BASE_URL}/api/bets/place`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -414,7 +420,6 @@ async function loadMatches() {
       }
     }
 
-    // Реальное пополнение через Telegram Stars Инвойсы
     async function handleTelegramInvoice() {
       const amount = parseInt(document.getElementById('deposit-amount').value);
       if (!amount || amount <= 0) {
@@ -423,7 +428,7 @@ async function loadMatches() {
       }
 
       try {
-        const res = await fetch('/api/cashier/invoice', {
+        const res = await fetch(`${API_BASE_URL}/api/cashier/invoice`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: currentUser.user_id, amount: amount })
@@ -432,7 +437,6 @@ async function loadMatches() {
         
         if (res.ok && data.invoice_link) {
           if (tg && tg.openInvoice) {
-            // Открытие нативного инвойса оплаты Telegram Stars внутри приложения
             tg.openInvoice(data.invoice_link, async (status) => {
               if (status === "paid") {
                 alert("Оплата прошла успешно! Баланс скоро обновится.");
@@ -450,10 +454,9 @@ async function loadMatches() {
       }
     }
 
-    // Исправленный внутренний WebSocket чат
     function initWebSocket() {
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
+      const wsUrl = API_BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/chat';
+      ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
@@ -461,10 +464,10 @@ async function loadMatches() {
       };
 
       ws.onclose = () => {
-        setTimeout(initWebSocket, 3000); // Автопереподключение при обрыве
+        setTimeout(initWebSocket, 3000); 
       };
 
-      fetch('/api/chat/history')
+      fetch(`${API_BASE_URL}/api/chat/history`)
         .then(r => r.json())
         .then(data => {
           const chatBox = document.getElementById('chat-box');
@@ -508,7 +511,7 @@ async function loadMatches() {
       if (!code || !currentUser) return;
 
       try {
-        const res = await fetch('/api/cashier/promo', {
+        const res = await fetch(`${API_BASE_URL}/api/cashier/promo`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: currentUser.user_id, code: code })
@@ -525,6 +528,74 @@ async function loadMatches() {
         }
       } catch (err) {
         alert("Ошибка соединения");
+      }
+    }
+
+    async function loadUserBets() {
+      if (!currentUser) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/user/bets?user_id=${currentUser.user_id}`);
+        const data = await res.json();
+        const activeBetsContainer = document.getElementById('active-bets');
+        activeBetsContainer.innerHTML = '';
+
+        if (!data.bets || data.bets.length === 0) {
+          activeBetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">Нет активных позиций</div>';
+          return;
+        }
+
+        data.bets.forEach(bet => {
+          const card = document.createElement('div');
+          card.className = 'history-card';
+          card.innerHTML = `
+            <div>
+              <div style="font-weight: 700; font-size: 0.9rem;">${bet.match_title}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Ставка: ${bet.outcome} @ ${bet.coefficient}</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-weight: 800; color: var(--accent);">${bet.amount} ★</div>
+              <div style="font-size: 0.7rem; color: var(--green);">Активна</div>
+            </div>
+          `;
+          activeBetsContainer.appendChild(card);
+        });
+      } catch (err) {
+        console.error("Ошибка загрузки ставок", err);
+      }
+    }
+
+    function updateUI() {
+      if (!currentUser) return;
+      document.getElementById("header-balance").innerText = `${currentUser.balance} ★`;
+      document.getElementById("profile-name").innerText = currentUser.first_name;
+      document.getElementById("profile-username").innerText = "@" + (currentUser.username || "user");
+      document.getElementById("stat-winrate").innerText = `${Math.round((currentUser.wins / (currentUser.total_bets || 1)) * 100)}%`;
+      document.getElementById("stat-count").innerText = currentUser.total_bets;
+      
+      if (currentUser.photo_url) {
+        document.getElementById("user-avatar").src = currentUser.photo_url;
+        document.getElementById("profile-avatar").src = currentUser.photo_url;
+      }
+
+      const profitEl = document.getElementById("chart-total");
+      const profit = currentUser.profit || 0;
+      profitEl.innerText = `${profit > 0 ? '+' : ''}${profit} ★`;
+      
+      const chartPath = document.getElementById("chart-path");
+      const chartFill = document.getElementById("chart-fill");
+
+      if (profit > 0) {
+        profitEl.className = "chart-val positive";
+        chartPath.setAttribute("stroke", "#10b981");
+        chartFill.setAttribute("fill", "rgba(16, 185, 129, 0.2)");
+      } else if (profit < 0) {
+        profitEl.className = "chart-val negative";
+        chartPath.setAttribute("stroke", "#ef4444");
+        chartFill.setAttribute("fill", "rgba(239, 68, 68, 0.2)");
+      } else {
+        profitEl.className = "chart-val neutral";
+        chartPath.setAttribute("stroke", "#8a819b");
+        chartFill.setAttribute("fill", "rgba(138, 129, 155, 0.2)");
       }
     }
 
