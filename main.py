@@ -2,20 +2,6 @@ import asyncio
 import json
 import urllib.parse
 import httpx
-import time
-from datetime import datetime
-from curl_cffi import requests as cffi_requests
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-import asyncio
-import json
-import urllib.parse
-import httpx
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -26,14 +12,11 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
 
-# ИМПОРТИРУЕМ НАШ СКРАППЕР
-import scraper 
-
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
-app = FastAPI(title="WinStars Platform")
+app = FastAPI(title="WinStars API")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -56,10 +39,8 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
-            try:
-                await connection.send_text(json.dumps(message))
-            except:
-                pass
+            try: await connection.send_text(json.dumps(message))
+            except: pass
 
 manager = ConnectionManager()
 
@@ -74,20 +55,11 @@ def verify_telegram_data(init_data: str) -> dict:
         return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
 
 class BetCreateRequest(BaseModel):
-    user_id: int
-    match_id: str
-    match_title: str
-    outcome: str
-    coefficient: float
-    amount: int
-
+    user_id: int; match_id: str; match_title: str; outcome: str; coefficient: float; amount: int
 class InvoiceRequest(BaseModel):
-    user_id: int
-    amount: int
-
+    user_id: int; amount: int
 class PromoRequest(BaseModel):
-    user_id: int
-    code: str
+    user_id: int; code: str
 
 async def firebase_get(path: str):
     async with httpx.AsyncClient() as client:
@@ -111,38 +83,27 @@ async def firebase_post(path: str, data: dict):
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 [Main] Запуск WinStars Platform...")
+    print("🚀 [Main] Запуск WinStars API (без скраппера)...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
-    
-    # Запускаем скраппер в фоне
-    asyncio.create_task(scraper.fonbet_worker())
-    # Запускаем бота
     asyncio.create_task(dp.start_polling(bot))
 
 @app.get("/api/user/sync")
 async def sync_user(initData: str = Query("")):
     user_data = verify_telegram_data(initData)
     user_id = str(user_data.get("id", 12345678))
-    
     existing_user = await firebase_get(f"users/{user_id}")
     if not existing_user:
         default_user = {
-            "user_id": user_id,
-            "username": user_data.get("username", "user"),
+            "user_id": user_id, "username": user_data.get("username", "user"),
             "first_name": user_data.get("first_name", "Игрок"),
             "photo_url": user_data.get("photo_url", f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}"),
-            "balance": 0, # Убрали 250 звезд
-            "total_bets": 0,
-            "wins": 0,
-            "profit": 0
+            "balance": 0, "total_bets": 0, "wins": 0, "profit": 0
         }
         await firebase_put(f"users/{user_id}", default_user)
-        user_info = default_user
-    else:
-        user_info = existing_user
-    return {"status": "ok", "user": user_info}
+        return {"status": "ok", "user": default_user}
+    return {"status": "ok", "user": existing_user}
 
 @app.get("/api/matches")
 async def get_matches():
@@ -152,8 +113,7 @@ async def get_matches():
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
     bets_dict = await firebase_get(f"users/{user_id}/bets")
-    if not bets_dict:
-        return {"bets": []}
+    if not bets_dict: return {"bets": []}
     return {"bets": [{"id": k, **v} for k, v in bets_dict.items()]}
 
 @app.post("/api/bets/place")
@@ -164,7 +124,6 @@ async def place_bet(req: BetCreateRequest):
     
     new_balance = user.get("balance", 0) - req.amount
     bet_data = {"match_id": req.match_id, "match_title": req.match_title, "outcome": req.outcome, "coefficient": req.coefficient, "amount": req.amount, "status": "active"}
-    
     await firebase_post(f"users/{req.user_id}/bets", bet_data)
     await firebase_patch(f"users/{req.user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
     return {"status": "ok", "new_balance": new_balance, "message": "Ставка принята!"}
