@@ -216,7 +216,6 @@
     let currentLeague = 'all'; 
     let previousOdds = {}; 
 
-    // Теперь названия в скраппере сокращаются, поэтому тут они короткие
     const LEAGUE_PRIORITY = {
       "АПЛ": 1, "Ла Лига": 2, "Серия А": 3, "Бундеслига": 4, "Лига 1": 5,
       "РПЛ": 6, "Лига Чемпионов": 7, "Лига Европы": 8, "Лига Конференций": 9,
@@ -346,9 +345,9 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ОБХОД ЗАЩИТЫ ФОНБЕТА ЧЕРЕЗ ПРОКСИ
-        const homeLogoProxy = match.homeLogo ? `https://images.weserv.nl/?url=${encodeURIComponent(match.homeLogo)}` : '';
-        const awayLogoProxy = match.awayLogo ? `https://images.weserv.nl/?url=${encodeURIComponent(match.awayLogo)}` : '';
+        // ИСПОЛЬЗУЕМ МОЩНЫЙ ПРОКСИ WSrv.nl
+        const homeLogoProxy = match.homeLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.homeLogo)}&w=100&h=100&fit=contain&output=png` : '';
+        const awayLogoProxy = match.awayLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.awayLogo)}&w=100&h=100&fit=contain&output=png` : '';
 
         const homeLogoHtml = match.homeLogo ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
         const awayLogoHtml = match.awayLogo ? `<img src="${awayLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
