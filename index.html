@@ -10,7 +10,22 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <style>
     :root { --bg-dark: #09070f; --bg-card: #130f1e; --bg-card-hover: #1b162b; --border: rgba(157, 78, 221, 0.15); --accent: #9d4edd; --text-main: #f3f0f8; --text-muted: #8a819b; --green: #10b981; --red: #ef4444; --nav-height: 64px; --header-height: 60px; --radius: 16px; }
+    
     .team-logo-img { width: 42px; height: 42px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 4px; }
+    
+    /* КРАСИВАЯ ЗАГЛУШКА ВМЕСТО КАРТИНКИ */
+    .team-logo { 
+      width: 42px; height: 42px; 
+      background: linear-gradient(135deg, rgba(157, 78, 221, 0.9), rgba(123, 44, 191, 0.9)); 
+      color: #fff; 
+      border-radius: 50%; 
+      display: flex; align-items: center; justify-content: center; 
+      font-weight: 800; font-size: 0.95rem; 
+      border: 1px solid rgba(255,255,255,0.2); 
+      box-shadow: 0 4px 10px rgba(157, 78, 221, 0.3), inset 0 2px 4px rgba(255,255,255,0.2); 
+      text-shadow: 0 1px 2px rgba(0,0,0,0.4); 
+    }
+    
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-dark); color: var(--text-main); overflow: hidden; height: 100vh; width: 100vw; }
     .bg-noise { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.03; pointer-events: none; z-index: 999; }
@@ -53,7 +68,6 @@
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .teams-container { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 14px; }
     .team { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
-    .team-logo { width: 42px; height: 42px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; border: 1px solid var(--border); font-size: 0.8rem; }
     .team-name { font-size: 0.85rem; font-weight: 600; }
     .score { font-size: 1.4rem; font-weight: 800; letter-spacing: 2px; color: var(--accent); }
     .odds-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -345,16 +359,23 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ПРОКСИ WSRV.NL
-        const homeLogoProxy = match.homeLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.homeLogo)}&w=100&h=100&fit=contain` : '';
-        const awayLogoProxy = match.awayLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.awayLogo)}&w=100&h=100&fit=contain` : '';
+        // КАСКАД ПРОКСИ (3 попытки)
+        const directLogo = match.homeLogo;
+        const proxy1 = `https://wsrv.nl/?url=${encodeURIComponent(directLogo)}&w=100&h=100&fit=contain&output=png`;
+        const proxy2 = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(directLogo)}`;
+        const proxy3 = `https://corsproxy.io/?${encodeURIComponent(directLogo)}`;
 
         const homeLogoHtml = match.homeLogo 
-          ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` 
+          ? `<img src="${proxy1}" class="team-logo-img" onerror="if (this.src !== '${proxy2}') { this.src = '${proxy2}'; } else if (this.src !== '${proxy3}') { this.src = '${proxy3}'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
           
+        const directAway = match.awayLogo;
+        const proxyAway1 = `https://wsrv.nl/?url=${encodeURIComponent(directAway)}&w=100&h=100&fit=contain&output=png`;
+        const proxyAway2 = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(directAway)}`;
+        const proxyAway3 = `https://corsproxy.io/?${encodeURIComponent(directAway)}`;
+
         const awayLogoHtml = match.awayLogo 
-          ? `<img src="${awayLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` 
+          ? `<img src="${proxyAway1}" class="team-logo-img" onerror="if (this.src !== '${proxyAway2}') { this.src = '${proxyAway2}'; } else if (this.src !== '${proxyAway3}') { this.src = '${proxyAway3}'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
         card.innerHTML = `
