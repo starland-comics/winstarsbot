@@ -345,9 +345,9 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ИСПОЛЬЗУЕМ МОЩНЫЙ ПРОКСИ WSrv.nl
-        const homeLogoProxy = match.homeLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.homeLogo)}&w=100&h=100&fit=contain&output=png` : '';
-        const awayLogoProxy = match.awayLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.awayLogo)}&w=100&h=100&fit=contain&output=png` : '';
+        // ИСПОЛЬЗУЕМ API ALLORIGINS ДЛЯ ОБХОДА ЗАЩИТЫ
+        const homeLogoProxy = match.homeLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.homeLogo)}` : '';
+        const awayLogoProxy = match.awayLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.awayLogo)}` : '';
 
         const homeLogoHtml = match.homeLogo ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
         const awayLogoHtml = match.awayLogo ? `<img src="${awayLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
