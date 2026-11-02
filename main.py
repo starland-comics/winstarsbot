@@ -3,10 +3,8 @@ import json
 import urllib.parse
 import httpx
 import os
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
@@ -27,29 +25,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ГЛОБАЛЬНЫЙ КЛИЕНТ ДЛЯ HTTP (ЭКОНОМИТ ПАМЯТЬ)
-http_client = httpx.AsyncClient(timeout=10.0)
+# Ограничиваем пул соединений, чтобы не жрало память
+limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await http_client.aclose()
 
+# --- ИСПРАВЛЕННЫЙ МЕНЕДЖЕР ВЕБСОКЕТОВ (БЕЗ УТЕЧЕК ПАМЯТИ) ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
+        
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+            
     async def broadcast(self, message: dict):
-        # Копируем список, чтобы избежать ошибки при изменении во время цикла
-        for connection in list(self.active_connections):
+        dead_connections = []
+        for connection in self.active_connections:
             try: 
                 await connection.send_text(json.dumps(message))
-            except: 
-                pass
+            except Exception: 
+                dead_connections.append(connection)
+        # Удаляем сломанные соединения, чтобы они не висели в памяти
+        for conn in dead_connections:
+            self.disconnect(conn)
 
 manager = ConnectionManager()
 
@@ -63,13 +69,7 @@ def verify_telegram_data(init_data: str) -> dict:
     except Exception:
         return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
 
-class BetCreateRequest(BaseModel):
-    user_id: int; match_id: str; match_title: str; outcome: str; coefficient: float; amount: int
-class InvoiceRequest(BaseModel):
-    user_id: int; amount: int
-class PromoRequest(BaseModel):
-    user_id: int; code: str
-
+# --- FIREBASE HELPERS ---
 async def firebase_get(path: str):
     try:
         resp = await http_client.get(f"{FIREBASE_DB_URL}/{path}.json")
@@ -77,27 +77,26 @@ async def firebase_get(path: str):
     except: return None
 
 async def firebase_put(path: str, data: dict):
-    try:
-        await http_client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+    try: await http_client.put(f"{FIREBASE_DB_URL}/{path}.json", json=data)
     except: pass
 
 async def firebase_patch(path: str, data: dict):
-    try:
-        await http_client.patch(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+    try: await http_client.patch(f"{FIREBASE_DB_URL}/{path}.json", json=data)
     except: pass
 
 async def firebase_post(path: str, data: dict):
-    try:
-        await http_client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+    try: await http_client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
     except: pass
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 [Main] Запуск WinStars API...")
+    print("🚀 [Main] Запуск WinStars API (оптимизированный)...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     asyncio.create_task(dp.start_polling(bot))
+
+# --- API ЭНДПОИНТЫ (БЕЗ PYDANTIC ДЛЯ ЭКОНОМИИ ПАМЯТИ) ---
 
 @app.get("/api/user/sync")
 async def sync_user(initData: str = Query("")):
@@ -127,27 +126,39 @@ async def get_user_bets(user_id: int):
     return {"bets": [{"id": k, **v} for k, v in bets_dict.items()]}
 
 @app.post("/api/bets/place")
-async def place_bet(req: BetCreateRequest):
-    user = await firebase_get(f"users/{req.user_id}")
-    if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if user.get("balance", 0) < req.amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
+async def place_bet(request: Request):
+    req = await request.json()
+    user_id = req.get("user_id")
+    amount = req.get("amount")
     
-    new_balance = user.get("balance", 0) - req.amount
-    bet_data = {"match_id": req.match_id, "match_title": req.match_title, "outcome": req.outcome, "coefficient": req.coefficient, "amount": req.amount, "status": "active"}
-    await firebase_post(f"users/{req.user_id}/bets", bet_data)
-    await firebase_patch(f"users/{req.user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
+    user = await firebase_get(f"users/{user_id}")
+    if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if user.get("balance", 0) < amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
+    
+    new_balance = user.get("balance", 0) - amount
+    bet_data = {
+        "match_id": req.get("match_id"), "match_title": req.get("match_title"), 
+        "outcome": req.get("outcome"), "coefficient": req.get("coefficient"), 
+        "amount": amount, "status": "active"
+    }
+    await firebase_post(f"users/{user_id}/bets", bet_data)
+    await firebase_patch(f"users/{user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
     return {"status": "ok", "new_balance": new_balance, "message": "Ставка принята!"}
 
 @app.post("/api/cashier/invoice")
-async def create_invoice(req: InvoiceRequest):
-    payload = f"topup_{req.user_id}_{req.amount}"
+async def create_invoice(request: Request):
+    req = await request.json()
+    user_id = req.get("user_id")
+    amount = req.get("amount")
+    
+    payload = f"topup_{user_id}_{amount}"
     try:
         link = await bot.create_invoice_link(
             title="WinStars", 
-            description=f"Пополнение на {req.amount} ★", 
+            description=f"Пополнение на {amount} ★", 
             payload=payload, 
             currency="XTR", 
-            prices=[LabeledPrice(label="Звёзды", amount=req.amount)]
+            prices=[LabeledPrice(label="Звёзды", amount=amount)]
         )
         return {"status": "ok", "invoice_link": link}
     except Exception as e:
@@ -155,12 +166,16 @@ async def create_invoice(req: InvoiceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/cashier/promo")
-async def activate_promo(req: PromoRequest):
-    promo = await firebase_get(f"promo_codes/{req.code.upper()}")
+async def activate_promo(request: Request):
+    req = await request.json()
+    code = req.get("code").upper()
+    user_id = req.get("user_id")
+    
+    promo = await firebase_get(f"promo_codes/{code}")
     if not promo: raise HTTPException(status_code=400, detail="Промокод не найден")
-    user = await firebase_get(f"users/{req.user_id}")
+    user = await firebase_get(f"users/{user_id}")
     new_balance = user.get("balance", 0) + promo.get("reward_stars", 50)
-    await firebase_patch(f"users/{req.user_id}", {"balance": new_balance})
+    await firebase_patch(f"users/{user_id}", {"balance": new_balance})
     return {"status": "ok", "message": f"Начислено {promo.get('reward_stars', 50)} ★", "new_balance": new_balance}
 
 @app.get("/api/chat/history")
@@ -182,7 +197,10 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
     except Exception:
         manager.disconnect(websocket)
+    finally:
+        manager.disconnect(websocket) # Гарантированно удаляем при выходе
 
+# --- TELEGRAM BOT ---
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
@@ -206,4 +224,5 @@ async def cmd_start(message: types.Message):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("SERVER_PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    # Важно: workers=1 и отключение логов uvicorn для экономии памяти
+    uvicorn.run(app, host="0.0.0.0", port=port, workers=1, log_level="warning")
