@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ограничиваем пул соединений для экономии памяти
+# Один глобальный клиент для экономии памяти (256 МБ)
 limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
 http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 
