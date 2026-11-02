@@ -217,10 +217,10 @@
     let previousOdds = {}; 
 
     const LEAGUE_PRIORITY = {
-      "АПЛ": 1, "Ла Лига": 2, "Серия А": 3, "Бундеслига": 4, "Лига 1": 5,
-      "РПЛ": 6, "Лига Чемпионов": 7, "Лига Европы": 8, "Лига Конференций": 9,
-      "ФНЛ": 10, "Саудовская Аравия": 11, "Эредивизи": 12, "MLS": 13,
-      "Примейра": 14, "Чемпионшип": 15, "Ла Лига 2": 16, "ЧМ": 17, "ЧЕ": 18, "Лига Наций": 19
+      "АПЛ": 1, "ЛА ЛИГА": 2, "СЕРИЯ А": 3, "БУНДЕСЛИГА": 4, "ЛИГА 1": 5,
+      "РПЛ": 6, "ЛИГА ЧЕМПИОНОВ": 7, "ЛИГА ЕВРОПЫ": 8, "ЛИГА КОНФЕРЕНЦИЙ": 9,
+      "ФНЛ": 10, "САУДОВСКАЯ АРАВИЯ": 11, "ЭРЕДИВИЗИ": 12, "MLS": 13,
+      "ПРИМЕЙРА": 14, "ЧЕМПИОНШИП": 15, "ЛА ЛИГА 2": 16, "ЧМ": 17, "ЧЕ": 18, "ЛИГА НАЦИЙ": 19
     };
 
     const tgUser = tg?.initDataUnsafe?.user;
@@ -345,12 +345,13 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ИСПОЛЬЗУЕМ API ALLORIGINS ДЛЯ ОБХОДА ЗАЩИТЫ
-        const homeLogoProxy = match.homeLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.homeLogo)}` : '';
-        const awayLogoProxy = match.awayLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.awayLogo)}` : '';
+        // ПРОКСИ ИЛИ ПРЯМАЯ ЗАГРУЗКА
+        const homeLogoProxy = match.homeLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.homeLogo)}&w=100&h=100&fit=contain` : '';
+        const awayLogoProxy = match.awayLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.awayLogo)}&w=100&h=100&fit=contain` : '';
 
-        const homeLogoHtml = match.homeLogo ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
-        const awayLogoHtml = match.awayLogo ? `<img src="${awayLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
+        // Пытаемся загрузить напрямую с referrerpolicy, если падает - через прокси
+        const homeLogoHtml = match.homeLogo ? `<img src="${match.homeLogo}" referrerpolicy="no-referrer" crossorigin="anonymous" class="team-logo-img" onerror="this.onerror=null; this.src='${homeLogoProxy}'; this.onerror=()=>{this.style.display='none';this.nextElementSibling.style.display='flex';}"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+        const awayLogoHtml = match.awayLogo ? `<img src="${match.awayLogo}" referrerpolicy="no-referrer" crossorigin="anonymous" class="team-logo-img" onerror="this.onerror=null; this.src='${awayLogoProxy}'; this.onerror=()=>{this.style.display='none';this.nextElementSibling.style.display='flex';}"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
         card.innerHTML = `
           <div class="match-header">
