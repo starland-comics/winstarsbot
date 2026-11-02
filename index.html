@@ -345,9 +345,9 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ЗАГРУЗКА ЛОГОТИПОВ ЧЕРЕЗ НАШ СЕРВЕР
-        const homeLogoProxy = match.homeLogo ? `${API_BASE_URL}/api/proxy-image?url=${encodeURIComponent(match.homeLogo)}` : '';
-        const awayLogoProxy = match.awayLogo ? `${API_BASE_URL}/api/proxy-image?url=${encodeURIComponent(match.awayLogo)}` : '';
+        // ПРОКСИ WSRV.NL
+        const homeLogoProxy = match.homeLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.homeLogo)}&w=100&h=100&fit=contain` : '';
+        const awayLogoProxy = match.awayLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.awayLogo)}&w=100&h=100&fit=contain` : '';
 
         const homeLogoHtml = match.homeLogo 
           ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` 
