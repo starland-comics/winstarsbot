@@ -4,6 +4,7 @@ import urllib.parse
 import httpx
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
@@ -25,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ограничиваем пул соединений, чтобы не жрало память
+# Ограничиваем пул соединений для экономии памяти
 limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
 http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 
@@ -33,19 +34,15 @@ http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 async def shutdown_event():
     await http_client.aclose()
 
-# --- ИСПРАВЛЕННЫЙ МЕНЕДЖЕР ВЕБСОКЕТОВ (БЕЗ УТЕЧЕК ПАМЯТИ) ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
-        
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-            
     async def broadcast(self, message: dict):
         dead_connections = []
         for connection in self.active_connections:
@@ -53,7 +50,6 @@ class ConnectionManager:
                 await connection.send_text(json.dumps(message))
             except Exception: 
                 dead_connections.append(connection)
-        # Удаляем сломанные соединения, чтобы они не висели в памяти
         for conn in dead_connections:
             self.disconnect(conn)
 
@@ -69,7 +65,6 @@ def verify_telegram_data(init_data: str) -> dict:
     except Exception:
         return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
 
-# --- FIREBASE HELPERS ---
 async def firebase_get(path: str):
     try:
         resp = await http_client.get(f"{FIREBASE_DB_URL}/{path}.json")
@@ -90,13 +85,26 @@ async def firebase_post(path: str, data: dict):
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 [Main] Запуск WinStars API (оптимизированный)...")
+    print("🚀 [Main] Запуск WinStars API...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     asyncio.create_task(dp.start_polling(bot))
 
-# --- API ЭНДПОИНТЫ (БЕЗ PYDANTIC ДЛЯ ЭКОНОМИИ ПАМЯТИ) ---
+# --- ПРОКСИ ДЛЯ ЛОГОТИПОВ (Обход защиты Фонбета) ---
+@app.get("/api/proxy-image")
+async def proxy_image(url: str):
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.fon.bet/"
+        }
+        resp = await http_client.get(url, headers=headers, timeout=5.0)
+        if resp.status_code == 200:
+            return Response(content=resp.content, media_type="image/png")
+    except Exception:
+        pass
+    return Response(status_code=404)
 
 @app.get("/api/user/sync")
 async def sync_user(initData: str = Query("")):
@@ -198,9 +206,8 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         manager.disconnect(websocket)
     finally:
-        manager.disconnect(websocket) # Гарантированно удаляем при выходе
+        manager.disconnect(websocket)
 
-# --- TELEGRAM BOT ---
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
@@ -224,5 +231,4 @@ async def cmd_start(message: types.Message):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("SERVER_PORT", 8000))
-    # Важно: workers=1 и отключение логов uvicorn для экономии памяти
     uvicorn.run(app, host="0.0.0.0", port=port, workers=1, log_level="warning")
