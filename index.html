@@ -182,7 +182,7 @@
     let currentUser = null; let ws = null; let allMatchesRaw = []; 
     let currentMode = 'live'; let currentLeague = 'all'; let previousOdds = {}; 
 
-    const LEAGUE_PRIORITY = { "Английская Премьер-лига": 1, "Испанская Ла Лига": 2, "Итальянская Серия А": 3, "Немецкая Бундеслига": 4, "Французская Лига 1": 5, "РПЛ": 6, "MLS": 7, "Саудовская Про-лига": 8 };
+    const LEAGUE_PRIORITY = { "Английская Премьер-лига": 1, "АПЛ": 1, "Испанская Ла Лига": 2, "Ла Лига": 2, "Итальянская Серия А": 3, "Серия А": 3, "Немецкая Бундеслига": 4, "Бундеслига": 4, "Французская Лига 1": 5, "Лига 1": 5, "РПЛ": 6, "Лига Чемпионов": 7, "MLS": 8, "МЛС": 8 };
 
     const tgUser = tg?.initDataUnsafe?.user;
     if (tgUser) {
@@ -212,10 +212,7 @@
         
         if (data.matches) {
           allMatchesRaw = Object.entries(data.matches)
-            .filter(([id, m]) => {
-              if (id === 'match_fb_1' || !m || !m.odds || !m.status) return false;
-              return true;
-            })
+            .filter(([id, m]) => id !== 'match_fb_1' && m.odds && m.status)
             .map(([id, m]) => ({ id, ...m }));
             
           updateLeagueDropdown(); renderMatches();
@@ -224,15 +221,13 @@
     }
 
     function updateLeagueDropdown() {
-      try {
-        const leagues = new Set(allMatchesRaw.map(m => m.league || 'Футбол'));
-        const sortedLeagues = Array.from(leagues).sort((a, b) => (LEAGUE_PRIORITY[a] || 99) - (LEAGUE_PRIORITY[b] || 99));
-        const select = document.getElementById('league-select');
-        const currentVal = select.value;
-        select.innerHTML = '<option value="all">Все лиги</option>';
-        sortedLeagues.forEach(l => { select.innerHTML += `<option value="${l}">${l}</option>`; });
-        select.value = currentVal || 'all'; currentLeague = select.value;
-      } catch (e) { console.error(e); }
+      const leagues = new Set(allMatchesRaw.map(m => m.league || 'Футбол'));
+      const sortedLeagues = Array.from(leagues).sort((a, b) => (LEAGUE_PRIORITY[a] || 99) - (LEAGUE_PRIORITY[b] || 99) || a.localeCompare(b));
+      const select = document.getElementById('league-select');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="all">Все лиги</option>';
+      sortedLeagues.forEach(l => { select.innerHTML += `<option value="${l}">${l}</option>`; });
+      select.value = currentVal || 'all'; currentLeague = select.value;
     }
 
     function setMode(mode) {
@@ -261,36 +256,49 @@
       }
 
       filtered.forEach(match => {
-        try {
-          const isLive = match.status.includes('LIVE');
-          const card = document.createElement('div'); card.className = 'match-card';
-          const oddsOrder = ['1', 'X', '2']; const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
-          let oddsHtml = '';
-          
-          oddsOrder.forEach(outcome => {
-            const coeff = match.odds[outcome]; if (!coeff) return;
-            const oldCoeff = previousOdds[`${match.id}_${outcome}`];
-            let highlightStyle = (oldCoeff && oldCoeff !== coeff) ? (coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
-            previousOdds[`${match.id}_${outcome}`] = coeff;
-            oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${outcomeNames[outcome]}', ${coeff})"><span class="odd-name">${outcomeNames[outcome]}</span><span class="odd-val">${coeff}</span></div>`;
-          });
-
-          const homeName = match.home || 'Хозяева'; const awayName = match.away || 'Гости';
-          const homeLogoHtml = match.homeLogo ? `<img src="${match.homeLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
-          const awayLogoHtml = match.awayLogo ? `<img src="${match.awayLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
-
-          card.innerHTML = `
-            <div class="match-header">${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${match.status}</span>`}<span>${match.league || 'Футбол'}</span></div>
-            <div class="teams-container">
-              <div class="team">${homeLogoHtml}<div class="team-name">${homeName}</div></div>
-              <div class="score">${match.score || 'VS'}</div>
-              <div class="team">${awayLogoHtml}<div class="team-name">${awayName}</div></div>
-            </div>
-            <div class="odds-grid">${oddsHtml}</div>`;
-          container.appendChild(card);
-        } catch (err) {
-          console.error("Ошибка рендера карточки:", err, match);
+        const isLive = match.status.includes('LIVE');
+        const card = document.createElement('div'); card.className = 'match-card';
+        
+        // ФОРМАТИРОВАНИЕ ВРЕМЕНИ И ДАТЫ ДЛЯ "СКОРО"
+        let timeDisplay = match.status;
+        if (!isLive && match.start_time) {
+          const date = new Date(match.start_time * 1000);
+          const day = String(date.getDate()).padStart(2, '0');
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const hours = String(date.getHours()).padStart(2, '0');
+          const minutes = String(date.getMinutes()).padStart(2, '0');
+          timeDisplay = `${day}.${month} ${hours}:${minutes}`;
         }
+
+        const oddsOrder = ['1', 'X', '2']; const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
+        let oddsHtml = '';
+        
+        oddsOrder.forEach(outcome => {
+          const coeff = match.odds[outcome]; if (!coeff) return;
+          const oldCoeff = previousOdds[`${match.id}_${outcome}`];
+          let highlightStyle = (oldCoeff && oldCoeff !== coeff) ? (coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
+          previousOdds[`${match.id}_${outcome}`] = coeff;
+          oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${outcomeNames[outcome]}', ${coeff})"><span class="odd-name">${outcomeNames[outcome]}</span><span class="odd-val">${coeff}</span></div>`;
+        });
+
+        const homeName = match.home || 'Хозяева'; const awayName = match.away || 'Гости';
+        
+        // ЛОГОТИПЫ (плюс referrerpolicy для обхода защиты)
+        const homeLogoHtml = match.homeLogo ? `<img src="${match.homeLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+        const awayLogoHtml = match.awayLogo ? `<img src="${match.awayLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
+
+        card.innerHTML = `
+          <div class="match-header">
+            ${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${timeDisplay}</span>`}
+            <span>${match.league || 'Футбол'}</span>
+          </div>
+          <div class="teams-container">
+            <div class="team">${homeLogoHtml}<div class="team-name">${homeName}</div></div>
+            <div class="score">${match.score || 'VS'}</div>
+            <div class="team">${awayLogoHtml}<div class="team-name">${awayName}</div></div>
+          </div>
+          <div class="odds-grid">${oddsHtml}</div>`;
+        container.appendChild(card);
       });
     }
 
