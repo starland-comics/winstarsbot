@@ -345,16 +345,16 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ТРОЙНАЯ ЗАЩИТА ДЛЯ ЛОГОТИПОВ
-        const homeLogoProxy = match.homeLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.homeLogo)}&w=100&h=100&fit=contain` : '';
-        const awayLogoProxy = match.awayLogo ? `https://wsrv.nl/?url=${encodeURIComponent(match.awayLogo)}&w=100&h=100&fit=contain` : '';
+        // МОЩНЫЙ ПРОКСИ ДЛЯ ЛОГОТИПОВ
+        const homeLogoProxy = match.homeLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.homeLogo)}` : '';
+        const awayLogoProxy = match.awayLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.awayLogo)}` : '';
 
         const homeLogoHtml = match.homeLogo 
-          ? `<img src="${match.homeLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.onerror=null; this.src='${homeLogoProxy}'; this.onerror=()=>{this.style.display='none';this.nextElementSibling.style.display='flex';}"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` 
+          ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
           
         const awayLogoHtml = match.awayLogo 
-          ? `<img src="${match.awayLogo}" referrerpolicy="no-referrer" class="team-logo-img" onerror="this.onerror=null; this.src='${awayLogoProxy}'; this.onerror=()=>{this.style.display='none';this.nextElementSibling.style.display='flex';}"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` 
+          ? `<img src="${awayLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
         card.innerHTML = `
