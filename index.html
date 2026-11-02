@@ -10,21 +10,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <style>
     :root { --bg-dark: #09070f; --bg-card: #130f1e; --bg-card-hover: #1b162b; --border: rgba(157, 78, 221, 0.15); --accent: #9d4edd; --text-main: #f3f0f8; --text-muted: #8a819b; --green: #10b981; --red: #ef4444; --nav-height: 64px; --header-height: 60px; --radius: 16px; }
-    
-    /* Стиль для картинок логотипов */
     .team-logo-img { width: 42px; height: 42px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 4px; }
-    
-    /* Стиль для текстового фолбэка, если логотипа нет в базе */
-    .team-logo { 
-      width: 42px; height: 42px; 
-      background: linear-gradient(135deg, rgba(157, 78, 221, 0.6), rgba(123, 44, 191, 0.6)); 
-      color: #fff; 
-      border-radius: 50%; 
-      display: flex; align-items: center; justify-content: center; 
-      font-weight: 800; font-size: 0.85rem; 
-      border: 1px solid rgba(255,255,255,0.1); 
-    }
-    
+    .team-logo { width: 42px; height: 42px; background: linear-gradient(135deg, rgba(157, 78, 221, 0.6), rgba(123, 44, 191, 0.6)); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.1); }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-dark); color: var(--text-main); overflow: hidden; height: 100vh; width: 100vw; }
     .bg-noise { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.03; pointer-events: none; z-index: 999; }
@@ -344,21 +331,27 @@
           timeDisplay = `${day}.${month} ${hours}:${minutes}`;
         }
 
-        const oddsOrder = ['1', 'X', '2']; const outcomeNames = { "1": "П1", "X": "Х", "2": "П2" };
-        let oddsHtml = '';
+        // Всегда рендерим П1, Х, П2. Если кэфа нет - ставим "-"
+        const outcomes = [
+          { key: '1', label: 'П1' },
+          { key: 'X', label: 'Х' },
+          { key: '2', label: 'П2' }
+        ];
         
-        oddsOrder.forEach(outcome => {
-          const coeff = match.odds[outcome]; if (!coeff) return;
-          const oldCoeff = previousOdds[`${match.id}_${outcome}`];
-          let highlightStyle = (oldCoeff && oldCoeff !== coeff) ? (coeff > oldCoeff ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
-          previousOdds[`${match.id}_${outcome}`] = coeff;
-          oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${outcomeNames[outcome]}', ${coeff})"><span class="odd-name">${outcomeNames[outcome]}</span><span class="odd-val">${coeff}</span></div>`;
+        let oddsHtml = '';
+        outcomes.forEach(o => {
+          const coeff = match.odds[o.key] || '-';
+          const oldCoeff = previousOdds[`${match.id}_${o.key}`];
+          let highlightStyle = (oldCoeff && oldCoeff !== coeff && coeff !== '-') ? (parseFloat(coeff) > parseFloat(oldCoeff) ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
+          
+          if (coeff !== '-') previousOdds[`${match.id}_${o.key}`] = coeff;
+          
+          oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${o.label}', ${coeff === '-' ? 0 : coeff})"><span class="odd-name">${o.label}</span><span class="odd-val">${coeff}</span></div>`;
         });
 
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // ИСПОЛЬЗУЕМ ПРЯМЫЕ ССЫЛКИ ИЗ БАЗЫ BSD
         const homeLogoUrl = match.homeLogo || '';
         const awayLogoUrl = match.awayLogo || '';
 
@@ -386,6 +379,8 @@
     }
 
     async function placeBetPrompt(matchId, matchTitle, outcome, coeff) {
+      if (coeff === 0) return alert("Коэффициент на этот исход недоступен");
+      
       const amountStr = prompt(`Ставка на "${outcome}" (${coeff})\nВведите сумму в звездах (★):`, "50");
       if (!amountStr) return;
       const amount = parseInt(amountStr);
