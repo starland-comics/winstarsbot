@@ -345,9 +345,9 @@
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
         
-        // МОЩНЫЙ ПРОКСИ ДЛЯ ЛОГОТИПОВ
-        const homeLogoProxy = match.homeLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.homeLogo)}` : '';
-        const awayLogoProxy = match.awayLogo ? `https://api.allorigins.win/raw?url=${encodeURIComponent(match.awayLogo)}` : '';
+        // ЗАГРУЗКА ЛОГОТИПОВ ЧЕРЕЗ НАШ СЕРВЕР
+        const homeLogoProxy = match.homeLogo ? `${API_BASE_URL}/api/proxy-image?url=${encodeURIComponent(match.homeLogo)}` : '';
+        const awayLogoProxy = match.awayLogo ? `${API_BASE_URL}/api/proxy-image?url=${encodeURIComponent(match.awayLogo)}` : '';
 
         const homeLogoHtml = match.homeLogo 
           ? `<img src="${homeLogoProxy}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>` 
