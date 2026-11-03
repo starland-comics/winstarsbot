@@ -353,14 +353,10 @@
         const isLive = m.status.includes('LIVE');
         const isStarted = m.start_time && m.start_time < now;
         
-        // Логика:
-        // В режиме "Live": показываем, если это LIVE ИЛИ если матч уже начался (даже без статуса LIVE)
-        // В режиме "Скоро": показываем, если это НЕ LIVE и матч ЕЩЕ НЕ начался
-        
         if (currentMode === 'live') {
-            if (!isLive && !isStarted) return false; // Еще не начался
+            if (!isLive && !isStarted) return false;
         } else {
-            if (isLive || isStarted) return false; // Уже начался или в лайве
+            if (isLive || isStarted) return false;
         }
 
         return (currentLeague === 'all' || m.league === currentLeague);
@@ -391,7 +387,7 @@
           const minutes = String(date.getMinutes()).padStart(2, '0');
           timeDisplay = `${day}.${month} ${hours}:${minutes}`;
         } else if (!isLive && match.start_time && match.start_time <= now) {
-            timeDisplay = 'ИДЕТ'; // Матч начался, но статус не обновился
+            timeDisplay = 'ИДЕТ';
         }
 
         const outcomes = [
