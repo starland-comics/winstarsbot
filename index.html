@@ -65,7 +65,7 @@
     .odd-val { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
 
     /* Купон (плавающая панель) */
-    .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(90deg, #e67e22, #d35400); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
+    .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(135deg, var(--accent), #7b2cbf); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
     .bet-slip-bar.active { display: flex; }
     .bet-slip-info { display: flex; flex-direction: column; }
     .bet-slip-count { font-size: 0.8rem; opacity: 0.9; }
@@ -224,7 +224,7 @@
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
         <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">RDG · ПРОГНОЗ</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">WINSTARS · ПРОГНОЗ</div>
           <div id="slip-type-title">Экспресс · 1 матч</div>
         </div>
         <button class="modal-close" onclick="closeBetSlipModal()">✕</button>
@@ -237,7 +237,7 @@
         </div>
       </div>
       <div class="slip-potential" id="slip-potential">Возможная выплата: 0 ★</div>
-      <button class="btn-submit" style="background: linear-gradient(90deg, #e67e22, #d35400);" onclick="confirmBet()">Подтвердить прогноз</button>
+      <button class="btn-submit" onclick="confirmBet()">Подтвердить прогноз</button>
     </div>
   </div>
 
@@ -267,7 +267,7 @@
     let currentLeague = 'all'; 
     
     // Стейт купона
-    let betSlip = []; // { matchId, matchTitle, outcome, coeff, league }
+    let betSlip = []; 
     
     const LEAGUE_PRIORITY = {
       "АПЛ": 1, "Ла Лига": 2, "Серия А": 3, "Бундеслига": 4, "Лига 1": 5,
@@ -435,17 +435,14 @@
       
       const existingIndex = betSlip.findIndex(b => b.matchId === matchId && b.outcome === outcome);
       if (existingIndex !== -1) {
-        // Если уже есть — удаляем
         betSlip.splice(existingIndex, 1);
       } else {
-        // Удаляем другие исходы этого же матча, если есть
         betSlip = betSlip.filter(b => b.matchId !== matchId);
-        // Добавляем новый
         betSlip.push({ matchId, matchTitle, outcome, coeff, league, outcomeKey });
       }
       
       updateBetSlipUI();
-      renderMatches(); // Перерисовываем для обновления подсветки
+      renderMatches(); 
     }
 
     function updateBetSlipUI() {
@@ -472,9 +469,7 @@
       const container = document.getElementById('slip-items-container');
       container.innerHTML = '';
       
-      let totalOdds = 1;
       betSlip.forEach((b, index) => {
-        totalOdds *= b.coeff;
         container.innerHTML += `
           <div class="slip-item">
             <div class="slip-item-info">
@@ -500,7 +495,7 @@
       if (betSlip.length === 0) {
         closeBetSlipModal();
       } else {
-        openBetSlipModal(); // Обновляем модалку
+        openBetSlipModal();
       }
       renderMatches();
     }
@@ -636,7 +631,6 @@
               eventsHtml += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${e.match_title} — ${e.outcome} @ ${e.coefficient}</div>`;
             });
           } else if (bet.match_title) {
-            // Обратная совместимость для старых одинаров
             eventsHtml = `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${bet.match_title} — ${bet.outcome} @ ${bet.coefficient}</div>`;
           }
 
