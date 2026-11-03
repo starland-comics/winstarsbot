@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import json
 import urllib.parse
 import httpx
@@ -20,6 +21,13 @@ FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/sports-with-competitions-with-events"
 OLIMP_LINE_URL = "https://www.olimp.bet/api/v4/0/line/top/sports-with-competitions-with-events"
 
+LIVE_POLL_SEC = 45
+SETTLE_POLL_SEC = 120
+LOGOS_TTL = 300
+MATCHES_TTL = 45
+FINISHED_TTL = 90
+GC_EVERY = 20
+
 LIVE_BLACKLIST = [
     "люб", "жен", "мол", "до 19", "до 21", "дубл", "резерв", "академ",
     "угл", "жк", "кк", "статистика", "видеопросмотр", "штанги",
@@ -27,7 +35,12 @@ LIVE_BLACKLIST = [
     "хозяева", "гости", "тотал", "фора", "обе забьют", "пенальти", "карточк"
 ]
 
-DEBUG_MINUTE_LOGGED = set()  # чтобы не спамить логами
+DEBUG_MINUTE_LOGGED = set()
+
+# ============== ГЛОБАЛЬНЫЕ КЭШИ (память) ==============
+_LOGOS_CACHE = {"map": {}, "ts": 0}
+_MATCHES_CACHE = {"data": {}, "ts": 0}
+_FINISHED_CACHE = {"data": {}, "ts": 0}
 
 app = FastAPI(title="WinStars API")
 bot = Bot(token=BOT_TOKEN)
@@ -41,7 +54,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+# Уменьшили лимит до 10 (было 20)
+limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 
 @app.on_event("shutdown")
@@ -76,6 +90,7 @@ def verify_telegram_data(init_data: str) -> dict:
     except Exception:
         return {"id": 12345678, "first_name": "Игрок", "username": "user", "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=Default"}
 
+# ============== FIREBASE ==============
 async def firebase_get(path: str):
     try:
         resp = await http_client.get(f"{FIREBASE_DB_URL}/{path}.json")
@@ -90,15 +105,70 @@ async def firebase_patch(path: str, data: dict):
     try: await http_client.patch(f"{FIREBASE_DB_URL}/{path}.json", json=data)
     except: pass
 
+async def firebase_delete(path: str):
+    try: await http_client.delete(f"{FIREBASE_DB_URL}/{path}.json")
+    except: pass
+
 async def firebase_post(path: str, data: dict):
     try:
         resp = await http_client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
         return resp
     except: return None
 
-# ================= АГРЕССИВНЫЙ ПАРСЕР МИНУТЫ =================
+# ============== КЭШИРОВАННЫЕ ГЕТТЕРЫ ==============
+def _build_logo_map(raw_cache):
+    result = {}
+    if not isinstance(raw_cache, dict): return result
+    for k, v in raw_cache.items():
+        if not v: continue
+        real_key = k
+        if k.startswith("b64_"):
+            try:
+                pad = "=" * (-len(k[4:]) % 4)
+                real_key = base64.urlsafe_b64decode(k[4:] + pad).decode("utf-8")
+            except: continue
+        if "|" in real_key:
+            team_part = real_key.split("|")[0]
+            if team_part not in result:
+                result[team_part] = v
+        else:
+            result[real_key] = v
+    return result
+
+async def get_logos_map():
+    now = time.time()
+    if now - _LOGOS_CACHE["ts"] < LOGOS_TTL and _LOGOS_CACHE["map"]:
+        return _LOGOS_CACHE["map"]
+    raw = await firebase_get("team_logos") or {}
+    _LOGOS_CACHE["map"] = _build_logo_map(raw)
+    _LOGOS_CACHE["ts"] = now
+    return _LOGOS_CACHE["map"]
+
+async def get_matches_cached():
+    now = time.time()
+    if now - _MATCHES_CACHE["ts"] < MATCHES_TTL and _MATCHES_CACHE["data"]:
+        return _MATCHES_CACHE["data"]
+    raw = await firebase_get("matches") or {}
+    if not isinstance(raw, dict): raw = {}
+    _MATCHES_CACHE["data"] = raw
+    _MATCHES_CACHE["ts"] = now
+    return raw
+
+def invalidate_matches_cache():
+    _MATCHES_CACHE["ts"] = 0
+
+async def get_finished_cached():
+    now = time.time()
+    if now - _FINISHED_CACHE["ts"] < FINISHED_TTL and _FINISHED_CACHE["data"]:
+        return _FINISHED_CACHE["data"]
+    raw = await firebase_get("finished_matches") or {}
+    if not isinstance(raw, dict): raw = {}
+    _FINISHED_CACHE["data"] = raw
+    _FINISHED_CACHE["ts"] = now
+    return raw
+
+# ============== ПАРСЕР МИНУТЫ ==============
 def _try_extract_minute(val):
-    """Пытается вытащить минуту из любого значения. Возвращает int или строку ('HT','1H','2H','FT') или None."""
     if val is None or isinstance(val, bool): return None
     if isinstance(val, (int, float)):
         return int(val) if 0 <= val <= 130 else None
@@ -130,11 +200,10 @@ def extract_live_score_and_time(ev):
         if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
     elif isinstance(sc, str) and ":" in sc: score = sc
     if not score:
-        s1 = ev.get("score1") or ev.get("homeScore") or ev.get("team1Score")
-        s2 = ev.get("score2") or ev.get("awayScore") or ev.get("team2Score")
+        s1 = ev.get("score1") or ev.get("homeScore")
+        s2 = ev.get("score2") or ev.get("awayScore")
         if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
 
-    # Перебираем ВСЕ возможные поля
     for field in ["minute", "currentMinute", "liveTime", "liveTimer", "elapsed",
                   "time", "timer", "matchTime", "gameTime", "periodTime",
                   "currentTime", "timeLive", "liveMinute", "scoreTime", "statusTime",
@@ -143,7 +212,6 @@ def extract_live_score_and_time(ev):
             r = _try_extract_minute(ev[field])
             if r is not None: minute = r; break
 
-    # Вложенные объекты
     if minute is None:
         for nk in ["score", "status", "live", "progress", "timer", "time"]:
             nested = ev.get(nk)
@@ -151,7 +219,6 @@ def extract_live_score_and_time(ev):
                 r = _try_extract_minute(nested)
                 if r is not None: minute = r; break
 
-    # Period (если ничего не нашли)
     if minute is None:
         for pf in ["period", "timeStatus", "status", "liveStatus", "matchStatus", "half", "timePeriod"]:
             v = ev.get(pf)
@@ -162,50 +229,48 @@ def extract_live_score_and_time(ev):
                 if any(x in vl for x in ["2h", "2nd", "второй тайм"]): minute = "2H"; break
 
     return score, minute
-# ============================================================
 
 def _status_from_minute(minute):
-    """Формирует строку статуса. Всегда начинается с LIVE, чтобы фронт распознавал."""
     if minute is None: return "LIVE"
-    if minute in ("HT", "FT", "1H", "2H"):
-        return f"LIVE · {minute}"
+    if minute in ("HT", "FT", "1H", "2H"): return f"LIVE · {minute}"
     return f"LIVE {minute}'"
 
-def _build_team_logo_map(raw_cache):
-    """Строит {team: logo}, беря любую страну. Ключи в кэше вида team|country или b64_team|country."""
-    result = {}
-    if not isinstance(raw_cache, dict): return result
-    for k, v in raw_cache.items():
-        if not v: continue
-        real_key = k
-        if k.startswith("b64_"):
-            try:
-                pad = "=" * (-len(k[4:]) % 4)
-                real_key = base64.urlsafe_b64decode(k[4:] + pad).decode("utf-8")
-            except: continue
-        if "|" in real_key:
-            team_part = real_key.split("|")[0]
-            if team_part not in result:
-                result[team_part] = v
-        else:
-            result[real_key] = v
-    return result
+# ============== МИГРАЦИЯ active_bets (разово) ==============
+async def migrate_active_bets():
+    """Переносит активные ставки из bets в отдельный узел active_bets. Один раз при старте."""
+    print("🔁 Проверяю миграцию active_bets...")
+    all_bets = await firebase_get("bets") or {}
+    if not isinstance(all_bets, dict): return
+    active = {}
+    for bet_id, bet in all_bets.items():
+        if isinstance(bet, dict) and bet.get("status") == "active":
+            active[bet_id] = {
+                "user_id": bet.get("user_id"),
+                "events": bet.get("events", []),
+                "amount": bet.get("amount", 0),
+                "total_coefficient": bet.get("total_coefficient", 1),
+            }
+    if active:
+        await firebase_put("active_bets", active)
+        print(f"✅ Перенесено активных ставок: {len(active)}")
+    else:
+        print("✅ Активных ставок нет")
 
-# ================= WORKERS =================
+# ============== WORKERS ==============
 async def settle_bets_worker():
     print("🛠 settle_bets_worker запущен...")
+    cycle = 0
     while True:
         try:
-            finished = await firebase_get("finished_matches") or {}
-            if not isinstance(finished, dict): finished = {}
-            all_bets = await firebase_get("bets") or {}
-            if not isinstance(all_bets, dict):
-                await asyncio.sleep(60); continue
+            active_bets = await firebase_get("active_bets") or {}
+            if not isinstance(active_bets, dict) or not active_bets:
+                await asyncio.sleep(SETTLE_POLL_SEC); continue
 
-            for bet_id, bet in all_bets.items():
+            finished = await get_finished_cached()
+
+            for bet_id, bet in list(active_bets.items()):
                 try:
                     if not isinstance(bet, dict): continue
-                    if bet.get("status") != "active": continue
                     events = bet.get("events", [])
                     if not isinstance(events, list): continue
 
@@ -221,9 +286,10 @@ async def settle_bets_worker():
 
                     if not all_finished or not results: continue
 
+                    user_id = bet.get("user_id")
+
                     if is_void:
                         status = "void"
-                        user_id = bet.get("user_id")
                         user = await firebase_get(f"users/{user_id}")
                         if isinstance(user, dict):
                             refund = bet.get("amount", 0)
@@ -243,7 +309,6 @@ async def settle_bets_worker():
                         status = "won" if is_won else "lost"
 
                         if status == "won":
-                            user_id = bet.get("user_id")
                             user = await firebase_get(f"users/{user_id}")
                             if isinstance(user, dict):
                                 win_amount = bet.get("amount", 0) * bet.get("total_coefficient", 1)
@@ -254,31 +319,42 @@ async def settle_bets_worker():
                                 })
                         print(f"✅ Ставка {bet_id}: {status}")
 
+                    # Обновляем bets + users/{id}/bets, удаляем из active_bets
                     await firebase_patch(f"bets/{bet_id}", {"status": status})
-                    if bet.get("user_id"):
-                        await firebase_patch(f"users/{bet['user_id']}/bets/{bet_id}", {"status": status})
+                    if user_id:
+                        await firebase_patch(f"users/{user_id}/bets/{bet_id}", {"status": status})
+                    await firebase_delete(f"active_bets/{bet_id}")
+                    print(f"🗑 active_bets/{bet_id} удалён")
+
                 except Exception as e:
                     print(f"⚠️ Ставка {bet_id}: {e}")
                     continue
         except Exception as e:
             print(f"⚠️ settle_bets: {e}")
-        await asyncio.sleep(60)
+
+        cycle += 1
+        if cycle % GC_EVERY == 0:
+            gc.collect()
+        await asyncio.sleep(SETTLE_POLL_SEC)
 
 async def live_scraper_worker():
-    print("⚡ live_scraper_worker запущен (30 сек)...")
+    print(f"⚡ live_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
     prev_live_ids = set()
+    cycle = 0
 
     while True:
         try:
             resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, impersonate="chrome120", timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
+                # Освобождаем resp, чтобы не висел
+                del resp
+
                 live_updates = {}
                 current_live_ids = set()
 
-                raw = await firebase_get("team_logos") or {}
-                team_logo_map = _build_team_logo_map(raw)
+                team_logo_map = await get_logos_map()
 
                 for sg in data:
                     sport = sg.get("payload", {}).get("sport", {})
@@ -298,11 +374,10 @@ async def live_scraper_worker():
                             score, minute = extract_live_score_and_time(ev)
                             status = _status_from_minute(minute)
 
-                            # DEBUG: один раз логируем поля, если минуту не нашли
-                            if minute is None and mid not in DEBUG_MINUTE_LOGGED:
+                            if minute is None and mid not in DEBUG_MINUTE_LOGGED and len(DEBUG_MINUTE_LOGGED) < 100:
                                 time_fields = {k: v for k, v in ev.items() if any(x in k.lower() for x in
                                     ["time", "minute", "period", "status", "timer", "half", "live", "progress", "clock", "stage"])}
-                                print(f"   🔍 NO MINUTE {mid}: {json.dumps(time_fields, ensure_ascii=False, default=str)[:1500]}")
+                                print(f"   🔍 NO MINUTE {mid}: {json.dumps(time_fields, ensure_ascii=False, default=str)[:1200]}")
                                 DEBUG_MINUTE_LOGGED.add(mid)
 
                             p1 = px = p2 = None
@@ -324,84 +399,87 @@ async def live_scraper_worker():
                                 "odds": {"1": p1, "X": px, "2": p2}
                             }
 
+                del data
                 print(f"   [LIVE] Пришло футбольных: {len(current_live_ids)}. Обновлено: {len(live_updates)}")
 
-                # Fallback: если LIVE пуст или матч помечен LIVE в базе, но не найден в live-API — берём из линии
-                db_matches = await firebase_get("matches") or {}
-                if isinstance(db_matches, dict):
-                    need = [mid for mid, m in db_matches.items()
-                            if isinstance(m, dict) and m.get("status", "").startswith("LIVE") and mid not in live_updates]
-                    if need:
-                        try:
-                            line_resp = await asyncio.to_thread(
-                                cffi_requests.get, OLIMP_LINE_URL, headers=headers, impersonate="chrome120", timeout=15
-                            )
-                            if line_resp.status_code == 200:
-                                for sg in line_resp.json():
-                                    sport = sg.get("payload", {}).get("sport", {})
-                                    if str(sport.get("id")) != "1": continue
-                                    for comp in sg.get("payload", {}).get("competitionsWithEvents", []):
-                                        comp_name = comp.get("competition", {}).get("name", "Футбол")
-                                        for ev in comp.get("events", []):
-                                            t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
-                                            if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
-                                            ev_id = ev.get("id")
-                                            if not ev_id: continue
-                                            mid = f"olimp_{ev_id}"
-                                            if mid not in need: continue
-
-                                            score, minute = extract_live_score_and_time(ev)
-                                            if score == "VS" and minute is None: continue
-
-                                            p1 = px = p2 = None
-                                            for out in ev.get("outcomes", []):
-                                                sn = out.get("shortName", "")
-                                                if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
-                                                    if sn in ["П1", "1"]: p1 = out.get("probability")
-                                                    elif sn in ["X", "Х"]: px = out.get("probability")
-                                                    elif sn in ["П2", "2"]: p2 = out.get("probability")
-
-                                            live_updates[mid] = {
-                                                "status": _status_from_minute(minute),
-                                                "score": score or "VS",
-                                                "odds": {"1": p1, "X": px, "2": p2}
-                                            }
-                                            print(f"   [FALLBACK LINE] {mid}: {score} {minute}")
-                        except Exception as e:
-                            print(f"   ⚠️ Fallback line: {e}")
+                # Fallback из линии — только если в базе есть LIVE-матчи, которых нет в live
+                cached_matches = await get_matches_cached()
+                need = [mid for mid, m in cached_matches.items()
+                        if isinstance(m, dict) and m.get("status", "").startswith("LIVE") and mid not in live_updates]
+                if need:
+                    try:
+                        line_resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LINE_URL, headers=headers, impersonate="chrome120", timeout=15)
+                        if line_resp.status_code == 200:
+                            line_data = line_resp.json()
+                            need_set = set(need)
+                            for sg in line_data:
+                                sport = sg.get("payload", {}).get("sport", {})
+                                if str(sport.get("id")) != "1": continue
+                                for comp in sg.get("payload", {}).get("competitionsWithEvents", []):
+                                    for ev in comp.get("events", []):
+                                        ev_id = ev.get("id")
+                                        if not ev_id: continue
+                                        mid = f"olimp_{ev_id}"
+                                        if mid not in need_set: continue
+                                        score, minute = extract_live_score_and_time(ev)
+                                        if score == "VS" and minute is None: continue
+                                        live_updates[mid] = {
+                                            "status": _status_from_minute(minute),
+                                            "score": score or "VS",
+                                        }
+                                        print(f"   [FALLBACK] {mid}: {score} {minute}")
+                            del line_data
+                    except Exception as e:
+                        print(f"   ⚠️ Fallback line: {e}")
 
                 # Закрываем матчи, ушедшие из LIVE
                 disappeared = prev_live_ids - current_live_ids
                 for mid in disappeared:
-                    match = await firebase_get(f"matches/{mid}")
+                    match = cached_matches.get(mid)
                     if isinstance(match, dict) and match.get("status", "").startswith("LIVE"):
                         score_str = match.get("score", "")
                         if ":" in score_str:
                             try:
                                 s1, s2 = [int(x.strip()) for x in score_str.split(":")]
                                 await firebase_patch(f"finished_matches/{mid}", {"score1": s1, "score2": s2, "source": "live_last"})
+                                _FINISHED_CACHE["ts"] = 0
                                 print(f"🏁 {mid} закрыт. Счёт: {s1}:{s2}")
                             except: pass
 
                 if live_updates:
                     async with httpx.AsyncClient() as client:
                         await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
+                    invalidate_matches_cache()
                     print(f"🔄 [LIVE] Записано в Firebase: {len(live_updates)}")
 
+                del live_updates
                 prev_live_ids = current_live_ids
         except Exception as e:
             print(f"⚠️ live_scraper: {e}")
-        await asyncio.sleep(30)
 
+        cycle += 1
+        if cycle % GC_EVERY == 0:
+            gc.collect()
+        await asyncio.sleep(LIVE_POLL_SEC)
+
+# ============== STARTUP ==============
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo: await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
+
+    # Разовая миграция
+    try:
+        await migrate_active_bets()
+    except Exception as e:
+        print(f"⚠️ migrate_active_bets: {e}")
+
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(settle_bets_worker())
     asyncio.create_task(live_scraper_worker())
 
+# ============== ENDPOINTS ==============
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
     try:
@@ -476,9 +554,20 @@ async def place_bet(request: Request):
         "potential_win": round(amount * total_coeff, 2),
         "status": "active", "timestamp": int(time.time())
     }
+
     bet_ref = await firebase_post("bets", bet_data)
     bet_id = bet_ref.json().get("name") if bet_ref else None
-    if bet_id: await firebase_put(f"users/{user_id}/bets/{bet_id}", bet_data)
+
+    if bet_id:
+        await firebase_put(f"users/{user_id}/bets/{bet_id}", bet_data)
+        # Дублируем в active_bets для быстрого воркера
+        await firebase_put(f"active_bets/{bet_id}", {
+            "user_id": str(user_id),
+            "events": bets,
+            "amount": amount,
+            "total_coefficient": total_coeff,
+        })
+
     await firebase_patch(f"users/{user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
     return {"status": "ok", "new_balance": new_balance, "message": "Прогноз принят!"}
 
@@ -525,6 +614,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception: manager.disconnect(websocket)
     finally: manager.disconnect(websocket)
 
+# ============== BOT ==============
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
