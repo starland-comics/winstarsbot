@@ -16,7 +16,8 @@ from curl_cffi import requests as cffi_requests
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
-OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/broadcast/sports-with-competitions-with-events?vids%5B%5D=1"
+OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/sports-with-competitions-with-events"
+OLIMP_LINE_URL = "https://www.olimp.bet/api/v4/0/line/top/sports-with-competitions-with-events"
 
 LIVE_BLACKLIST = [
     "люб", "жен", "мол", "до 19", "до 21", "дубл", "резерв", "академ",
@@ -206,7 +207,6 @@ async def live_scraper_worker():
                             text_to_check = f"{t1} {t2} {comp_name}".lower()
                             
                             if any(w in text_to_check for w in LIVE_BLACKLIST): 
-                                # print(f"   [LIVE] Отсеян: {t1} - {t2} ({comp_name})")
                                 continue
                             
                             ev_id = ev.get("id")
@@ -254,15 +254,61 @@ async def live_scraper_worker():
                             }
 
                 print(f"   [LIVE] Пришло футбольных событий: {len(football_events)}. Подхвачено: {len(live_updates)}")
-                for ev in football_events:
-                    if ev.get('id') and f"olimp_{ev.get('id')}" not in live_updates:
-                        print(f"      [LIVE] Отсеян блэклистом: {ev.get('team1Name')} - {ev.get('team2Name')}")
 
-                # --- Подхват "зависших" матчей ---
-                # Если матч был в базе, начался, но его нет в лайве, и он не обновлялся > 5 минут
-                # (это значит, что мы не получаем по нему данные, но он в базе)
-                # Мы пока не будем его удалять, скрапер сам решит его судьбу.
-                
+                # FALLBACK: если лайв пуст или матч помечен LIVE, но его нет в live-API — берём из линии
+                db_matches = await firebase_get("matches") or {}
+                if isinstance(db_matches, dict):
+                    need_fallback = False
+                    for mid, m in db_matches.items():
+                        if not isinstance(m, dict): continue
+                        if m.get("status", "").startswith("LIVE") and mid not in live_updates:
+                            need_fallback = True
+                            break
+                    
+                    if need_fallback:
+                        try:
+                            line_resp = await asyncio.to_thread(
+                                cffi_requests.get, OLIMP_LINE_URL, headers=headers, impersonate="chrome120", timeout=15
+                            )
+                            if line_resp.status_code == 200:
+                                for sg in line_resp.json():
+                                    sport = sg.get("payload", {}).get("sport", {})
+                                    if str(sport.get("id")) != "1": continue
+                                    for comp in sg.get("payload", {}).get("competitionsWithEvents", []):
+                                        comp_name = comp.get("competition", {}).get("name", "Футбол")
+                                        for ev in comp.get("events", []):
+                                            t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
+                                            if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
+                                            ev_id = ev.get("id")
+                                            if not ev_id: continue
+                                            mid = f"olimp_{ev_id}"
+                                            if mid in live_updates: continue
+                                            if not (isinstance(db_matches.get(mid), dict) and db_matches[mid].get("status", "").startswith("LIVE")): continue
+                                            
+                                            score = "VS"
+                                            sc = ev.get("score")
+                                            if isinstance(sc, dict):
+                                                s1 = sc.get("team1") or sc.get("home")
+                                                s2 = sc.get("team2") or sc.get("away")
+                                                if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
+                                            
+                                            p1 = px = p2 = None
+                                            for out in ev.get("outcomes", []):
+                                                sn = out.get("shortName", "")
+                                                if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
+                                                    if sn in ["П1", "1"]: p1 = out.get("probability")
+                                                    elif sn in ["X", "Х"]: px = out.get("probability")
+                                                    elif sn in ["П2", "2"]: p2 = out.get("probability")
+                                            
+                                            live_updates[mid] = {
+                                                "score": score,
+                                                "status": "LIVE",
+                                                "odds": {"1": p1, "X": px, "2": p2}
+                                            }
+                                            print(f"   [FALLBACK LINE] {mid}: счёт {score}")
+                        except Exception as e:
+                            print(f"   ⚠️ Fallback line error: {e}")
+
                 disappeared = prev_live_ids - current_live_ids
                 for mid in disappeared:
                     match = await firebase_get(f"matches/{mid}")
