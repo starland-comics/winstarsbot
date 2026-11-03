@@ -3,6 +3,7 @@ import json
 import urllib.parse
 import httpx
 import os
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Один глобальный клиент для экономии памяти (256 МБ)
 limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
 http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 
@@ -91,7 +91,6 @@ async def startup_event():
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     asyncio.create_task(dp.start_polling(bot))
 
-# --- ПРОКСИ ДЛЯ ЛОГОТИПОВ (Обход защиты Фонбета) ---
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
     try:
@@ -131,6 +130,7 @@ async def get_matches():
 async def get_user_bets(user_id: int):
     bets_dict = await firebase_get(f"users/{user_id}/bets")
     if not bets_dict: return {"bets": []}
+    # Возвращаем в виде списка, добавляя id
     return {"bets": [{"id": k, **v} for k, v in bets_dict.items()]}
 
 @app.post("/api/bets/place")
@@ -138,20 +138,38 @@ async def place_bet(request: Request):
     req = await request.json()
     user_id = req.get("user_id")
     amount = req.get("amount")
+    bets = req.get("bets", []) # Список исходов
+    bet_type = req.get("type", "single")
     
+    if not bets:
+        raise HTTPException(status_code=400, detail="Нет выбранных исходов")
+
     user = await firebase_get(f"users/{user_id}")
     if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
     if user.get("balance", 0) < amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
     
+    # Считаем общий коэффициент
+    total_coeff = 1.0
+    for b in bets:
+        total_coeff *= float(b.get("coefficient", 1.0))
+    total_coeff = round(total_coeff, 2)
+
     new_balance = user.get("balance", 0) - amount
+    
     bet_data = {
-        "match_id": req.get("match_id"), "match_title": req.get("match_title"), 
-        "outcome": req.get("outcome"), "coefficient": req.get("coefficient"), 
-        "amount": amount, "status": "active"
+        "type": bet_type,
+        "events": bets,
+        "amount": amount,
+        "total_coefficient": total_coeff,
+        "potential_win": round(amount * total_coeff, 2),
+        "status": "active",
+        "timestamp": int(time.time())
     }
+    
     await firebase_post(f"users/{user_id}/bets", bet_data)
     await firebase_patch(f"users/{user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
-    return {"status": "ok", "new_balance": new_balance, "message": "Ставка принята!"}
+    
+    return {"status": "ok", "new_balance": new_balance, "message": "Прогноз принят!"}
 
 @app.post("/api/cashier/invoice")
 async def create_invoice(request: Request):
@@ -227,6 +245,24 @@ async def process_successful_payment(message: types.Message):
 async def cmd_start(message: types.Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚽ Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))]])
     await message.answer("👋 Добро пожаловать в **WinStars**!", reply_markup=kb, parse_mode="Markdown")
+
+# Эндпоинт для ручного/автоматического расчета ставок (пока в разработке)
+@app.post("/api/admin/settle_match")
+async def settle_match(request: Request):
+    """
+    Вызывается, когда матч завершается.
+    req: { "match_id": "olimp_123", "score1": 2, "score2": 1 }
+    """
+    req = await request.json()
+    match_id = req.get("match_id")
+    score1 = req.get("score1")
+    score2 = req.get("score2")
+    
+    if match_id is None or score1 is None or score2 is None:
+         raise HTTPException(status_code=400, detail="Не хватает данных")
+         
+    # Логика расчета будет добавлена на следующем шаге
+    return {"status": "ok", "message": "Функция расчета в разработке"}
 
 if __name__ == "__main__":
     import uvicorn
