@@ -99,7 +99,6 @@ async def settle_bets_worker():
             for bet_id, bet in all_bets.items():
                 if bet.get("status") != "active": continue
                 
-                # Проверяем, все ли матчи в ставке завершены
                 all_finished = True
                 results = []
                 for event in bet["events"]:
@@ -111,12 +110,11 @@ async def settle_bets_worker():
                 
                 if not all_finished: continue
                 
-                # Рассчитываем исходы
                 is_won = True
                 for i, event in enumerate(bet["events"]):
                     res = results[i]
                     s1, s2 = res.get("score1", 0), res.get("score2", 0)
-                    outcome = event["outcome"] # "П1", "Х", "П2"
+                    outcome = event["outcome"]
                     
                     if outcome == "П1" and not (s1 > s2): is_won = False; break
                     if outcome == "Х" and not (s1 == s2): is_won = False; break
@@ -125,7 +123,6 @@ async def settle_bets_worker():
                 status = "won" if is_won else "lost"
                 update_data = {"status": status}
                 
-                # Начисляем баланс, если выиграл
                 if status == "won":
                     user_id = bet["user_id"]
                     user = await firebase_get(f"users/{user_id}")
@@ -138,7 +135,6 @@ async def settle_bets_worker():
                             "balance": new_bal, "profit": new_profit, "wins": new_wins
                         })
                 
-                # Обновляем статус ставки в двух местах
                 await firebase_patch(f"bets/{bet_id}", update_data)
                 await firebase_patch(f"users/{bet['user_id']}/bets/{bet_id}", update_data)
                 print(f"✅ Ставка {bet_id} рассчитана: {status}")
