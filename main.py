@@ -14,7 +14,7 @@ from curl_cffi import requests as cffi_requests
 
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
-FIREBASE_DB_URL = "https://winstars-4351-default-rtdb.firebaseio.com".replace("4351", "4351") # Защита от опечаток в URL
+FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/broadcast/sports-with-competitions-with-events?vids%5B%5D=1"
 
 # Слова для отсева мусора в лайве (углы, статистика, виртуалки)
@@ -101,30 +101,45 @@ async def settle_bets_worker():
     while True:
         try:
             finished = await firebase_get("finished_matches") or {}
-            if not finished:
+            if not finished or not isinstance(finished, dict):
                 await asyncio.sleep(30)
                 continue
                 
             all_bets = await firebase_get("bets") or {}
+            
+            # Защита: если firebase_get вернул не словарь, а строку
+            if not isinstance(all_bets, dict):
+                print(f"⚠️ Ошибка: bets в Firebase имеет тип {type(all_bets)}, ожидался dict")
+                await asyncio.sleep(60)
+                continue
+                
             for bet_id, bet in all_bets.items():
+                # ФИКС: проверяем, что bet - это словарь (объект)
+                if not isinstance(bet, dict):
+                    print(f"⚠️ Пропущена кривая ставка {bet_id} (тип: {type(bet)})")
+                    continue
+                    
                 if bet.get("status") != "active": continue
                 
                 all_finished = True
                 results = []
-                for event in bet["events"]:
-                    m_id = event["match_id"]
+                for event in bet.get("events", []):
+                    if not isinstance(event, dict): 
+                        all_finished = False
+                        break
+                    m_id = event.get("match_id")
                     if m_id not in finished:
                         all_finished = False
                         break
                     results.append(finished[m_id])
                 
-                if not all_finished: continue
+                if not all_finished or not results: continue
                 
                 is_won = True
-                for i, event in enumerate(bet["events"]):
+                for i, event in enumerate(bet.get("events", [])):
                     res = results[i]
                     s1, s2 = res.get("score1", 0), res.get("score2", 0)
-                    outcome = event["outcome"]
+                    outcome = event.get("outcome")
                     
                     if outcome == "П1" and not (s1 > s2): is_won = False; break
                     if outcome == "Х" and not (s1 == s2): is_won = False; break
@@ -134,19 +149,20 @@ async def settle_bets_worker():
                 update_data = {"status": status}
                 
                 if status == "won":
-                    user_id = bet["user_id"]
+                    user_id = bet.get("user_id")
                     user = await firebase_get(f"users/{user_id}")
-                    if user:
-                        win_amount = bet["amount"] * bet["total_coefficient"]
-                        new_bal = user["balance"] + win_amount
-                        new_profit = user.get("profit", 0) + (win_amount - bet["amount"])
+                    if user and isinstance(user, dict):
+                        win_amount = bet.get("amount", 0) * bet.get("total_coefficient", 1)
+                        new_bal = user.get("balance", 0) + win_amount
+                        new_profit = user.get("profit", 0) + (win_amount - bet.get("amount", 0))
                         new_wins = user.get("wins", 0) + 1
                         await firebase_patch(f"users/{user_id}", {
                             "balance": new_bal, "profit": new_profit, "wins": new_wins
                         })
                 
                 await firebase_patch(f"bets/{bet_id}", update_data)
-                await firebase_patch(f"users/{bet['user_id']}/bets/{bet_id}", update_data)
+                if bet.get("user_id"):
+                    await firebase_patch(f"users/{bet['user_id']}/bets/{bet_id}", update_data)
                 print(f"✅ Ставка {bet_id} рассчитана: {status}")
                 
         except Exception as e:
