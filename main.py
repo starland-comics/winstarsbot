@@ -5,6 +5,7 @@ import httpx
 import os
 import time
 import base64
+import re
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,8 @@ LIVE_BLACKLIST = [
     "перекладины", "ауты", "офсайды", "фолы", "голы", "мед. бригад",
     "хозяева", "гости", "тотал", "фора", "обе забьют", "пенальти", "карточк"
 ]
+
+DEBUG_MINUTE_LOGGED = set()  # чтобы не спамить логами
 
 app = FastAPI(title="WinStars API")
 bot = Bot(token=BOT_TOKEN)
@@ -93,6 +96,102 @@ async def firebase_post(path: str, data: dict):
         return resp
     except: return None
 
+# ================= АГРЕССИВНЫЙ ПАРСЕР МИНУТЫ =================
+def _try_extract_minute(val):
+    """Пытается вытащить минуту из любого значения. Возвращает int или строку ('HT','1H','2H','FT') или None."""
+    if val is None or isinstance(val, bool): return None
+    if isinstance(val, (int, float)):
+        return int(val) if 0 <= val <= 130 else None
+    if isinstance(val, str):
+        s = val.strip(); sl = s.lower()
+        if any(x in sl for x in ["перерыв", "halftime", "half time", "ht"]): return "HT"
+        if any(x in sl for x in ["завершен", "finished", "ended", "full time", "ft"]): return "FT"
+        if any(x in sl for x in ["1st half", "1h", "первый тайм"]): return "1H"
+        if any(x in sl for x in ["2nd half", "2h", "второй тайм"]): return "2H"
+        m = re.search(r"(\d{1,3})", s)
+        if m:
+            n = int(m.group(1))
+            if 0 <= n <= 130: return n
+        return None
+    if isinstance(val, dict):
+        for sub in ["minute", "current", "elapsed", "value", "display", "text", "seconds", "currentMinute"]:
+            if sub in val:
+                r = _try_extract_minute(val[sub])
+                if r is not None: return r
+        return None
+    return None
+
+def extract_live_score_and_time(ev):
+    score = None; minute = None
+    sc = ev.get("score")
+    if isinstance(sc, dict):
+        s1 = sc.get("team1") or sc.get("home") or sc.get("score1")
+        s2 = sc.get("team2") or sc.get("away") or sc.get("score2")
+        if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
+    elif isinstance(sc, str) and ":" in sc: score = sc
+    if not score:
+        s1 = ev.get("score1") or ev.get("homeScore") or ev.get("team1Score")
+        s2 = ev.get("score2") or ev.get("awayScore") or ev.get("team2Score")
+        if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
+
+    # Перебираем ВСЕ возможные поля
+    for field in ["minute", "currentMinute", "liveTime", "liveTimer", "elapsed",
+                  "time", "timer", "matchTime", "gameTime", "periodTime",
+                  "currentTime", "timeLive", "liveMinute", "scoreTime", "statusTime",
+                  "gameMinute", "elapsedTime", "timePlayed", "minutes", "minutePlayed"]:
+        if field in ev:
+            r = _try_extract_minute(ev[field])
+            if r is not None: minute = r; break
+
+    # Вложенные объекты
+    if minute is None:
+        for nk in ["score", "status", "live", "progress", "timer", "time"]:
+            nested = ev.get(nk)
+            if isinstance(nested, dict):
+                r = _try_extract_minute(nested)
+                if r is not None: minute = r; break
+
+    # Period (если ничего не нашли)
+    if minute is None:
+        for pf in ["period", "timeStatus", "status", "liveStatus", "matchStatus", "half", "timePeriod"]:
+            v = ev.get(pf)
+            if isinstance(v, str):
+                vl = v.lower()
+                if any(x in vl for x in ["ht", "halftime", "перерыв", "half"]): minute = "HT"; break
+                if any(x in vl for x in ["1h", "1st", "первый тайм"]): minute = "1H"; break
+                if any(x in vl for x in ["2h", "2nd", "второй тайм"]): minute = "2H"; break
+
+    return score, minute
+# ============================================================
+
+def _status_from_minute(minute):
+    """Формирует строку статуса. Всегда начинается с LIVE, чтобы фронт распознавал."""
+    if minute is None: return "LIVE"
+    if minute in ("HT", "FT", "1H", "2H"):
+        return f"LIVE · {minute}"
+    return f"LIVE {minute}'"
+
+def _build_team_logo_map(raw_cache):
+    """Строит {team: logo}, беря любую страну. Ключи в кэше вида team|country или b64_team|country."""
+    result = {}
+    if not isinstance(raw_cache, dict): return result
+    for k, v in raw_cache.items():
+        if not v: continue
+        real_key = k
+        if k.startswith("b64_"):
+            try:
+                pad = "=" * (-len(k[4:]) % 4)
+                real_key = base64.urlsafe_b64decode(k[4:] + pad).decode("utf-8")
+            except: continue
+        if "|" in real_key:
+            team_part = real_key.split("|")[0]
+            if team_part not in result:
+                result[team_part] = v
+        else:
+            result[real_key] = v
+    return result
+
+# ================= WORKERS =================
 async def settle_bets_worker():
     print("🛠 settle_bets_worker запущен...")
     while True:
@@ -110,18 +209,14 @@ async def settle_bets_worker():
                     events = bet.get("events", [])
                     if not isinstance(events, list): continue
 
-                    all_finished = True
-                    results = []
-                    is_void = False
+                    all_finished = True; results = []; is_void = False
                     for event in events:
                         if not isinstance(event, dict): all_finished = False; break
                         m_id = event.get("match_id")
-                        if m_id not in finished:
-                            all_finished = False; break
+                        if m_id not in finished: all_finished = False; break
                         res = finished[m_id]
                         if not isinstance(res, dict): all_finished = False; break
-                        if res.get("void"):
-                            is_void = True
+                        if res.get("void"): is_void = True
                         results.append(res)
 
                     if not all_finished or not results: continue
@@ -173,7 +268,7 @@ async def live_scraper_worker():
     print("⚡ live_scraper_worker запущен (30 сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
     prev_live_ids = set()
-    
+
     while True:
         try:
             resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, impersonate="chrome120", timeout=15)
@@ -181,19 +276,9 @@ async def live_scraper_worker():
                 data = resp.json()
                 live_updates = {}
                 current_live_ids = set()
-                football_events = []
 
                 raw = await firebase_get("team_logos") or {}
-                logo_cache = {}
-                if isinstance(raw, dict):
-                    for k, v in raw.items():
-                        logo_cache[k] = v
-                        if k.startswith("b64_"):
-                            try:
-                                pad = "=" * (-len(k[4:]) % 4)
-                                decoded = base64.urlsafe_b64decode(k[4:] + pad).decode("utf-8")
-                                logo_cache[decoded] = v
-                            except Exception: pass
+                team_logo_map = _build_team_logo_map(raw)
 
                 for sg in data:
                     sport = sg.get("payload", {}).get("sport", {})
@@ -202,37 +287,23 @@ async def live_scraper_worker():
                     for comp in comps:
                         comp_name = comp.get("competition", {}).get("name", "Футбол")
                         for ev in comp.get("events", []):
-                            football_events.append(ev)
                             t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
-                            text_to_check = f"{t1} {t2} {comp_name}".lower()
-                            
-                            if any(w in text_to_check for w in LIVE_BLACKLIST): 
-                                continue
-                            
+                            if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
                             ev_id = ev.get("id")
                             if not ev_id: continue
-                            
+
                             mid = f"olimp_{ev_id}"
                             current_live_ids.add(mid)
 
-                            score = "VS"
-                            sc = ev.get("score")
-                            if isinstance(sc, dict):
-                                s1 = sc.get("team1") or sc.get("home") or sc.get("score1")
-                                s2 = sc.get("team2") or sc.get("away") or sc.get("score2")
-                                if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
-                            elif isinstance(sc, str) and ":" in sc: score = sc
-                            if score == "VS":
-                                s1 = ev.get("score1") or ev.get("homeScore")
-                                s2 = ev.get("score2") or ev.get("awayScore")
-                                if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
+                            score, minute = extract_live_score_and_time(ev)
+                            status = _status_from_minute(minute)
 
-                            minute = ""
-                            t = ev.get("time")
-                            if isinstance(t, dict): minute = t.get("minute") or t.get("current") or t.get("elapsed")
-                            elif isinstance(t, (int, str)): minute = t
-                            if not minute: minute = ev.get("minute") or ev.get("currentMinute") or ev.get("liveTime")
-                            status = f"LIVE {minute}'" if minute else "LIVE"
+                            # DEBUG: один раз логируем поля, если минуту не нашли
+                            if minute is None and mid not in DEBUG_MINUTE_LOGGED:
+                                time_fields = {k: v for k, v in ev.items() if any(x in k.lower() for x in
+                                    ["time", "minute", "period", "status", "timer", "half", "live", "progress", "clock", "stage"])}
+                                print(f"   🔍 NO MINUTE {mid}: {json.dumps(time_fields, ensure_ascii=False, default=str)[:1500]}")
+                                DEBUG_MINUTE_LOGGED.add(mid)
 
                             p1 = px = p2 = None
                             for out in ev.get("outcomes", []):
@@ -242,30 +313,25 @@ async def live_scraper_worker():
                                     elif sn in ["X", "Х"]: px = out.get("probability")
                                     elif sn in ["П2", "2"]: p2 = out.get("probability")
 
-                            hl = logo_cache.get(t1) or logo_cache.get(f"{t1}|") or ""
-                            al = logo_cache.get(t2) or logo_cache.get(f"{t2}|") or ""
-
                             live_updates[mid] = {
                                 "title": f"{t1} - {t2}", "home": t1, "away": t2,
-                                "homeLogo": hl, "awayLogo": al, "league": comp_name,
-                                "status": status, "score": score,
+                                "homeLogo": team_logo_map.get(t1, ""),
+                                "awayLogo": team_logo_map.get(t2, ""),
+                                "league": comp_name,
+                                "status": status,
+                                "score": score or "VS",
                                 "start_time": ev.get("startDateTime"),
                                 "odds": {"1": p1, "X": px, "2": p2}
                             }
 
-                print(f"   [LIVE] Пришло футбольных событий: {len(football_events)}. Подхвачено: {len(live_updates)}")
+                print(f"   [LIVE] Пришло футбольных: {len(current_live_ids)}. Обновлено: {len(live_updates)}")
 
-                # FALLBACK: если лайв пуст или матч помечен LIVE, но его нет в live-API — берём из линии
+                # Fallback: если LIVE пуст или матч помечен LIVE в базе, но не найден в live-API — берём из линии
                 db_matches = await firebase_get("matches") or {}
                 if isinstance(db_matches, dict):
-                    need_fallback = False
-                    for mid, m in db_matches.items():
-                        if not isinstance(m, dict): continue
-                        if m.get("status", "").startswith("LIVE") and mid not in live_updates:
-                            need_fallback = True
-                            break
-                    
-                    if need_fallback:
+                    need = [mid for mid, m in db_matches.items()
+                            if isinstance(m, dict) and m.get("status", "").startswith("LIVE") and mid not in live_updates]
+                    if need:
                         try:
                             line_resp = await asyncio.to_thread(
                                 cffi_requests.get, OLIMP_LINE_URL, headers=headers, impersonate="chrome120", timeout=15
@@ -282,16 +348,11 @@ async def live_scraper_worker():
                                             ev_id = ev.get("id")
                                             if not ev_id: continue
                                             mid = f"olimp_{ev_id}"
-                                            if mid in live_updates: continue
-                                            if not (isinstance(db_matches.get(mid), dict) and db_matches[mid].get("status", "").startswith("LIVE")): continue
-                                            
-                                            score = "VS"
-                                            sc = ev.get("score")
-                                            if isinstance(sc, dict):
-                                                s1 = sc.get("team1") or sc.get("home")
-                                                s2 = sc.get("team2") or sc.get("away")
-                                                if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
-                                            
+                                            if mid not in need: continue
+
+                                            score, minute = extract_live_score_and_time(ev)
+                                            if score == "VS" and minute is None: continue
+
                                             p1 = px = p2 = None
                                             for out in ev.get("outcomes", []):
                                                 sn = out.get("shortName", "")
@@ -299,16 +360,17 @@ async def live_scraper_worker():
                                                     if sn in ["П1", "1"]: p1 = out.get("probability")
                                                     elif sn in ["X", "Х"]: px = out.get("probability")
                                                     elif sn in ["П2", "2"]: p2 = out.get("probability")
-                                            
+
                                             live_updates[mid] = {
-                                                "score": score,
-                                                "status": "LIVE",
+                                                "status": _status_from_minute(minute),
+                                                "score": score or "VS",
                                                 "odds": {"1": p1, "X": px, "2": p2}
                                             }
-                                            print(f"   [FALLBACK LINE] {mid}: счёт {score}")
+                                            print(f"   [FALLBACK LINE] {mid}: {score} {minute}")
                         except Exception as e:
-                            print(f"   ⚠️ Fallback line error: {e}")
+                            print(f"   ⚠️ Fallback line: {e}")
 
+                # Закрываем матчи, ушедшие из LIVE
                 disappeared = prev_live_ids - current_live_ids
                 for mid in disappeared:
                     match = await firebase_get(f"matches/{mid}")
@@ -318,14 +380,14 @@ async def live_scraper_worker():
                             try:
                                 s1, s2 = [int(x.strip()) for x in score_str.split(":")]
                                 await firebase_patch(f"finished_matches/{mid}", {"score1": s1, "score2": s2, "source": "live_last"})
-                                print(f"🏁 {mid} закрыт в LIVE. Счёт: {s1}:{s2}")
-                            except Exception: pass
+                                print(f"🏁 {mid} закрыт. Счёт: {s1}:{s2}")
+                            except: pass
 
                 if live_updates:
                     async with httpx.AsyncClient() as client:
                         await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
-                    print(f"🔄 [LIVE] Обновлено в базе: {len(live_updates)}")
-                
+                    print(f"🔄 [LIVE] Записано в Firebase: {len(live_updates)}")
+
                 prev_live_ids = current_live_ids
         except Exception as e:
             print(f"⚠️ live_scraper: {e}")
@@ -382,10 +444,8 @@ async def get_user_bets(user_id: int):
 @app.post("/api/bets/place")
 async def place_bet(request: Request):
     req = await request.json()
-    user_id = req.get("user_id")
-    amount = req.get("amount")
-    bets = req.get("bets", [])
-    bet_type = req.get("type", "single")
+    user_id = req.get("user_id"); amount = req.get("amount")
+    bets = req.get("bets", []); bet_type = req.get("type", "single")
     if not bets: raise HTTPException(status_code=400, detail="Нет выбранных исходов")
 
     user = await firebase_get(f"users/{user_id}")
@@ -398,8 +458,7 @@ async def place_bet(request: Request):
     for b in bets:
         m_id = b.get("match_id")
         match_db = await firebase_get(f"matches/{m_id}")
-        if not match_db:
-            raise HTTPException(status_code=400, detail=f"Матч '{b.get('match_title')}' больше не доступен")
+        if not match_db: raise HTTPException(status_code=400, detail=f"Матч '{b.get('match_title')}' больше не доступен")
         status = match_db.get("status", "")
         is_live = status.startswith("LIVE")
         start_time = match_db.get("start_time")
@@ -417,7 +476,6 @@ async def place_bet(request: Request):
         "potential_win": round(amount * total_coeff, 2),
         "status": "active", "timestamp": int(time.time())
     }
-
     bet_ref = await firebase_post("bets", bet_data)
     bet_id = bet_ref.json().get("name") if bet_ref else None
     if bet_id: await firebase_put(f"users/{user_id}/bets/{bet_id}", bet_data)
