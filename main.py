@@ -92,7 +92,6 @@ async def firebase_post(path: str, data: dict):
         return resp
     except: return None
 
-# --- РАСЧЕТ СТАВОК ---
 async def settle_bets_worker():
     print("🛠 settle_bets_worker запущен...")
     while True:
@@ -169,7 +168,6 @@ async def settle_bets_worker():
             print(f"⚠️ settle_bets: {e}")
         await asyncio.sleep(60)
 
-# --- ЖИВОЙ ЛАЙВ РАЗ В 30 СЕК ---
 async def live_scraper_worker():
     print("⚡ live_scraper_worker запущен (30 сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
@@ -182,6 +180,7 @@ async def live_scraper_worker():
                 data = resp.json()
                 live_updates = {}
                 current_live_ids = set()
+                football_events = []
 
                 raw = await firebase_get("team_logos") or {}
                 logo_cache = {}
@@ -202,8 +201,14 @@ async def live_scraper_worker():
                     for comp in comps:
                         comp_name = comp.get("competition", {}).get("name", "Футбол")
                         for ev in comp.get("events", []):
+                            football_events.append(ev)
                             t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
-                            if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
+                            text_to_check = f"{t1} {t2} {comp_name}".lower()
+                            
+                            if any(w in text_to_check for w in LIVE_BLACKLIST): 
+                                # print(f"   [LIVE] Отсеян: {t1} - {t2} ({comp_name})")
+                                continue
+                            
                             ev_id = ev.get("id")
                             if not ev_id: continue
                             
@@ -248,6 +253,16 @@ async def live_scraper_worker():
                                 "odds": {"1": p1, "X": px, "2": p2}
                             }
 
+                print(f"   [LIVE] Пришло футбольных событий: {len(football_events)}. Подхвачено: {len(live_updates)}")
+                for ev in football_events:
+                    if ev.get('id') and f"olimp_{ev.get('id')}" not in live_updates:
+                        print(f"      [LIVE] Отсеян блэклистом: {ev.get('team1Name')} - {ev.get('team2Name')}")
+
+                # --- Подхват "зависших" матчей ---
+                # Если матч был в базе, начался, но его нет в лайве, и он не обновлялся > 5 минут
+                # (это значит, что мы не получаем по нему данные, но он в базе)
+                # Мы пока не будем его удалять, скрапер сам решит его судьбу.
+                
                 disappeared = prev_live_ids - current_live_ids
                 for mid in disappeared:
                     match = await firebase_get(f"matches/{mid}")
@@ -263,7 +278,7 @@ async def live_scraper_worker():
                 if live_updates:
                     async with httpx.AsyncClient() as client:
                         await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
-                    print(f"🔄 [LIVE] Обновлено: {len(live_updates)}")
+                    print(f"🔄 [LIVE] Обновлено в базе: {len(live_updates)}")
                 
                 prev_live_ids = current_live_ids
         except Exception as e:
