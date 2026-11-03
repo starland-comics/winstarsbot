@@ -10,10 +10,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
+from curl_cffi import requests as cffi_requests
 
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
-FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
+FIREBASE_DB_URL = "https://winstars-4351-default-rtdb.firebaseio.com".replace("4351", "4351") # Защита от опечаток в URL
+OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/broadcast/sports-with-competitions-with-events?vids%5B%5D=1"
+
+# Слова для отсева мусора в лайве (углы, статистика, виртуалки)
+LIVE_BLACKLIST = [
+    "люб", "жен", "мол", "до 19", "до 21", "дубл", "резерв", "академ", 
+    "угл", "жк", "кк", "статистика", "видеопросмотр", "штанги", 
+    "перекладины", "ауты", "офсайды", "фолы", "голы", "мед. бригад", 
+    "хозяева", "гости", "тотал", "фора", "обе забьют", "пенальти", "карточк"
+]
 
 app = FastAPI(title="WinStars API")
 bot = Bot(token=BOT_TOKEN)
@@ -144,14 +154,104 @@ async def settle_bets_worker():
         
         await asyncio.sleep(60)
 
+# --- ФОНОВАЯ ЗАДАЧА ДЛЯ LIVE ОБНОВЛЕНИЙ (30 СЕКУНД) ---
+async def live_scraper_worker():
+    print("⚡ Фоновая задача LIVE-обновлений запущена (интервал 30 сек)...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+    }
+    
+    while True:
+        try:
+            # Выносим синхронный запрос в поток, чтобы не вешать FastAPI
+            resp = await asyncio.to_thread(
+                cffi_requests.get, OLIMP_LIVE_URL, headers=headers, impersonate="chrome120", timeout=15
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                live_updates = {}
+                
+                for sport_group in data:
+                    sport = sport_group.get("payload", {}).get("sport", {})
+                    if str(sport.get("id")) != "1": continue # Только футбол
+                    
+                    comps = sport_group.get("payload", {}).get("competitionsWithEvents", [])
+                    for comp in comps:
+                        comp_name = comp.get("competition", {}).get("name", "")
+                        for ev in comp.get("events", []):
+                            t1 = ev.get("team1Name", "")
+                            t2 = ev.get("team2Name", "")
+                            text_to_check = f"{t1} {t2} {comp_name}".lower()
+                            
+                            # Жесткий отсев мусора
+                            if any(word in text_to_check for word in LIVE_BLACKLIST):
+                                continue
+                            
+                            ev_id = ev.get("id")
+                            if not ev_id: continue
+                            
+                            # Парсим счет
+                            score = "VS"
+                            sc = ev.get("score")
+                            if isinstance(sc, dict):
+                                s1 = sc.get("team1") or sc.get("home") or sc.get("score1")
+                                s2 = sc.get("team2") or sc.get("away") or sc.get("score2")
+                                if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
+                            elif isinstance(sc, str) and ":" in sc:
+                                score = sc
+
+                            if score == "VS":
+                                s1 = ev.get("score1") or ev.get("homeScore")
+                                s2 = ev.get("score2") or ev.get("awayScore")
+                                if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
+                            
+                            # Парсим время
+                            minute = ""
+                            t = ev.get("time")
+                            if isinstance(t, dict): minute = t.get("minute") or t.get("current") or t.get("elapsed")
+                            elif isinstance(t, (int, str)): minute = t
+                            if not minute: minute = ev.get("minute") or ev.get("currentMinute") or ev.get("liveTime")
+                            
+                            status = f"LIVE {minute}'" if minute else "LIVE"
+                            
+                            # Парсим кэфы
+                            p1 = px = p2 = None
+                            for out in ev.get("outcomes", []):
+                                short_name = out.get("shortName", "")
+                                if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
+                                    if short_name in ["П1", "1"]: p1 = out.get("probability")
+                                    elif short_name in ["X", "Х"]: px = out.get("probability")
+                                    elif short_name in ["П2", "2"]: p2 = out.get("probability")
+                            
+                            live_updates[f"olimp_{ev_id}"] = {
+                                "status": status,
+                                "score": score,
+                                "odds": {"1": p1, "X": px, "2": p2}
+                            }
+                
+                if live_updates:
+                    # Точечно патчим только изменившиеся LIVE-матчи
+                    async with httpx.AsyncClient() as client:
+                        await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
+                    print(f"🔄 [LIVE Worker] Обновлено матчей: {len(live_updates)}")
+                    
+        except Exception as e:
+            print(f"⚠️ Ошибка в live_scraper_worker: {e}")
+        
+        await asyncio.sleep(30)
+
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
+    
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(settle_bets_worker())
+    asyncio.create_task(live_scraper_worker())
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
