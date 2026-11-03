@@ -102,45 +102,69 @@ async def settle_bets_worker():
             all_bets = await firebase_get("bets") or {}
             if not isinstance(all_bets, dict):
                 await asyncio.sleep(60); continue
+
             for bet_id, bet in all_bets.items():
                 try:
                     if not isinstance(bet, dict): continue
                     if bet.get("status") != "active": continue
                     events = bet.get("events", [])
                     if not isinstance(events, list): continue
-                    all_finished = True; results = []
+
+                    all_finished = True
+                    results = []
+                    is_void = False
                     for event in events:
                         if not isinstance(event, dict): all_finished = False; break
                         m_id = event.get("match_id")
-                        if m_id not in finished: all_finished = False; break
+                        if m_id not in finished:
+                            all_finished = False; break
                         res = finished[m_id]
                         if not isinstance(res, dict): all_finished = False; break
+                        if res.get("void"):
+                            is_void = True
                         results.append(res)
+
                     if not all_finished or not results: continue
-                    is_won = True
-                    for i, event in enumerate(events):
-                        res = results[i]
-                        s1, s2 = res.get("score1", 0), res.get("score2", 0)
-                        outcome = event.get("outcome")
-                        if outcome == "П1" and not (s1 > s2): is_won = False; break
-                        if outcome == "Х" and not (s1 == s2): is_won = False; break
-                        if outcome == "П2" and not (s2 > s1): is_won = False; break
-                    status = "won" if is_won else "lost"
-                    if status == "won":
+
+                    if is_void:
+                        status = "void"
                         user_id = bet.get("user_id")
                         user = await firebase_get(f"users/{user_id}")
                         if isinstance(user, dict):
-                            win_amount = bet.get("amount", 0) * bet.get("total_coefficient", 1)
-                            await firebase_patch(f"users/{user_id}", {
-                                "balance": user.get("balance", 0) + win_amount,
-                                "profit": user.get("profit", 0) + (win_amount - bet.get("amount", 0)),
-                                "wins": user.get("wins", 0) + 1
-                            })
+                            refund = bet.get("amount", 0)
+                            new_bal = user.get("balance", 0) + refund
+                            new_total = max(0, user.get("total_bets", 1) - 1)
+                            await firebase_patch(f"users/{user_id}", {"balance": new_bal, "total_bets": new_total})
+                            print(f"↩️ Void {bet_id}: возврат {refund} ★")
+                    else:
+                        is_won = True
+                        for i, event in enumerate(events):
+                            res = results[i]
+                            s1, s2 = res.get("score1", 0), res.get("score2", 0)
+                            outcome = event.get("outcome")
+                            if outcome == "П1" and not (s1 > s2): is_won = False; break
+                            if outcome == "Х" and not (s1 == s2): is_won = False; break
+                            if outcome == "П2" and not (s2 > s1): is_won = False; break
+                        status = "won" if is_won else "lost"
+
+                        if status == "won":
+                            user_id = bet.get("user_id")
+                            user = await firebase_get(f"users/{user_id}")
+                            if isinstance(user, dict):
+                                win_amount = bet.get("amount", 0) * bet.get("total_coefficient", 1)
+                                await firebase_patch(f"users/{user_id}", {
+                                    "balance": user.get("balance", 0) + win_amount,
+                                    "profit": user.get("profit", 0) + (win_amount - bet.get("amount", 0)),
+                                    "wins": user.get("wins", 0) + 1
+                                })
+                        print(f"✅ Ставка {bet_id}: {status}")
+
                     await firebase_patch(f"bets/{bet_id}", {"status": status})
                     if bet.get("user_id"):
                         await firebase_patch(f"users/{bet['user_id']}/bets/{bet_id}", {"status": status})
-                    print(f"✅ Ставка {bet_id}: {status}")
-                except Exception: continue
+                except Exception as e:
+                    print(f"⚠️ Ставка {bet_id}: {e}")
+                    continue
         except Exception as e:
             print(f"⚠️ settle_bets: {e}")
         await asyncio.sleep(60)
@@ -149,12 +173,15 @@ async def settle_bets_worker():
 async def live_scraper_worker():
     print("⚡ live_scraper_worker запущен (30 сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
+    prev_live_ids = set()
+    
     while True:
         try:
             resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, impersonate="chrome120", timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
                 live_updates = {}
+                current_live_ids = set()
 
                 raw = await firebase_get("team_logos") or {}
                 logo_cache = {}
@@ -179,6 +206,9 @@ async def live_scraper_worker():
                             if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
                             ev_id = ev.get("id")
                             if not ev_id: continue
+                            
+                            mid = f"olimp_{ev_id}"
+                            current_live_ids.add(mid)
 
                             score = "VS"
                             sc = ev.get("score")
@@ -210,7 +240,7 @@ async def live_scraper_worker():
                             hl = logo_cache.get(t1) or logo_cache.get(f"{t1}|") or ""
                             al = logo_cache.get(t2) or logo_cache.get(f"{t2}|") or ""
 
-                            live_updates[f"olimp_{ev_id}"] = {
+                            live_updates[mid] = {
                                 "title": f"{t1} - {t2}", "home": t1, "away": t2,
                                 "homeLogo": hl, "awayLogo": al, "league": comp_name,
                                 "status": status, "score": score,
@@ -218,10 +248,24 @@ async def live_scraper_worker():
                                 "odds": {"1": p1, "X": px, "2": p2}
                             }
 
+                disappeared = prev_live_ids - current_live_ids
+                for mid in disappeared:
+                    match = await firebase_get(f"matches/{mid}")
+                    if isinstance(match, dict) and match.get("status", "").startswith("LIVE"):
+                        score_str = match.get("score", "")
+                        if ":" in score_str:
+                            try:
+                                s1, s2 = [int(x.strip()) for x in score_str.split(":")]
+                                await firebase_patch(f"finished_matches/{mid}", {"score1": s1, "score2": s2, "source": "live_last"})
+                                print(f"🏁 {mid} закрыт в LIVE. Счёт: {s1}:{s2}")
+                            except Exception: pass
+
                 if live_updates:
                     async with httpx.AsyncClient() as client:
                         await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
                     print(f"🔄 [LIVE] Обновлено: {len(live_updates)}")
+                
+                prev_live_ids = current_live_ids
         except Exception as e:
             print(f"⚠️ live_scraper: {e}")
         await asyncio.sleep(30)
