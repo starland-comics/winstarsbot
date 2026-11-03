@@ -9,7 +9,7 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <style>
-    :root { --bg-dark: #09070f; --bg-card: #130f1e; --bg-card-hover: #1b162b; --border: rgba(157, 78, 221, 0.15); --accent: #9d4edd; --text-main: #f3f0f8; --text-muted: #8a819b; --green: #10b981; --red: #ef4444; --nav-height: 64px; --header-height: 60px; --radius: 16px; }
+    :root { --bg-dark: #09070f; --bg-card: #130f1e; --bg-card-hover: #1b162b; --border: rgba(157, 78, 221, 0.15); --accent: #9d4edd; --text-main: #f3f0f8; --text-muted: #8a819b; --green: #10b981; --red: #ef4444; --orange: #f59e0b; --nav-height: 64px; --header-height: 60px; --radius: 16px; }
     .team-logo-img { width: 42px; height: 42px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 4px; }
     .team-logo { width: 42px; height: 42px; background: linear-gradient(135deg, rgba(157, 78, 221, 0.6), rgba(123, 44, 191, 0.6)); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.1); }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
@@ -351,8 +351,6 @@
       
       let filtered = allMatchesRaw.filter(m => {
         const isLive = m.status.includes('LIVE');
-        
-        // Скрываем матчи, которые уже начались, но не в лайве
         if (!isLive && m.start_time && m.start_time < now) return false;
 
         const modeMatch = currentMode === 'live' ? isLive : !isLive;
@@ -636,13 +634,19 @@
 
           const totalCoeff = bet.total_coefficient || bet.coefficient || 1;
           const typeText = bet.type === 'express' ? 'Экспресс' : 'Одинар';
-          const statusColor = bet.status === 'won' ? 'var(--green)' : (bet.status === 'lost' ? 'var(--red)' : 'var(--accent)');
+          
+          const statusColor = bet.status === 'won' ? 'var(--green)' 
+                            : bet.status === 'lost' ? 'var(--red)' 
+                            : bet.status === 'void' ? 'var(--orange)' 
+                            : 'var(--accent)';
+                            
+          const statusText = bet.status === 'void' ? 'ВОЗВРАТ' : bet.status.toUpperCase();
 
           const html = `
             <div class="history-card">
               <div class="history-header">
                 <span>${typeText}</span>
-                <span style="color: ${statusColor}; font-weight: 800;">${bet.status.toUpperCase()}</span>
+                <span style="color: ${statusColor}; font-weight: 800;">${statusText}</span>
               </div>
               ${eventsHtml}
               <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px;">
