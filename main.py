@@ -80,8 +80,73 @@ async def firebase_patch(path: str, data: dict):
     except: pass
 
 async def firebase_post(path: str, data: dict):
-    try: await http_client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
-    except: pass
+    try: 
+        resp = await http_client.post(f"{FIREBASE_DB_URL}/{path}.json", json=data)
+        return resp
+    except: return None
+
+# --- ФОНОВАЯ ЗАДАЧА ДЛЯ РАСЧЕТА СТАВОК ---
+async def settle_bets_worker():
+    print("🛠 Фоновая задача расчета ставок запущена...")
+    while True:
+        try:
+            finished = await firebase_get("finished_matches") or {}
+            if not finished:
+                await asyncio.sleep(30)
+                continue
+                
+            all_bets = await firebase_get("bets") or {}
+            for bet_id, bet in all_bets.items():
+                if bet.get("status") != "active": continue
+                
+                # Проверяем, все ли матчи в ставке завершены
+                all_finished = True
+                results = []
+                for event in bet["events"]:
+                    m_id = event["match_id"]
+                    if m_id not in finished:
+                        all_finished = False
+                        break
+                    results.append(finished[m_id])
+                
+                if not all_finished: continue
+                
+                # Рассчитываем исходы
+                is_won = True
+                for i, event in enumerate(bet["events"]):
+                    res = results[i]
+                    s1, s2 = res.get("score1", 0), res.get("score2", 0)
+                    outcome = event["outcome"] # "П1", "Х", "П2"
+                    
+                    if outcome == "П1" and not (s1 > s2): is_won = False; break
+                    if outcome == "Х" and not (s1 == s2): is_won = False; break
+                    if outcome == "П2" and not (s2 > s1): is_won = False; break
+                
+                status = "won" if is_won else "lost"
+                update_data = {"status": status}
+                
+                # Начисляем баланс, если выиграл
+                if status == "won":
+                    user_id = bet["user_id"]
+                    user = await firebase_get(f"users/{user_id}")
+                    if user:
+                        win_amount = bet["amount"] * bet["total_coefficient"]
+                        new_bal = user["balance"] + win_amount
+                        new_profit = user.get("profit", 0) + (win_amount - bet["amount"])
+                        new_wins = user.get("wins", 0) + 1
+                        await firebase_patch(f"users/{user_id}", {
+                            "balance": new_bal, "profit": new_profit, "wins": new_wins
+                        })
+                
+                # Обновляем статус ставки в двух местах
+                await firebase_patch(f"bets/{bet_id}", update_data)
+                await firebase_patch(f"users/{bet['user_id']}/bets/{bet_id}", update_data)
+                print(f"✅ Ставка {bet_id} рассчитана: {status}")
+                
+        except Exception as e:
+            print(f"⚠️ Ошибка в settle_bets: {e}")
+        
+        await asyncio.sleep(60)
 
 @app.on_event("startup")
 async def startup_event():
@@ -90,6 +155,7 @@ async def startup_event():
     if not promo:
         await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
     asyncio.create_task(dp.start_polling(bot))
+    asyncio.create_task(settle_bets_worker())
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
@@ -130,7 +196,6 @@ async def get_matches():
 async def get_user_bets(user_id: int):
     bets_dict = await firebase_get(f"users/{user_id}/bets")
     if not bets_dict: return {"bets": []}
-    # Возвращаем в виде списка, добавляя id
     return {"bets": [{"id": k, **v} for k, v in bets_dict.items()]}
 
 @app.post("/api/bets/place")
@@ -138,7 +203,7 @@ async def place_bet(request: Request):
     req = await request.json()
     user_id = req.get("user_id")
     amount = req.get("amount")
-    bets = req.get("bets", []) # Список исходов
+    bets = req.get("bets", [])
     bet_type = req.get("type", "single")
     
     if not bets:
@@ -148,7 +213,6 @@ async def place_bet(request: Request):
     if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
     if user.get("balance", 0) < amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
     
-    # Считаем общий коэффициент
     total_coeff = 1.0
     for b in bets:
         total_coeff *= float(b.get("coefficient", 1.0))
@@ -157,6 +221,7 @@ async def place_bet(request: Request):
     new_balance = user.get("balance", 0) - amount
     
     bet_data = {
+        "user_id": str(user_id),
         "type": bet_type,
         "events": bets,
         "amount": amount,
@@ -166,7 +231,12 @@ async def place_bet(request: Request):
         "timestamp": int(time.time())
     }
     
-    await firebase_post(f"users/{user_id}/bets", bet_data)
+    bet_ref = await firebase_post("bets", bet_data)
+    bet_id = bet_ref.json().get("name") if bet_ref else None
+    
+    if bet_id:
+        await firebase_put(f"users/{user_id}/bets/{bet_id}", bet_data)
+    
     await firebase_patch(f"users/{user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
     
     return {"status": "ok", "new_balance": new_balance, "message": "Прогноз принят!"}
@@ -188,7 +258,6 @@ async def create_invoice(request: Request):
         )
         return {"status": "ok", "invoice_link": link}
     except Exception as e:
-        print(f"❌ ОШИБКА TELEGRAM: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/cashier/promo")
@@ -245,24 +314,6 @@ async def process_successful_payment(message: types.Message):
 async def cmd_start(message: types.Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚽ Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))]])
     await message.answer("👋 Добро пожаловать в **WinStars**!", reply_markup=kb, parse_mode="Markdown")
-
-# Эндпоинт для ручного/автоматического расчета ставок (пока в разработке)
-@app.post("/api/admin/settle_match")
-async def settle_match(request: Request):
-    """
-    Вызывается, когда матч завершается.
-    req: { "match_id": "olimp_123", "score1": 2, "score2": 1 }
-    """
-    req = await request.json()
-    match_id = req.get("match_id")
-    score1 = req.get("score1")
-    score2 = req.get("score2")
-    
-    if match_id is None or score1 is None or score2 is None:
-         raise HTTPException(status_code=400, detail="Не хватает данных")
-         
-    # Логика расчета будет добавлена на следующем шаге
-    return {"status": "ok", "message": "Функция расчета в разработке"}
 
 if __name__ == "__main__":
     import uvicorn
