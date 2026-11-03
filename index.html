@@ -351,10 +351,19 @@
       
       let filtered = allMatchesRaw.filter(m => {
         const isLive = m.status.includes('LIVE');
-        if (!isLive && m.start_time && m.start_time < now) return false;
+        const isStarted = m.start_time && m.start_time < now;
+        
+        // Логика:
+        // В режиме "Live": показываем, если это LIVE ИЛИ если матч уже начался (даже без статуса LIVE)
+        // В режиме "Скоро": показываем, если это НЕ LIVE и матч ЕЩЕ НЕ начался
+        
+        if (currentMode === 'live') {
+            if (!isLive && !isStarted) return false; // Еще не начался
+        } else {
+            if (isLive || isStarted) return false; // Уже начался или в лайве
+        }
 
-        const modeMatch = currentMode === 'live' ? isLive : !isLive;
-        return modeMatch && (currentLeague === 'all' || m.league === currentLeague);
+        return (currentLeague === 'all' || m.league === currentLeague);
       });
       
       filtered.sort((a, b) => {
@@ -374,13 +383,15 @@
         const card = document.createElement('div'); card.className = 'match-card';
         
         let timeDisplay = match.status;
-        if (!isLive && match.start_time) {
+        if (!isLive && match.start_time && match.start_time > now) {
           const date = new Date(match.start_time * 1000);
           const day = String(date.getDate()).padStart(2, '0');
           const month = String(date.getMonth() + 1).padStart(2, '0');
           const hours = String(date.getHours()).padStart(2, '0');
           const minutes = String(date.getMinutes()).padStart(2, '0');
           timeDisplay = `${day}.${month} ${hours}:${minutes}`;
+        } else if (!isLive && match.start_time && match.start_time <= now) {
+            timeDisplay = 'ИДЕТ'; // Матч начался, но статус не обновился
         }
 
         const outcomes = [
@@ -413,9 +424,12 @@
           ? `<img src="${awayLogoUrl}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
+        const displayStatus = isLive ? match.status : (match.start_time && match.start_time <= now ? 'ИДЕТ' : timeDisplay);
+        const isLiveClass = isLive || (match.start_time && match.start_time <= now);
+
         card.innerHTML = `
           <div class="match-header">
-            ${isLive ? `<span class="live-tag"><div class="live-dot"></div> ${match.status}</span>` : `<span>${timeDisplay}</span>`}
+            ${isLiveClass ? `<span class="live-tag"><div class="live-dot"></div> ${displayStatus}</span>` : `<span>${displayStatus}</span>`}
             <span>${match.league || 'Футбол'}</span>
           </div>
           <div class="teams-container">
