@@ -23,7 +23,7 @@
     .avatar-btn { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--accent); overflow: hidden; cursor: pointer; }
     .avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
     
-    main { position: absolute; top: var(--header-height); bottom: var(--nav-height); left: 0; right: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; }
+    main { position: absolute; top: var(--header-height); bottom: var(--nav-height); left: 0; right: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 80px; }
     .tab-content { display: none; opacity: 0; }
     .tab-content.active { display: block; opacity: 1; }
     
@@ -37,10 +37,11 @@
 
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 500; display: none; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(4px); }
     .modal-overlay.open { display: block; opacity: 1; }
-    .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 80vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
+    .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 85vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
     .modal-overlay.open .modal-content { bottom: 0; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: 800; font-size: 1.1rem; }
     .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+    
     .league-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 20px; }
     .league-item { padding: 14px 16px; background: var(--bg-card-hover); border: 1px solid transparent; border-radius: 12px; font-size: 0.9rem; font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
     .league-item.active { border-color: var(--accent); background: rgba(157, 78, 221, 0.15); color: var(--accent); }
@@ -56,14 +57,36 @@
     .team { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
     .team-name { font-size: 0.85rem; font-weight: 600; }
     .score { font-size: 1.4rem; font-weight: 800; letter-spacing: 2px; color: var(--accent); }
+    
     .odds-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .odd-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: background 0.3s; }
+    .odd-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: 0.2s; }
+    .odd-btn.selected { border-color: var(--accent); background: rgba(157, 78, 221, 0.2); }
     .odd-name { font-size: 0.7rem; color: var(--text-muted); }
     .odd-val { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
+
+    /* Купон (плавающая панель) */
+    .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(90deg, #e67e22, #d35400); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
+    .bet-slip-bar.active { display: flex; }
+    .bet-slip-info { display: flex; flex-direction: column; }
+    .bet-slip-count { font-size: 0.8rem; opacity: 0.9; }
+    .bet-slip-odds { font-size: 1.1rem; font-weight: 800; }
+    .bet-slip-continue { font-weight: 700; font-size: 0.95rem; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; }
+
+    /* Содержимое купона */
+    .slip-items { flex: 1; overflow-y: auto; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .slip-item { background: var(--bg-card-hover); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
+    .slip-item-info { display: flex; flex-direction: column; gap: 4px; }
+    .slip-match { font-size: 0.85rem; font-weight: 600; }
+    .slip-outcome { font-size: 0.75rem; color: var(--text-muted); }
+    .slip-remove { background: rgba(239, 68, 68, 0.2); color: var(--red); border: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; cursor: pointer; }
+    .slip-input-row { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .slip-input-row .input-group { margin-bottom: 0; flex: 1; }
+    .slip-potential { font-weight: 800; color: var(--green); margin-bottom: 16px; text-align: center; font-size: 1.1rem; }
 
     .pill-tabs { display: flex; background: var(--bg-card); padding: 4px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px; }
     .pill-tab { flex: 1; text-align: center; padding: 8px; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); border-radius: 8px; cursor: pointer; }
     .pill-tab.active { background: var(--accent); color: #fff; }
+    
     .chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
     .chart-val { font-size: 1.8rem; font-weight: 800; margin: 4px 0 12px 0; }
     .chart-val.negative { color: var(--red); } .chart-val.positive { color: var(--green); } .chart-val.neutral { color: #8a819b; }
@@ -99,7 +122,11 @@
     .menu-drawer { position: fixed; top: 0; right: -100%; width: 260px; height: 100%; background: var(--bg-card); border-left: 1px solid var(--border); z-index: 200; padding: 24px 16px; transition: right 0.3s; }
     .menu-drawer.open { right: 0; } .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 199; display: none; } .drawer-overlay.open { display: block; }
     .drawer-menu-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
-    .history-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    
+    .history-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .history-header { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+    .history-title { font-weight: 700; font-size: 0.9rem; }
+    .history-odds { font-weight: 800; color: var(--accent); font-size: 1.1rem; }
   </style>
 </head>
 <body>
@@ -174,9 +201,6 @@
           <path id="chart-path" d="M 0,50 L 300,50" fill="none" stroke="#8a819b" stroke-width="3" stroke-linecap="round" />
         </svg>
       </div>
-      <div class="section-title">Ввод промокода</div>
-      <div class="input-group"><svg class="icon" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01"/></svg><input type="text" placeholder="Промокод..." id="profile-promo"></div>
-      <button class="btn-submit" onclick="applyPromo('profile-promo')">Активировать</button>
     </div>
   </main>
 
@@ -190,12 +214,39 @@
 
   <div class="modal-overlay" id="league-modal" onclick="closeLeagueModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
-      <div class="modal-header">
-        Выбор лиги
-        <button class="modal-close" onclick="closeLeagueModal()">✕</button>
-      </div>
+      <div class="modal-header">Выбор лиги <button class="modal-close" onclick="closeLeagueModal()">✕</button></div>
       <div class="league-list" id="league-list-container"></div>
     </div>
+  </div>
+
+  <!-- Модалка купона -->
+  <div class="modal-overlay" id="bet-slip-modal" onclick="closeBetSlipModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">RDG · ПРОГНОЗ</div>
+          <div id="slip-type-title">Экспресс · 1 матч</div>
+        </div>
+        <button class="modal-close" onclick="closeBetSlipModal()">✕</button>
+      </div>
+      <div class="slip-items" id="slip-items-container"></div>
+      <div class="slip-input-row">
+        <div class="input-group" style="margin-bottom: 0; flex: 1;">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <input type="number" id="slip-stake" placeholder="Сумма ставки..." oninput="updatePotentialWin()">
+        </div>
+      </div>
+      <div class="slip-potential" id="slip-potential">Возможная выплата: 0 ★</div>
+      <button class="btn-submit" style="background: linear-gradient(90deg, #e67e22, #d35400);" onclick="confirmBet()">Подтвердить прогноз</button>
+    </div>
+  </div>
+
+  <div class="bet-slip-bar" id="bet-slip-bar" onclick="openBetSlipModal()">
+    <div class="bet-slip-info">
+      <div class="bet-slip-count" id="slip-bar-count">1 событие</div>
+      <div class="bet-slip-odds" id="slip-bar-odds">1.00</div>
+    </div>
+    <div class="bet-slip-continue">Продолжить</div>
   </div>
 
   <div class="drawer-overlay" id="overlay" onclick="closeDrawer()"></div>
@@ -214,8 +265,10 @@
     let allMatchesRaw = []; 
     let currentMode = 'live'; 
     let currentLeague = 'all'; 
-    let previousOdds = {}; 
-
+    
+    // Стейт купона
+    let betSlip = []; // { matchId, matchTitle, outcome, coeff, league }
+    
     const LEAGUE_PRIORITY = {
       "АПЛ": 1, "Ла Лига": 2, "Серия А": 3, "Бундеслига": 4, "Лига 1": 5,
       "РПЛ": 6, "Лига Чемпионов": 7, "Лига Европы": 8, "Лига Конференций": 9,
@@ -331,7 +384,6 @@
           timeDisplay = `${day}.${month} ${hours}:${minutes}`;
         }
 
-        // Всегда рендерим П1, Х, П2. Если кэфа нет - ставим "-"
         const outcomes = [
           { key: '1', label: 'П1' },
           { key: 'X', label: 'Х' },
@@ -341,17 +393,16 @@
         let oddsHtml = '';
         outcomes.forEach(o => {
           const coeff = match.odds[o.key] || '-';
-          const oldCoeff = previousOdds[`${match.id}_${o.key}`];
-          let highlightStyle = (oldCoeff && oldCoeff !== coeff && coeff !== '-') ? (parseFloat(coeff) > parseFloat(oldCoeff) ? 'background: rgba(16, 185, 129, 0.2);' : 'background: rgba(239, 68, 68, 0.2);') : '';
+          const isSelected = betSlip.some(b => b.matchId === match.id && b.outcome === o.label);
+          const selectedClass = isSelected ? 'selected' : '';
           
-          if (coeff !== '-') previousOdds[`${match.id}_${o.key}`] = coeff;
-          
-          oddsHtml += `<div class="odd-btn" style="${highlightStyle}" onclick="placeBetPrompt('${match.id}', '${match.title}', '${o.label}', ${coeff === '-' ? 0 : coeff})"><span class="odd-name">${o.label}</span><span class="odd-val">${coeff}</span></div>`;
+          oddsHtml += `<div class="odd-btn ${selectedClass}" onclick="toggleBet('${match.id}', '${match.title}', '${o.label}', ${coeff === '-' ? 0 : coeff}, '${match.league}', '${o.key}')">
+            <span class="odd-name">${o.label}</span><span class="odd-val">${coeff}</span>
+          </div>`;
         });
 
         const homeName = match.home || 'Хозяева'; 
         const awayName = match.away || 'Гости';
-        
         const homeLogoUrl = match.homeLogo || '';
         const awayLogoUrl = match.awayLogo || '';
 
@@ -378,20 +429,133 @@
       });
     }
 
-    async function placeBetPrompt(matchId, matchTitle, outcome, coeff) {
-      if (coeff === 0) return alert("Коэффициент на этот исход недоступен");
+    // --- ЛОГИКА КУПОНА ---
+    function toggleBet(matchId, matchTitle, outcome, coeff, league, outcomeKey) {
+      if (coeff === 0) return alert("Коэффициент недоступен");
       
-      const amountStr = prompt(`Ставка на "${outcome}" (${coeff})\nВведите сумму в звездах (★):`, "50");
-      if (!amountStr) return;
-      const amount = parseInt(amountStr);
-      if (isNaN(amount) || amount <= 0) return alert("Введите корректную сумму");
+      const existingIndex = betSlip.findIndex(b => b.matchId === matchId && b.outcome === outcome);
+      if (existingIndex !== -1) {
+        // Если уже есть — удаляем
+        betSlip.splice(existingIndex, 1);
+      } else {
+        // Удаляем другие исходы этого же матча, если есть
+        betSlip = betSlip.filter(b => b.matchId !== matchId);
+        // Добавляем новый
+        betSlip.push({ matchId, matchTitle, outcome, coeff, league, outcomeKey });
+      }
+      
+      updateBetSlipUI();
+      renderMatches(); // Перерисовываем для обновления подсветки
+    }
+
+    function updateBetSlipUI() {
+      const bar = document.getElementById('bet-slip-bar');
+      const countEl = document.getElementById('slip-bar-count');
+      const oddsEl = document.getElementById('slip-bar-odds');
+
+      if (betSlip.length === 0) {
+        bar.classList.remove('active');
+        return;
+      }
+
+      bar.classList.add('active');
+      countEl.innerText = `${betSlip.length} ${betSlip.length === 1 ? 'событие' : (betSlip.length < 5 ? 'события' : 'событий')}`;
+      
+      let totalOdds = 1;
+      betSlip.forEach(b => totalOdds *= b.coeff);
+      oddsEl.innerText = totalOdds.toFixed(2);
+    }
+
+    function openBetSlipModal() {
+      if (betSlip.length === 0) return;
+      
+      const container = document.getElementById('slip-items-container');
+      container.innerHTML = '';
+      
+      let totalOdds = 1;
+      betSlip.forEach((b, index) => {
+        totalOdds *= b.coeff;
+        container.innerHTML += `
+          <div class="slip-item">
+            <div class="slip-item-info">
+              <div class="slip-match">${b.matchTitle}</div>
+              <div class="slip-outcome">${b.outcome} × ${b.coeff.toFixed(2)}</div>
+            </div>
+            <button class="slip-remove" onclick="removeBetFromSlip(${index})">×</button>
+          </div>
+        `;
+      });
+      
+      document.getElementById('slip-type-title').innerText = betSlip.length === 1 ? 'Одинар' : `Экспресс · ${betSlip.length} матчей`;
+      document.getElementById('slip-stake').value = '';
+      updatePotentialWin();
+      
+      document.getElementById('bet-slip-modal').classList.add('open');
+    }
+
+    function removeBetFromSlip(index) {
+      betSlip.splice(index, 1);
+      updateBetSlipUI();
+      
+      if (betSlip.length === 0) {
+        closeBetSlipModal();
+      } else {
+        openBetSlipModal(); // Обновляем модалку
+      }
+      renderMatches();
+    }
+
+    function closeBetSlipModal(e) {
+      if (!e || e.target === document.getElementById('bet-slip-modal') || e.target.tagName === 'BUTTON') {
+        document.getElementById('bet-slip-modal').classList.remove('open');
+      }
+    }
+
+    function updatePotentialWin() {
+      const stake = parseFloat(document.getElementById('slip-stake').value) || 0;
+      let totalOdds = 1;
+      betSlip.forEach(b => totalOdds *= b.coeff);
+      const potential = (stake * totalOdds).toFixed(2);
+      document.getElementById('slip-potential').innerText = `Возможная выплата: ${potential} ★`;
+    }
+
+    async function confirmBet() {
+      const stake = parseInt(document.getElementById('slip-stake').value);
+      if (isNaN(stake) || stake <= 0) return alert("Введите корректную сумму");
+      if (!currentUser) return;
+      
+      const betType = betSlip.length === 1 ? 'single' : 'express';
+      
       try {
         const res = await fetch(`${API_BASE_URL}/api/bets/place`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: currentUser.user_id, match_id: matchId, match_title: matchTitle, outcome, coefficient: coeff, amount })
+          body: JSON.stringify({ 
+            user_id: currentUser.user_id, 
+            bets: betSlip.map(b => ({
+              match_id: b.matchId,
+              match_title: b.matchTitle,
+              outcome: b.outcome,
+              coefficient: b.coeff
+            })),
+            amount: stake,
+            type: betType
+          })
         });
         const data = await res.json();
-        if (res.ok) { currentUser.balance = data.new_balance; currentUser.total_bets += 1; updateUI(); loadUserBets(); alert(data.message); } else { alert(data.detail || "Ошибка"); }
+        
+        if (res.ok) { 
+          currentUser.balance = data.new_balance; 
+          currentUser.total_bets += 1; 
+          updateUI(); 
+          loadUserBets(); 
+          closeBetSlipModal();
+          betSlip = []; 
+          updateBetSlipUI();
+          renderMatches();
+          alert(data.message); 
+        } else { 
+          alert(data.detail || "Ошибка"); 
+        }
       } catch (err) { alert("Ошибка соединения"); }
     }
 
@@ -465,7 +629,34 @@
         
         data.bets.forEach(bet => {
           const isActive = bet.status === 'active';
-          const html = `<div class="history-card"><div><div style="font-weight:700;">${bet.match_title}</div><div style="font-size:0.75rem; color:var(--text-muted);">${bet.outcome} @ ${bet.coefficient}</div></div><div style="text-align:right;"><div style="font-weight:800; color:var(--accent);">${bet.amount} ★</div></div></div>`;
+          
+          let eventsHtml = '';
+          if (bet.events && Array.isArray(bet.events)) {
+            bet.events.forEach(e => {
+              eventsHtml += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${e.match_title} — ${e.outcome} @ ${e.coefficient}</div>`;
+            });
+          } else if (bet.match_title) {
+            // Обратная совместимость для старых одинаров
+            eventsHtml = `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${bet.match_title} — ${bet.outcome} @ ${bet.coefficient}</div>`;
+          }
+
+          const totalCoeff = bet.total_coefficient || bet.coefficient || 1;
+          const typeText = bet.type === 'express' ? 'Экспресс' : 'Одинар';
+          const statusColor = bet.status === 'won' ? 'var(--green)' : (bet.status === 'lost' ? 'var(--red)' : 'var(--accent)');
+
+          const html = `
+            <div class="history-card">
+              <div class="history-header">
+                <span>${typeText}</span>
+                <span style="color: ${statusColor}; font-weight: 800;">${bet.status.toUpperCase()}</span>
+              </div>
+              ${eventsHtml}
+              <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px;">
+                <div class="history-odds">${totalCoeff.toFixed(2)}</div>
+                <div style="font-weight: 800;">${bet.amount} ★</div>
+              </div>
+            </div>`;
+            
           if (isActive) { container.innerHTML += html; } else { historyContainer.innerHTML += html; }
         });
         
