@@ -7,13 +7,13 @@ import os
 import time
 import base64
 import re
+import requests as cffi_requests  # Заменили curl_cffi на обычный requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, LabeledPrice
-from curl_cffi import requests as cffi_requests
 
 BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
@@ -21,7 +21,7 @@ FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/sports-with-competitions-with-events"
 OLIMP_LINE_URL = "https://www.olimp.bet/api/v4/0/line/top/sports-with-competitions-with-events"
 
-# Секрет для внешних cron-триггеров. Придумай свой!
+# Секрет для внешних cron-триггеров. Придумай свой и поменяй в cron-job.org!
 TRIGGER_SECRET = "winstars_cron_2026_xyz"
 
 LOGOS_TTL = 300
@@ -56,8 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ещё меньше соединений
-limits = httpx.Limits(max_connections=8, max_keepalive_connections=3)
+limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 http_client = httpx.AsyncClient(timeout=10.0, limits=limits)
 
 @app.on_event("shutdown")
@@ -116,6 +115,7 @@ async def firebase_post(path: str, data: dict):
         return resp
     except: return None
 
+# ============== КЭШИ ==============
 def _build_logo_map(raw_cache):
     result = {}
     if not isinstance(raw_cache, dict): return result
@@ -167,6 +167,7 @@ async def get_finished_cached():
     _FINISHED_CACHE["ts"] = now
     return raw
 
+# ============== ПАРСЕР МИНУТЫ ==============
 def _try_extract_minute(val):
     if val is None or isinstance(val, bool): return None
     if isinstance(val, (int, float)):
@@ -241,7 +242,8 @@ async def run_live_once():
     LIVE_RUNNING = True
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
     try:
-        resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, impersonate="chrome120", timeout=15)
+        # Используем обычный requests без impersonate
+        resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, timeout=15)
         if resp.status_code != 200:
             return
         data = resp.json()
