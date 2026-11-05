@@ -250,6 +250,7 @@ async def live_scraper_worker():
     print(f"⚡ live_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
     cycle = 0
+    prev_live_ids = set()
 
     while True:
         try:
@@ -259,6 +260,7 @@ async def live_scraper_worker():
                 del resp
 
                 live_updates = {}
+                current_live_ids = set()
                 team_logo_map = await get_logos_map()
 
                 for sg in data:
@@ -274,6 +276,7 @@ async def live_scraper_worker():
                             if not ev_id: continue
 
                             mid = f"olimp_{ev_id}"
+                            current_live_ids.add(mid)
                             score, minute = extract_live_score_and_time(ev)
                             status = _status_from_minute(minute)
 
@@ -304,6 +307,38 @@ async def live_scraper_worker():
                             print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | {comp_name} | odds {p1}/{px}/{p2}")
 
                 del data
+
+                # === КЛЮЧЕВОЙ БЛОК: сохраняем финальный счёт исчезнувших матчей ===
+                disappeared = prev_live_ids - current_live_ids
+                if disappeared:
+                    cached_matches = await get_matches_cached()
+                    for mid in disappeared:
+                        match = cached_matches.get(mid)
+                        if not isinstance(match, dict): continue
+
+                        existing_finished = await firebase_get(f"finished_matches/{mid}")
+                        if isinstance(existing_finished, dict) and "score1" in existing_finished:
+                            print(f"   ☑️ {match.get('title', mid)} уже в finished_matches, пропускаю")
+                            continue
+
+                        score_str = match.get("score", "")
+                        title = match.get("title", mid)
+
+                        if ":" in score_str:
+                            try:
+                                s1, s2 = [int(x.strip()) for x in score_str.split(":")]
+                                await firebase_patch(f"finished_matches/{mid}", {
+                                    "score1": s1, "score2": s2, "source": "live_last"
+                                })
+                                _FINISHED_CACHE["ts"] = 0
+                                print(f"   🏁 [ФИНАЛ] {title}: {s1}:{s2} (последний счёт из LIVE)")
+                            except Exception as e:
+                                print(f"   ⚠️ Не смог сохранить счёт для {mid}: {e}")
+                        else:
+                            print(f"   ⚠️ {title} ушёл из LIVE без счёта (был только в линии?)")
+
+                prev_live_ids = current_live_ids
+
                 if live_updates:
                     async with httpx.AsyncClient() as client:
                         await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
@@ -452,7 +487,6 @@ async def sync_user(initData: str = Query("")):
         return {"status": "ok", "user": default_user}
     return {"status": "ok", "user": existing_user}
 
-# ОБНОВЛЕНО: добавлен HEAD для UptimeRobot
 @app.api_route("/api/matches", methods=["GET", "HEAD"])
 async def get_matches():
     matches = await firebase_get("matches")
