@@ -452,7 +452,8 @@ async def sync_user(initData: str = Query("")):
         return {"status": "ok", "user": default_user}
     return {"status": "ok", "user": existing_user}
 
-@app.get("/api/matches")
+# ОБНОВЛЕНО: добавлен HEAD для UptimeRobot
+@app.api_route("/api/matches", methods=["GET", "HEAD"])
 async def get_matches():
     matches = await firebase_get("matches")
     return {"matches": matches if isinstance(matches, dict) else {}}
