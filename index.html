@@ -196,7 +196,7 @@
         <div class="chart-val neutral" id="chart-total">0 ★</div>
         <svg class="svg-chart" viewBox="0 0 300 100" preserveAspectRatio="none">
           <path id="chart-fill" d="M 0,50 L 300,50 L 300,100 L 0,100 Z" fill="rgba(138, 129, 155, 0.2)" />
-          <path id="chart-path" d="M 0,50 L 300,50" fill="none" stroke="#8a819b" stroke-width="3" stroke-linecap="round" />
+          <path id="chart-path" d="M 0,50 L 300,50" fill="none" stroke="#8a819b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </div>
     </div>
@@ -265,6 +265,13 @@
     let betSlip = []; 
     
     window.matchTimers = {};
+
+    // Функция для красивого вывода баланса (максимум 2 знака, без лишних нулей)
+    function formatStars(val) {
+        let num = parseFloat(val) || 0;
+        let rounded = Math.round(num * 100) / 100;
+        return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(2);
+    }
 
     const LEAGUE_PRIORITY = {
       "АПЛ": 1, "Ла Лига": 2, "Серия А": 3, "Бундеслига": 4, "Лига 1": 5,
@@ -525,7 +532,7 @@
       
       let totalOdds = 1;
       betSlip.forEach(b => totalOdds *= b.coeff);
-      oddsEl.innerText = totalOdds.toFixed(2);
+      oddsEl.innerText = formatStars(totalOdds);
     }
 
     function openBetSlipModal() {
@@ -539,7 +546,7 @@
           <div class="slip-item">
             <div class="slip-item-info">
               <div class="slip-match">${b.matchTitle}</div>
-              <div class="slip-outcome">${b.outcome} × ${b.coeff.toFixed(2)}</div>
+              <div class="slip-outcome">${b.outcome} × ${formatStars(b.coeff)}</div>
             </div>
             <button class="slip-remove" onclick="removeBetFromSlip(${index})">×</button>
           </div>
@@ -576,7 +583,7 @@
       let totalOdds = 1;
       betSlip.forEach(b => totalOdds *= b.coeff);
       const potential = (stake * totalOdds).toFixed(2);
-      document.getElementById('slip-potential').innerText = `Возможная выплата: ${potential} ★`;
+      document.getElementById('slip-potential').innerText = `Возможная выплата: ${formatStars(potential)} ★`;
     }
 
     async function confirmBet() {
@@ -693,10 +700,10 @@
           let eventsHtml = '';
           if (bet.events && Array.isArray(bet.events)) {
             bet.events.forEach(e => {
-              eventsHtml += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${e.match_title} — ${e.outcome} @ ${e.coefficient}</div>`;
+              eventsHtml += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${e.match_title} — ${e.outcome} @ ${formatStars(e.coefficient)}</div>`;
             });
           } else if (bet.match_title) {
-            eventsHtml = `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${bet.match_title} — ${bet.outcome} @ ${bet.coefficient}</div>`;
+            eventsHtml = `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${bet.match_title} — ${bet.outcome} @ ${formatStars(bet.coefficient)}</div>`;
           }
 
           const totalCoeff = bet.total_coefficient || bet.coefficient || 1;
@@ -717,8 +724,8 @@
               </div>
               ${eventsHtml}
               <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px;">
-                <div class="history-odds">${totalCoeff.toFixed(2)}</div>
-                <div style="font-weight: 800;">${bet.amount} ★</div>
+                <div class="history-odds">${formatStars(totalCoeff)}</div>
+                <div style="font-weight: 800;">${formatStars(bet.amount)} ★</div>
               </div>
             </div>`;
             
@@ -732,7 +739,7 @@
 
     function updateUI() {
       if (!currentUser) return;
-      document.getElementById("header-balance").innerText = `${currentUser.balance || 0} ★`;
+      document.getElementById("header-balance").innerText = `${formatStars(currentUser.balance)} ★`;
       document.getElementById("profile-name").innerText = currentUser.first_name || "Игрок";
       document.getElementById("profile-username").innerText = "@" + (currentUser.username || "user");
       
@@ -748,9 +755,36 @@
       
       const profitEl = document.getElementById("chart-total"); 
       const profit = currentUser.profit || 0;
-      profitEl.innerText = `${profit > 0 ? '+' : ''}${profit} ★`;
-      const chartPath = document.getElementById("chart-path"); const chartFill = document.getElementById("chart-fill");
+      profitEl.innerText = `${profit > 0 ? '+' : ''}${formatStars(profit)} ★`;
       
+      const chartPath = document.getElementById("chart-path"); 
+      const chartFill = document.getElementById("chart-fill");
+      
+      // Ломаная линия графика
+      let steps = 8;
+      let stepX = 300 / steps;
+      let targetY = 50 - (profit * 1.5); 
+      if (targetY < 10) targetY = 10;
+      if (targetY > 90) targetY = 90;
+      
+      let curY = 50;
+      let pathD = "M 0,50";
+      
+      for (let i = 1; i <= steps; i++) {
+          let x = stepX * i;
+          if (i === steps) {
+              curY = targetY;
+          } else {
+              let delta = (targetY - 50) / steps;
+              let noise = (Math.random() - 0.5) * 20;
+              curY = curY + delta + noise;
+          }
+          pathD += ` L ${x},${curY.toFixed(1)}`;
+      }
+      
+      chartPath.setAttribute("d", pathD);
+      chartFill.setAttribute("d", pathD + " L 300,100 L 0,100 Z");
+
       if (profit > 0) { profitEl.className = "chart-val positive"; chartPath.setAttribute("stroke", "#10b981"); chartFill.setAttribute("fill", "rgba(16, 185, 129, 0.2)"); }
       else if (profit < 0) { profitEl.className = "chart-val negative"; chartPath.setAttribute("stroke", "#ef4444"); chartFill.setAttribute("fill", "rgba(239, 68, 68, 0.2)"); }
       else { profitEl.className = "chart-val neutral"; chartPath.setAttribute("stroke", "#8a819b"); chartFill.setAttribute("fill", "rgba(138, 129, 155, 0.2)"); }
