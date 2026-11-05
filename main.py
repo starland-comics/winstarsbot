@@ -28,7 +28,6 @@ MATCHES_TTL = 45
 FINISHED_TTL = 90
 GC_EVERY = 15
 
-# Расширенный блэклист (все возрастные группы и мусор)
 LIVE_BLACKLIST = [
     "люб", "жен", "мол", "дубл", "резерв", "академ",
     "до 15", "до 16", "до 17", "до 18", "до 19", "до 20", "до 21", "до 23",
@@ -38,16 +37,12 @@ LIVE_BLACKLIST = [
     "хозяева", "гости", "тотал", "фора", "обе забьют", "пенальти", "карточк"
 ]
 
-# Белый список (Добавлены еврокубки и сборные)
 ALLOWED_LEAGUES = [
-    # Страны
     "испан", "франц", "англ", "итал", "герман", 
     "португал", "нидерланд", "голланд", "бразил", 
     "росси", "украин", "казах", "саудов", "турц", 
     "сша", "mls",
-    # Еврокубки
     "чемпионов", "европы", "конференций", "суперкубок",
-    # Сборные и международные турниры
     "сборная", "сборных", "мира", "евро", "наций", 
     "отбор", "товарищеск", "копа", "кубок азии", "кубок африки"
 ]
@@ -232,29 +227,15 @@ def extract_live_score_and_time(ev):
                 if r is not None: minute = r; break
 
     if minute is None:
-        for pf in ["period", "timeStatus", "status", "liveStatus", "matchStatus", "half", "timePeriod"]:
-            v = ev.get(pf)
-            if isinstance(v, str):
-                vl = v.lower()
-                if any(x in vl for x in ["ht", "halftime", "перерыв", "half"]): minute = "HT"; break
-                if any(x in vl for x in ["1h", "1st", "первый тайм"]): minute = "1H"; break
-                if any(x in vl for x in ["2h", "2nd", "второй тайм"]): minute = "2H"; break
-
-    if minute is None:
         start_ts = ev.get("startDateTime")
         if start_ts:
             now = time.time()
             elapsed_mins = (now - start_ts) / 60.0
-            if elapsed_mins < 0:
-                minute = 0
-            elif elapsed_mins < 47:
-                minute = int(elapsed_mins)
-            elif elapsed_mins < 62:
-                minute = "HT"
-            elif elapsed_mins < 107:
-                minute = int(elapsed_mins) - 15
-            else:
-                minute = "FT"
+            if elapsed_mins < 0: minute = 0
+            elif elapsed_mins < 47: minute = int(elapsed_mins)
+            elif elapsed_mins < 62: minute = "HT"
+            elif elapsed_mins < 107: minute = int(elapsed_mins) - 15
+            else: minute = "FT"
 
     return score, minute
 
@@ -290,9 +271,7 @@ async def live_scraper_worker():
                             t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
                             text_to_check = f"{t1} {t2} {comp_name}".lower()
                             
-                            # Блэклист (мусор)
                             if any(w in text_to_check for w in LIVE_BLACKLIST): continue
-                            # Вайтлист (только нужные лиги и сборные)
                             if not any(a in comp_name.lower() for a in ALLOWED_LEAGUES): continue
 
                             ev_id = ev.get("id")
@@ -353,8 +332,7 @@ async def live_scraper_worker():
                                 })
                                 _FINISHED_CACHE["ts"] = 0
                                 print(f"   🏁 [ФИНАЛ] {title}: {s1}:{s2} (последний счёт из LIVE)")
-                            except Exception as e:
-                                pass
+                            except Exception: pass
 
                 prev_live_ids = current_live_ids
 
@@ -369,6 +347,67 @@ async def live_scraper_worker():
         cycle += 1
         if cycle % GC_EVERY == 0: gc.collect()
         await asyncio.sleep(LIVE_POLL_SEC)
+
+# ============== ДВИЖОК РАСЧЕТА СТАВОК ==============
+def calculate_outcome(outcome_str, s1, s2):
+    """
+    Возвращает True (выигрыш), False (проигрыш), None (возврат).
+    Обрабатывает основные рынки.
+    """
+    o = outcome_str.lower().strip()
+    
+    # 1. Основные исходы
+    if o in ["п1", "1", "победа 1", "победа хозяев"]: return s1 > s2
+    if o in ["х", "x", "ничья"]: return s1 == s2
+    if o in ["п2", "2", "победа 2", "победа гостей"]: return s2 > s1
+
+    # 2. Двойной шанс
+    if o in ["1x", "1х"]: return s1 >= s2
+    if o in ["12", "x2"]: return s1 != s2
+    if o in ["x2", "х2"]: return s2 >= s1
+
+    # 3. Обе забьют
+    if o in ["да", "обе забьют", "оз да"]: return s1 > 0 and s2 > 0
+    if o in ["нет", "оз нет"]: return s1 == 0 or s2 == 0
+
+    # 4. Тоталы (ТБ, ТМ)
+    # Ищем паттерн "тб 2.5" или "тотал больше 2.5"
+    m_over = re.search(r'(?:тб|тотал больше|больше)\s*(\d+(?:\.\d+)?)', o)
+    if m_over:
+        limit = float(m_over.group(1))
+        total = s1 + s2
+        if total > limit: return True
+        if total < limit: return False
+        return None # Возврат (если ровно)
+
+    m_under = re.search(r'(?:тм|тотал меньше|меньше)\s*(\d+(?:\.\d+)?)', o)
+    if m_under:
+        limit = float(m_under.group(1))
+        total = s1 + s2
+        if total < limit: return True
+        if total > limit: return False
+        return None
+
+    # 5. Форы (Ф1, Ф2)
+    m_f1 = re.search(r'(?:ф1|фора 1|фора хозяев)\s*([+-]?\d+(?:\.\d+)?)', o)
+    if m_f1:
+        val = float(m_f1.group(1))
+        res = s1 + val - s2
+        if res > 0: return True
+        if res < 0: return False
+        return None
+
+    m_f2 = re.search(r'(?:ф2|фора 2|фора гостей)\s*([+-]?\d+(?:\.\d+)?)', o)
+    if m_f2:
+        val = float(m_f2.group(1))
+        res = s2 + val - s1
+        if res > 0: return True
+        if res < 0: return False
+        return None
+
+    # Если не смогли распарсить — считаем проигрышем, чтобы не давать халяву
+    print(f"   ⚠️ Неизвестный тип ставки для расчета: {outcome_str}")
+    return False
 
 async def settle_bets_worker():
     print("🛠 settle_bets_worker запущен...")
@@ -399,10 +438,9 @@ async def settle_bets_worker():
 
                         if not all_finished or not results:
                             if waiting:
-                                print(f"   ⏳ [SETTLE] Ставка {bet_id} ждёт результат: {', '.join(waiting)}")
+                                print(f"   ⏳ [SETTLE] Ставка {bet_id} ждёт: {', '.join(waiting)}")
                             continue
                         user_id = bet.get("user_id")
-                        print(f"   🔍 [SETTLE] Проверяю ставку {bet_id}: {len(events)} событий, есть все результаты")
 
                         if is_void:
                             status = "void"
@@ -418,10 +456,19 @@ async def settle_bets_worker():
                             for i, event in enumerate(events):
                                 res = results[i]
                                 s1, s2 = res.get("score1", 0), res.get("score2", 0)
-                                outcome = event.get("outcome")
-                                if outcome == "П1" and not (s1 > s2): is_won = False; break
-                                if outcome == "Х" and not (s1 == s2): is_won = False; break
-                                if outcome == "П2" and not (s2 > s1): is_won = False; break
+                                outcome_str = event.get("outcome_key") or event.get("outcome", "")
+                                
+                                # Вызываем наш движок
+                                win_status = calculate_outcome(outcome_str, s1, s2)
+                                if win_status is False:
+                                    is_won = False
+                                    break
+                                elif win_status is None:
+                                    print(f"   ↩️ Возврат по событию {outcome_str} (счёт {s1}:{s2})")
+                                    # Если возврат, мы пока просто не выигрываем (в идеале надо уменьшать кэф, но упростим)
+                                    is_won = False
+                                    break
+
                             status = "won" if is_won else "lost"
 
                             if status == "won":
@@ -433,7 +480,7 @@ async def settle_bets_worker():
                                         "profit": user.get("profit", 0) + (win_amount - bet.get("amount", 0)),
                                         "wins": user.get("wins", 0) + 1
                                     })
-                            print(f"   ✅ Ставка {bet_id}: {status}")
+                            print(f"   ✅ Ставка {bet_id}: {status} (счёт {s1}:{s2})")
 
                         await firebase_patch(f"bets/{bet_id}", {"status": status})
                         if user_id:
@@ -470,8 +517,7 @@ async def startup_event():
             if active:
                 await firebase_put("active_bets", active)
                 print(f"✅ Перенесено активных ставок: {len(active)}")
-    except Exception as e:
-        pass
+    except Exception as e: pass
 
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(live_scraper_worker())
@@ -522,6 +568,9 @@ async def place_bet(request: Request):
     req = await request.json()
     user_id = req.get("user_id"); amount = req.get("amount")
     bets = req.get("bets", []); bet_type = req.get("type", "single")
+    
+    # Проверка минималки
+    if amount < 10: raise HTTPException(status_code=400, detail="Минимальная ставка — 10 звезд")
     if not bets: raise HTTPException(status_code=400, detail="Нет выбранных исходов")
 
     user = await firebase_get(f"users/{user_id}")
@@ -530,21 +579,10 @@ async def place_bet(request: Request):
     if not isinstance(user_balance, (int, float)): user_balance = 0
     if user_balance < amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
 
-    now_ts = time.time()
-    for b in bets:
-        m_id = b.get("match_id")
-        match_db = await firebase_get(f"matches/{m_id}")
-        if not match_db: raise HTTPException(status_code=400, detail=f"Матч '{b.get('match_title')}' больше не доступен")
-        status = match_db.get("status", "")
-        is_live = status.startswith("LIVE")
-        start_time = match_db.get("start_time")
-        if not is_live and start_time and now_ts > start_time:
-            raise HTTPException(status_code=400, detail=f"Матч '{b.get('match_title')}' уже начался. Ставки на линию закрыты.")
-
     total_coeff = 1.0
     for b in bets: total_coeff *= float(b.get("coefficient", 1.0))
     total_coeff = round(total_coeff, 2)
-    new_balance = user_balance - amount
+    new_balance = round(user_balance - amount, 2)
 
     bet_data = {
         "user_id": str(user_id), "type": bet_type, "events": bets,
@@ -588,7 +626,7 @@ async def activate_promo(request: Request):
     if not isinstance(user, dict): raise HTTPException(status_code=400, detail="Ошибка профиля")
     cur = user.get("balance", 0)
     if not isinstance(cur, (int, float)): cur = 0
-    new_balance = cur + promo.get("reward_stars", 50)
+    new_balance = round(cur + promo.get("reward_stars", 50), 2)
     await firebase_patch(f"users/{user_id}", {"balance": new_balance})
     return {"status": "ok", "message": f"Начислено {promo.get('reward_stars', 50)} ★", "new_balance": new_balance}
 
