@@ -372,24 +372,29 @@
           baseMinute = parseInt(matchMinute[1], 10);
       } else if (match.start_time) {
           const now = Math.floor(Date.now() / 1000);
-          const elapsedMins = (now - match.start_time) / 60;
+          let elapsedMins = (now - match.start_time) / 60;
+          
           if (elapsedMins > 0) {
-              if (elapsedMins < 47) baseMinute = Math.floor(elapsedMins);
-              else if (elapsedMins < 62) return 'HT';
-              else if (elapsedMins < 107) baseMinute = Math.floor(elapsedMins) - 15;
+              if (elapsedMins < 45) baseMinute = Math.floor(elapsedMins);
+              else if (elapsedMins < 60) return 'HT';
+              else if (elapsedMins < 105) baseMinute = Math.floor(elapsedMins) - 15;
               else return 'FT';
           }
       }
 
       if (baseMinute !== null) {
           const now = Date.now();
-          if (!window.matchTimers[match.id] || window.matchTimers[match.id].baseMinute !== baseMinute) {
+          
+          if (!window.matchTimers[match.id] || Math.abs(window.matchTimers[match.id].baseMinute - baseMinute) > 0) {
               window.matchTimers[match.id] = { baseMinute: baseMinute, timestamp: now };
           }
           
           const timer = window.matchTimers[match.id];
           const elapsedMins = Math.floor((now - timer.timestamp) / 60000);
           let displayMinute = timer.baseMinute + elapsedMins;
+          
+          if (displayMinute > 45 && displayMinute < 60) displayMinute = 45;
+          if (displayMinute > 90 && displayMinute < 105) displayMinute = 90;
           
           return `${displayMinute}'`;
       }
