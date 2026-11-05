@@ -301,6 +301,7 @@ async def live_scraper_worker():
                                 "start_time": ev.get("startDateTime"),
                                 "odds": {"1": p1, "X": px, "2": p2}
                             }
+                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | {comp_name} | odds {p1}/{px}/{p2}")
 
                 del data
                 if live_updates:
@@ -329,18 +330,25 @@ async def settle_bets_worker():
                         events = bet.get("events", [])
                         if not isinstance(events, list): continue
 
-                        all_finished = True; results = []; is_void = False
+                        all_finished = True; results = []; is_void = False; waiting = []
                         for event in events:
                             if not isinstance(event, dict): all_finished = False; break
                             m_id = event.get("match_id")
-                            if m_id not in finished: all_finished = False; break
+                            if m_id not in finished:
+                                all_finished = False
+                                waiting.append(event.get("match_title", m_id))
+                                continue
                             res = finished[m_id]
                             if not isinstance(res, dict): all_finished = False; break
                             if res.get("void"): is_void = True
                             results.append(res)
 
-                        if not all_finished or not results: continue
+                        if not all_finished or not results:
+                            if waiting:
+                                print(f"   ⏳ [SETTLE] Ставка {bet_id} ждёт результат: {', '.join(waiting)}")
+                            continue
                         user_id = bet.get("user_id")
+                        print(f"   🔍 [SETTLE] Проверяю ставку {bet_id}: {len(events)} событий, есть все результаты")
 
                         if is_void:
                             status = "void"
@@ -350,7 +358,7 @@ async def settle_bets_worker():
                                 new_bal = user.get("balance", 0) + refund
                                 new_total = max(0, user.get("total_bets", 1) - 1)
                                 await firebase_patch(f"users/{user_id}", {"balance": new_bal, "total_bets": new_total})
-                                print(f"↩️ Void {bet_id}: возврат {refund} ★")
+                                print(f"   ↩️ Void {bet_id}: возврат {refund} ★")
                         else:
                             is_won = True
                             for i, event in enumerate(events):
@@ -371,13 +379,13 @@ async def settle_bets_worker():
                                         "profit": user.get("profit", 0) + (win_amount - bet.get("amount", 0)),
                                         "wins": user.get("wins", 0) + 1
                                     })
-                            print(f"✅ Ставка {bet_id}: {status}")
+                            print(f"   ✅ Ставка {bet_id}: {status}")
 
                         await firebase_patch(f"bets/{bet_id}", {"status": status})
                         if user_id:
                             await firebase_patch(f"users/{user_id}/bets/{bet_id}", {"status": status})
                         await firebase_delete(f"active_bets/{bet_id}")
-                        print(f"🗑 active_bets/{bet_id} удалён")
+                        print(f"   🗑 active_bets/{bet_id} удалён")
                     except Exception as e:
                         print(f"⚠️ Ставка {bet_id}: {e}")
         except Exception as e:
