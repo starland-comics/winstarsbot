@@ -199,7 +199,6 @@ def extract_live_score_and_time(ev):
         s2 = ev.get("score2") or ev.get("awayScore")
         if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
 
-    # 1. Ищем минуту в ответе API
     for field in ["minute", "currentMinute", "liveTime", "liveTimer", "elapsed",
                   "time", "timer", "matchTime", "gameTime", "periodTime",
                   "currentTime", "timeLive", "liveMinute", "scoreTime", "statusTime",
@@ -215,7 +214,15 @@ def extract_live_score_and_time(ev):
                 r = _try_extract_minute(nested)
                 if r is not None: minute = r; break
 
-    # 2. Если API не дало минуту, считаем сами от startDateTime
+    if minute is None:
+        for pf in ["period", "timeStatus", "status", "liveStatus", "matchStatus", "half", "timePeriod"]:
+            v = ev.get(pf)
+            if isinstance(v, str):
+                vl = v.lower()
+                if any(x in vl for x in ["ht", "halftime", "перерыв", "half"]): minute = "HT"; break
+                if any(x in vl for x in ["1h", "1st", "первый тайм"]): minute = "1H"; break
+                if any(x in vl for x in ["2h", "2nd", "второй тайм"]): minute = "2H"; break
+
     if minute is None:
         start_ts = ev.get("startDateTime")
         if start_ts:
@@ -223,11 +230,11 @@ def extract_live_score_and_time(ev):
             elapsed_mins = (now - start_ts) / 60.0
             if elapsed_mins < 0:
                 minute = 0
-            elif elapsed_mins < 47:  # 1-й тайм + компенсированное
+            elif elapsed_mins < 47:
                 minute = int(elapsed_mins)
-            elif elapsed_mins < 62:  # Перерыв (15 минут)
+            elif elapsed_mins < 62:
                 minute = "HT"
-            elif elapsed_mins < 107: # 2-й тайм + компенсированное
+            elif elapsed_mins < 107:
                 minute = int(elapsed_mins) - 15
             else:
                 minute = "FT"
@@ -239,7 +246,6 @@ def _status_from_minute(minute):
     if minute in ("HT", "FT", "1H", "2H"): return f"LIVE · {minute}"
     return f"LIVE {minute}'"
 
-# ============== ВОРКЕРЫ ==============
 async def live_scraper_worker():
     print(f"⚡ live_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
@@ -410,7 +416,6 @@ async def startup_event():
     asyncio.create_task(settle_bets_worker())
     print("✅ Все фоновые воркеры запущены (LIVE=20s, SETTLE=60s)")
 
-# ============== REST API ==============
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
     try:
@@ -544,7 +549,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception: manager.disconnect(websocket)
     finally: manager.disconnect(websocket)
 
-# ============== BOT ==============
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
