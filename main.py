@@ -21,12 +21,12 @@ FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 OLIMP_LIVE_URL = "https://www.olimp.bet/api/v4/0/live/sports-with-competitions-with-events"
 OLIMP_LINE_URL = "https://www.olimp.bet/api/v4/0/line/top/sports-with-competitions-with-events"
 
-# Секрет для внешних cron-триггеров. Придумай свой и поменяй в cron-job.org!
-TRIGGER_SECRET = "winstars_cron_2026_xyz"
-
+LIVE_POLL_SEC = 20
+SETTLE_POLL_SEC = 60
 LOGOS_TTL = 300
 MATCHES_TTL = 45
 FINISHED_TTL = 90
+GC_EVERY = 15
 
 LIVE_BLACKLIST = [
     "люб", "жен", "мол", "до 19", "до 21", "дубл", "резерв", "академ",
@@ -40,9 +40,6 @@ DEBUG_MINUTE_LOGGED = set()
 _LOGOS_CACHE = {"map": {}, "ts": 0}
 _MATCHES_CACHE = {"data": {}, "ts": 0}
 _FINISHED_CACHE = {"data": {}, "ts": 0}
-
-LIVE_RUNNING = False
-SETTLE_RUNNING = False
 
 app = FastAPI(title="WinStars API")
 bot = Bot(token=BOT_TOKEN)
@@ -115,7 +112,6 @@ async def firebase_post(path: str, data: dict):
         return resp
     except: return None
 
-# ============== КЭШИ ==============
 def _build_logo_map(raw_cache):
     result = {}
     if not isinstance(raw_cache, dict): return result
@@ -167,7 +163,6 @@ async def get_finished_cached():
     _FINISHED_CACHE["ts"] = now
     return raw
 
-# ============== ПАРСЕР МИНУТЫ ==============
 def _try_extract_minute(val):
     if val is None or isinstance(val, bool): return None
     if isinstance(val, (int, float)):
@@ -235,182 +230,154 @@ def _status_from_minute(minute):
     if minute in ("HT", "FT", "1H", "2H"): return f"LIVE · {minute}"
     return f"LIVE {minute}'"
 
-# ============== ОДИН ПРОГОН LIVE ==============
-async def run_live_once():
-    global LIVE_RUNNING
-    if LIVE_RUNNING: return
-    LIVE_RUNNING = True
+# ============== ВОРКЕРЫ ==============
+async def live_scraper_worker():
+    print(f"⚡ live_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-    try:
-        # Используем обычный requests без impersonate
-        resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, timeout=15)
-        if resp.status_code != 200:
-            return
-        data = resp.json()
-        del resp
+    cycle = 0
 
-        live_updates = {}
-        current_live_ids = set()
-        team_logo_map = await get_logos_map()
+    while True:
+        try:
+            resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                del resp
 
-        for sg in data:
-            sport = sg.get("payload", {}).get("sport", {})
-            if str(sport.get("id")) != "1": continue
-            comps = sg.get("payload", {}).get("competitionsWithEvents", [])
-            for comp in comps:
-                comp_name = comp.get("competition", {}).get("name", "Футбол")
-                for ev in comp.get("events", []):
-                    t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
-                    if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
-                    ev_id = ev.get("id")
-                    if not ev_id: continue
+                live_updates = {}
+                team_logo_map = await get_logos_map()
 
-                    mid = f"olimp_{ev_id}"
-                    current_live_ids.add(mid)
+                for sg in data:
+                    sport = sg.get("payload", {}).get("sport", {})
+                    if str(sport.get("id")) != "1": continue
+                    comps = sg.get("payload", {}).get("competitionsWithEvents", [])
+                    for comp in comps:
+                        comp_name = comp.get("competition", {}).get("name", "Футбол")
+                        for ev in comp.get("events", []):
+                            t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
+                            if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
+                            ev_id = ev.get("id")
+                            if not ev_id: continue
 
-                    score, minute = extract_live_score_and_time(ev)
-                    status = _status_from_minute(minute)
+                            mid = f"olimp_{ev_id}"
+                            score, minute = extract_live_score_and_time(ev)
+                            status = _status_from_minute(minute)
 
-                    if minute is None and mid not in DEBUG_MINUTE_LOGGED and len(DEBUG_MINUTE_LOGGED) < 100:
-                        time_fields = {k: v for k, v in ev.items() if any(x in k.lower() for x in
-                            ["time", "minute", "period", "status", "timer", "half", "live", "progress", "clock", "stage"])}
-                        print(f"   🔍 NO MINUTE {mid}: {json.dumps(time_fields, ensure_ascii=False, default=str)[:1200]}")
-                        DEBUG_MINUTE_LOGGED.add(mid)
+                            if minute is None and mid not in DEBUG_MINUTE_LOGGED and len(DEBUG_MINUTE_LOGGED) < 100:
+                                time_fields = {k: v for k, v in ev.items() if any(x in k.lower() for x in
+                                    ["time", "minute", "period", "status", "timer", "half", "live", "progress", "clock", "stage"])}
+                                print(f"   🔍 NO MINUTE {mid}: {json.dumps(time_fields, ensure_ascii=False, default=str)[:1200]}")
+                                DEBUG_MINUTE_LOGGED.add(mid)
 
-                    p1 = px = p2 = None
-                    for out in ev.get("outcomes", []):
-                        sn = out.get("shortName", "")
-                        if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
-                            if sn in ["П1", "1"]: p1 = out.get("probability")
-                            elif sn in ["X", "Х"]: px = out.get("probability")
-                            elif sn in ["П2", "2"]: p2 = out.get("probability")
+                            p1 = px = p2 = None
+                            for out in ev.get("outcomes", []):
+                                sn = out.get("shortName", "")
+                                if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
+                                    if sn in ["П1", "1"]: p1 = out.get("probability")
+                                    elif sn in ["X", "Х"]: px = out.get("probability")
+                                    elif sn in ["П2", "2"]: p2 = out.get("probability")
 
-                    live_updates[mid] = {
-                        "title": f"{t1} - {t2}", "home": t1, "away": t2,
-                        "homeLogo": team_logo_map.get(t1, ""),
-                        "awayLogo": team_logo_map.get(t2, ""),
-                        "league": comp_name,
-                        "status": status,
-                        "score": score or "VS",
-                        "start_time": ev.get("startDateTime"),
-                        "odds": {"1": p1, "X": px, "2": p2}
-                    }
+                            live_updates[mid] = {
+                                "title": f"{t1} - {t2}", "home": t1, "away": t2,
+                                "homeLogo": team_logo_map.get(t1, ""),
+                                "awayLogo": team_logo_map.get(t2, ""),
+                                "league": comp_name,
+                                "status": status,
+                                "score": score or "VS",
+                                "start_time": ev.get("startDateTime"),
+                                "odds": {"1": p1, "X": px, "2": p2}
+                            }
 
-        del data
-        print(f"   [LIVE] Пришло футбольных: {len(current_live_ids)}. Обновлено: {len(live_updates)}")
+                del data
+                if live_updates:
+                    async with httpx.AsyncClient() as client:
+                        await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
+                    invalidate_matches_cache()
+                    print(f"🔄 [LIVE] Записано: {len(live_updates)}")
+        except Exception as e:
+            print(f"⚠️ live_scraper: {e}")
 
-        if live_updates:
-            async with httpx.AsyncClient() as client:
-                await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
-            invalidate_matches_cache()
-            print(f"🔄 [LIVE] Записано: {len(live_updates)}")
+        cycle += 1
+        if cycle % GC_EVERY == 0: gc.collect()
+        await asyncio.sleep(LIVE_POLL_SEC)
 
-        del live_updates
-    except Exception as e:
-        print(f"⚠️ run_live_once: {e}")
-    finally:
-        LIVE_RUNNING = False
-        gc.collect()
+async def settle_bets_worker():
+    print("🛠 settle_bets_worker запущен...")
+    cycle = 0
+    while True:
+        try:
+            active_bets = await firebase_get("active_bets") or {}
+            if isinstance(active_bets, dict) and active_bets:
+                finished = await get_finished_cached()
+                for bet_id, bet in list(active_bets.items()):
+                    try:
+                        if not isinstance(bet, dict): continue
+                        events = bet.get("events", [])
+                        if not isinstance(events, list): continue
 
-# ============== ОДИН ПРОГОН SETTLE ==============
-async def run_settle_once():
-    global SETTLE_RUNNING
-    if SETTLE_RUNNING: return
-    SETTLE_RUNNING = True
-    try:
-        active_bets = await firebase_get("active_bets") or {}
-        if not isinstance(active_bets, dict) or not active_bets:
-            return
+                        all_finished = True; results = []; is_void = False
+                        for event in events:
+                            if not isinstance(event, dict): all_finished = False; break
+                            m_id = event.get("match_id")
+                            if m_id not in finished: all_finished = False; break
+                            res = finished[m_id]
+                            if not isinstance(res, dict): all_finished = False; break
+                            if res.get("void"): is_void = True
+                            results.append(res)
 
-        finished = await get_finished_cached()
+                        if not all_finished or not results: continue
+                        user_id = bet.get("user_id")
 
-        for bet_id, bet in list(active_bets.items()):
-            try:
-                if not isinstance(bet, dict): continue
-                events = bet.get("events", [])
-                if not isinstance(events, list): continue
+                        if is_void:
+                            status = "void"
+                            user = await firebase_get(f"users/{user_id}")
+                            if isinstance(user, dict):
+                                refund = bet.get("amount", 0)
+                                new_bal = user.get("balance", 0) + refund
+                                new_total = max(0, user.get("total_bets", 1) - 1)
+                                await firebase_patch(f"users/{user_id}", {"balance": new_bal, "total_bets": new_total})
+                                print(f"↩️ Void {bet_id}: возврат {refund} ★")
+                        else:
+                            is_won = True
+                            for i, event in enumerate(events):
+                                res = results[i]
+                                s1, s2 = res.get("score1", 0), res.get("score2", 0)
+                                outcome = event.get("outcome")
+                                if outcome == "П1" and not (s1 > s2): is_won = False; break
+                                if outcome == "Х" and not (s1 == s2): is_won = False; break
+                                if outcome == "П2" and not (s2 > s1): is_won = False; break
+                            status = "won" if is_won else "lost"
 
-                all_finished = True; results = []; is_void = False
-                for event in events:
-                    if not isinstance(event, dict): all_finished = False; break
-                    m_id = event.get("match_id")
-                    if m_id not in finished: all_finished = False; break
-                    res = finished[m_id]
-                    if not isinstance(res, dict): all_finished = False; break
-                    if res.get("void"): is_void = True
-                    results.append(res)
+                            if status == "won":
+                                user = await firebase_get(f"users/{user_id}")
+                                if isinstance(user, dict):
+                                    win_amount = bet.get("amount", 0) * bet.get("total_coefficient", 1)
+                                    await firebase_patch(f"users/{user_id}", {
+                                        "balance": user.get("balance", 0) + win_amount,
+                                        "profit": user.get("profit", 0) + (win_amount - bet.get("amount", 0)),
+                                        "wins": user.get("wins", 0) + 1
+                                    })
+                            print(f"✅ Ставка {bet_id}: {status}")
 
-                if not all_finished or not results: continue
+                        await firebase_patch(f"bets/{bet_id}", {"status": status})
+                        if user_id:
+                            await firebase_patch(f"users/{user_id}/bets/{bet_id}", {"status": status})
+                        await firebase_delete(f"active_bets/{bet_id}")
+                        print(f"🗑 active_bets/{bet_id} удалён")
+                    except Exception as e:
+                        print(f"⚠️ Ставка {bet_id}: {e}")
+        except Exception as e:
+            print(f"⚠️ settle_bets: {e}")
 
-                user_id = bet.get("user_id")
+        cycle += 1
+        if cycle % GC_EVERY == 0: gc.collect()
+        await asyncio.sleep(SETTLE_POLL_SEC)
 
-                if is_void:
-                    status = "void"
-                    user = await firebase_get(f"users/{user_id}")
-                    if isinstance(user, dict):
-                        refund = bet.get("amount", 0)
-                        new_bal = user.get("balance", 0) + refund
-                        new_total = max(0, user.get("total_bets", 1) - 1)
-                        await firebase_patch(f"users/{user_id}", {"balance": new_bal, "total_bets": new_total})
-                        print(f"↩️ Void {bet_id}: возврат {refund} ★")
-                else:
-                    is_won = True
-                    for i, event in enumerate(events):
-                        res = results[i]
-                        s1, s2 = res.get("score1", 0), res.get("score2", 0)
-                        outcome = event.get("outcome")
-                        if outcome == "П1" and not (s1 > s2): is_won = False; break
-                        if outcome == "Х" and not (s1 == s2): is_won = False; break
-                        if outcome == "П2" and not (s2 > s1): is_won = False; break
-                    status = "won" if is_won else "lost"
-
-                    if status == "won":
-                        user = await firebase_get(f"users/{user_id}")
-                        if isinstance(user, dict):
-                            win_amount = bet.get("amount", 0) * bet.get("total_coefficient", 1)
-                            await firebase_patch(f"users/{user_id}", {
-                                "balance": user.get("balance", 0) + win_amount,
-                                "profit": user.get("profit", 0) + (win_amount - bet.get("amount", 0)),
-                                "wins": user.get("wins", 0) + 1
-                            })
-                    print(f"✅ Ставка {bet_id}: {status}")
-
-                await firebase_patch(f"bets/{bet_id}", {"status": status})
-                if user_id:
-                    await firebase_patch(f"users/{user_id}/bets/{bet_id}", {"status": status})
-                await firebase_delete(f"active_bets/{bet_id}")
-                print(f"🗑 active_bets/{bet_id} удалён")
-            except Exception as e:
-                print(f"⚠️ Ставка {bet_id}: {e}")
-    except Exception as e:
-        print(f"⚠️ run_settle_once: {e}")
-    finally:
-        SETTLE_RUNNING = False
-        gc.collect()
-
-# ============== ЭНДПОИНТЫ ДЛЯ CRON ==============
-@app.api_route("/trigger/live", methods=["GET", "POST"])
-async def trigger_live(secret: str = Query("")):
-    if secret != TRIGGER_SECRET:
-        raise HTTPException(status_code=403, detail="bad secret")
-    asyncio.create_task(run_live_once())
-    return {"ok": True, "msg": "live triggered"}
-
-@app.api_route("/trigger/settle", methods=["GET", "POST"])
-async def trigger_settle(secret: str = Query("")):
-    if secret != TRIGGER_SECRET:
-        raise HTTPException(status_code=403, detail="bad secret")
-    asyncio.create_task(run_settle_once())
-    return {"ok": True, "msg": "settle triggered"}
-
-# ============== STARTUP ==============
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
     promo = await firebase_get("promo_codes/WINSTARS")
     if not promo: await firebase_put("promo_codes/WINSTARS", {"reward_stars": 100, "bonus_percent": 10})
 
-    # Разовая миграция active_bets
     try:
         all_bets = await firebase_get("bets") or {}
         if isinstance(all_bets, dict):
@@ -430,7 +397,9 @@ async def startup_event():
         print(f"⚠️ migrate: {e}")
 
     asyncio.create_task(dp.start_polling(bot))
-    print("✅ Фоновые задачи ОТКЛЮЧЕНЫ — ждём внешние триггеры /trigger/live и /trigger/settle")
+    asyncio.create_task(live_scraper_worker())
+    asyncio.create_task(settle_bets_worker())
+    print("✅ Все фоновые воркеры запущены (LIVE=20s, SETTLE=60s)")
 
 # ============== REST API ==============
 @app.get("/api/proxy-image")
@@ -566,6 +535,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception: manager.disconnect(websocket)
     finally: manager.disconnect(websocket)
 
+# ============== BOT ==============
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
