@@ -28,11 +28,28 @@ MATCHES_TTL = 45
 FINISHED_TTL = 90
 GC_EVERY = 15
 
+# Расширенный блэклист (все возрастные группы и мусор)
 LIVE_BLACKLIST = [
-    "люб", "жен", "мол", "до 19", "до 21", "дубл", "резерв", "академ",
+    "люб", "жен", "мол", "дубл", "резерв", "академ",
+    "до 15", "до 16", "до 17", "до 18", "до 19", "до 20", "до 21", "до 23",
+    "u15", "u16", "u17", "u18", "u19", "u20", "u21", "u23",
     "угл", "жк", "кк", "статистика", "видеопросмотр", "штанги",
     "перекладины", "ауты", "офсайды", "фолы", "голы", "мед. бригад",
     "хозяева", "гости", "тотал", "фора", "обе забьют", "пенальти", "карточк"
+]
+
+# Белый список (Добавлены еврокубки и сборные)
+ALLOWED_LEAGUES = [
+    # Страны
+    "испан", "франц", "англ", "итал", "герман", 
+    "португал", "нидерланд", "голланд", "бразил", 
+    "росси", "украин", "казах", "саудов", "турц", 
+    "сша", "mls",
+    # Еврокубки
+    "чемпионов", "европы", "конференций", "суперкубок",
+    # Сборные и международные турниры
+    "сборная", "сборных", "мира", "евро", "наций", 
+    "отбор", "товарищеск", "копа", "кубок азии", "кубок африки"
 ]
 
 DEBUG_MINUTE_LOGGED = set()
@@ -271,7 +288,13 @@ async def live_scraper_worker():
                         comp_name = comp.get("competition", {}).get("name", "Футбол")
                         for ev in comp.get("events", []):
                             t1 = ev.get("team1Name", ""); t2 = ev.get("team2Name", "")
-                            if any(w in f"{t1} {t2} {comp_name}".lower() for w in LIVE_BLACKLIST): continue
+                            text_to_check = f"{t1} {t2} {comp_name}".lower()
+                            
+                            # Блэклист (мусор)
+                            if any(w in text_to_check for w in LIVE_BLACKLIST): continue
+                            # Вайтлист (только нужные лиги и сборные)
+                            if not any(a in comp_name.lower() for a in ALLOWED_LEAGUES): continue
+
                             ev_id = ev.get("id")
                             if not ev_id: continue
 
@@ -304,11 +327,10 @@ async def live_scraper_worker():
                                 "start_time": ev.get("startDateTime"),
                                 "odds": {"1": p1, "X": px, "2": p2}
                             }
-                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | {comp_name} | odds {p1}/{px}/{p2}")
+                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | {comp_name}")
 
                 del data
 
-                # === КЛЮЧЕВОЙ БЛОК: сохраняем финальный счёт исчезнувших матчей ===
                 disappeared = prev_live_ids - current_live_ids
                 if disappeared:
                     cached_matches = await get_matches_cached()
@@ -318,7 +340,6 @@ async def live_scraper_worker():
 
                         existing_finished = await firebase_get(f"finished_matches/{mid}")
                         if isinstance(existing_finished, dict) and "score1" in existing_finished:
-                            print(f"   ☑️ {match.get('title', mid)} уже в finished_matches, пропускаю")
                             continue
 
                         score_str = match.get("score", "")
@@ -333,9 +354,7 @@ async def live_scraper_worker():
                                 _FINISHED_CACHE["ts"] = 0
                                 print(f"   🏁 [ФИНАЛ] {title}: {s1}:{s2} (последний счёт из LIVE)")
                             except Exception as e:
-                                print(f"   ⚠️ Не смог сохранить счёт для {mid}: {e}")
-                        else:
-                            print(f"   ⚠️ {title} ушёл из LIVE без счёта (был только в линии?)")
+                                pass
 
                 prev_live_ids = current_live_ids
 
@@ -452,12 +471,12 @@ async def startup_event():
                 await firebase_put("active_bets", active)
                 print(f"✅ Перенесено активных ставок: {len(active)}")
     except Exception as e:
-        print(f"⚠️ migrate: {e}")
+        pass
 
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(live_scraper_worker())
     asyncio.create_task(settle_bets_worker())
-    print("✅ Все фоновые воркеры запущены (LIVE=20s, SETTLE=60s)")
+    print("✅ Все фоновые воркеры запущены")
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
