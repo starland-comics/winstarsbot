@@ -253,7 +253,7 @@
   </div>
 
   <script>
-    const API_BASE_URL = 'https://winstarsbot.onrender.com';
+    const API_BASE_URL = 'https://winstarsbot.onrender.com'; // ЗАМЕНИ НА СВОЙ URL!
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
 
@@ -264,6 +264,9 @@
     let currentLeague = 'all'; 
     let betSlip = []; 
     
+    // Хранилище локальных таймеров для минут
+    window.matchTimers = {};
+
     const LEAGUE_PRIORITY = {
       "АПЛ": 1, "Ла Лига": 2, "Серия А": 3, "Бундеслига": 4, "Лига 1": 5,
       "РПЛ": 6, "Лига Чемпионов": 7, "Лига Европы": 8, "Лига Конференций": 9,
@@ -292,6 +295,17 @@
           initWebSocket(); 
           loadMatches();
           setInterval(loadMatches, 15000); 
+          
+          // Обновляем текст минут каждые 10 секунд (без запросов к серверу)
+          setInterval(() => {
+              document.querySelectorAll('.live-tag-text').forEach(el => {
+                  const matchId = el.getAttribute('data-match-id');
+                  const match = allMatchesRaw.find(m => m.id === matchId);
+                  if (match && match.status.startsWith('LIVE')) {
+                      el.innerText = getLiveDisplayStatus(match);
+                  }
+              });
+          }, 10000);
         }
       } catch (err) { console.error("Ошибка синхронизации:", err); }
     }
@@ -343,6 +357,35 @@
       renderMatches();
     }
 
+    // Хелпер для красивой минуты
+    function getLiveDisplayStatus(match) {
+      if (!match.status.startsWith('LIVE')) return match.status;
+      
+      let originalStatus = match.status.replace('LIVE', '').trim();
+      originalStatus = originalStatus.replace('·', '').trim();
+      
+      if (originalStatus === 'HT' || originalStatus === '2H' || originalStatus === '1H' || originalStatus === 'FT') {
+          return originalStatus;
+      }
+      
+      const matchMinute = originalStatus.match(/(\d+)/);
+      if (matchMinute) {
+          const baseMinute = parseInt(matchMinute[1], 10);
+          const now = Date.now();
+          
+          if (!window.matchTimers[match.id] || window.matchTimers[match.id].baseMinute !== baseMinute) {
+              window.matchTimers[match.id] = { baseMinute: baseMinute, timestamp: now };
+          }
+          
+          const timer = window.matchTimers[match.id];
+          const elapsedMins = Math.floor((now - timer.timestamp) / 60000);
+          const displayMinute = timer.baseMinute + elapsedMins;
+          
+          return `${displayMinute}'`;
+      }
+      return 'LIVE';
+    }
+
     function renderMatches() {
       const container = document.getElementById('matches-container');
       container.innerHTML = '';
@@ -358,7 +401,6 @@
         } else {
             if (isLive || isStarted) return false;
         }
-
         return (currentLeague === 'all' || m.league === currentLeague);
       });
       
@@ -420,12 +462,12 @@
           ? `<img src="${awayLogoUrl}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
-        const displayStatus = isLive ? match.status : (match.start_time && match.start_time <= now ? 'ИДЕТ' : timeDisplay);
+        const displayStatus = isLive ? getLiveDisplayStatus(match) : (match.start_time && match.start_time <= now ? 'ИДЕТ' : timeDisplay);
         const isLiveClass = isLive || (match.start_time && match.start_time <= now);
 
         card.innerHTML = `
           <div class="match-header">
-            ${isLiveClass ? `<span class="live-tag"><div class="live-dot"></div> ${displayStatus}</span>` : `<span>${displayStatus}</span>`}
+            ${isLiveClass ? `<span class="live-tag"><div class="live-dot"></div> <span class="live-tag-text" data-match-id="${match.id}">${displayStatus}</span></span>` : `<span>${displayStatus}</span>`}
             <span>${match.league || 'Футбол'}</span>
           </div>
           <div class="teams-container">
