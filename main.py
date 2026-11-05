@@ -282,19 +282,24 @@ async def live_scraper_worker():
                             score, minute = extract_live_score_and_time(ev)
                             status = _status_from_minute(minute)
 
-                            if minute is None and mid not in DEBUG_MINUTE_LOGGED and len(DEBUG_MINUTE_LOGGED) < 100:
-                                time_fields = {k: v for k, v in ev.items() if any(x in k.lower() for x in
-                                    ["time", "minute", "period", "status", "timer", "half", "live", "progress", "clock", "stage"])}
-                                print(f"   🔍 NO MINUTE {mid}: {json.dumps(time_fields, ensure_ascii=False, default=str)[:1200]}")
-                                DEBUG_MINUTE_LOGGED.add(mid)
-
                             p1 = px = p2 = None
+                            markets_data = {}
+
                             for out in ev.get("outcomes", []):
-                                sn = out.get("shortName", "")
-                                if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
-                                    if sn in ["П1", "1"]: p1 = out.get("probability")
-                                    elif sn in ["X", "Х"]: px = out.get("probability")
-                                    elif sn in ["П2", "2"]: p2 = out.get("probability")
+                                gn = out.get("groupName", "Другое").strip()
+                                sn = out.get("shortName", "").strip()
+                                prob = out.get("probability")
+                                
+                                if prob is None or not sn: continue
+                                
+                                if gn not in markets_data:
+                                    markets_data[gn] = []
+                                markets_data[gn].append({"name": sn, "odds": prob})
+
+                                if "Исход" in gn or "Результат" in gn:
+                                    if sn in ["П1", "1"]: p1 = prob
+                                    elif sn in ["X", "Х"]: px = prob
+                                    elif sn in ["П2", "2"]: p2 = prob
 
                             live_updates[mid] = {
                                 "title": f"{t1} - {t2}", "home": t1, "away": t2,
@@ -304,9 +309,10 @@ async def live_scraper_worker():
                                 "status": status,
                                 "score": score or "VS",
                                 "start_time": ev.get("startDateTime"),
-                                "odds": {"1": p1, "X": px, "2": p2}
+                                "odds": {"1": p1, "X": px, "2": p2},
+                                "markets": markets_data
                             }
-                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | {comp_name}")
+                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | рынков: {len(markets_data)}")
 
                 del data
 
@@ -350,35 +356,26 @@ async def live_scraper_worker():
 
 # ============== ДВИЖОК РАСЧЕТА СТАВОК ==============
 def calculate_outcome(outcome_str, s1, s2):
-    """
-    Возвращает True (выигрыш), False (проигрыш), None (возврат).
-    Обрабатывает основные рынки.
-    """
     o = outcome_str.lower().strip()
     
-    # 1. Основные исходы
     if o in ["п1", "1", "победа 1", "победа хозяев"]: return s1 > s2
     if o in ["х", "x", "ничья"]: return s1 == s2
     if o in ["п2", "2", "победа 2", "победа гостей"]: return s2 > s1
 
-    # 2. Двойной шанс
     if o in ["1x", "1х"]: return s1 >= s2
     if o in ["12", "x2"]: return s1 != s2
     if o in ["x2", "х2"]: return s2 >= s1
 
-    # 3. Обе забьют
     if o in ["да", "обе забьют", "оз да"]: return s1 > 0 and s2 > 0
     if o in ["нет", "оз нет"]: return s1 == 0 or s2 == 0
 
-    # 4. Тоталы (ТБ, ТМ)
-    # Ищем паттерн "тб 2.5" или "тотал больше 2.5"
     m_over = re.search(r'(?:тб|тотал больше|больше)\s*(\d+(?:\.\d+)?)', o)
     if m_over:
         limit = float(m_over.group(1))
         total = s1 + s2
         if total > limit: return True
         if total < limit: return False
-        return None # Возврат (если ровно)
+        return None
 
     m_under = re.search(r'(?:тм|тотал меньше|меньше)\s*(\d+(?:\.\d+)?)', o)
     if m_under:
@@ -388,7 +385,6 @@ def calculate_outcome(outcome_str, s1, s2):
         if total > limit: return False
         return None
 
-    # 5. Форы (Ф1, Ф2)
     m_f1 = re.search(r'(?:ф1|фора 1|фора хозяев)\s*([+-]?\d+(?:\.\d+)?)', o)
     if m_f1:
         val = float(m_f1.group(1))
@@ -405,7 +401,6 @@ def calculate_outcome(outcome_str, s1, s2):
         if res < 0: return False
         return None
 
-    # Если не смогли распарсить — считаем проигрышем, чтобы не давать халяву
     print(f"   ⚠️ Неизвестный тип ставки для расчета: {outcome_str}")
     return False
 
@@ -458,14 +453,12 @@ async def settle_bets_worker():
                                 s1, s2 = res.get("score1", 0), res.get("score2", 0)
                                 outcome_str = event.get("outcome_key") or event.get("outcome", "")
                                 
-                                # Вызываем наш движок
                                 win_status = calculate_outcome(outcome_str, s1, s2)
                                 if win_status is False:
                                     is_won = False
                                     break
                                 elif win_status is None:
                                     print(f"   ↩️ Возврат по событию {outcome_str} (счёт {s1}:{s2})")
-                                    # Если возврат, мы пока просто не выигрываем (в идеале надо уменьшать кэф, но упростим)
                                     is_won = False
                                     break
 
@@ -569,7 +562,6 @@ async def place_bet(request: Request):
     user_id = req.get("user_id"); amount = req.get("amount")
     bets = req.get("bets", []); bet_type = req.get("type", "single")
     
-    # Проверка минималки
     if amount < 10: raise HTTPException(status_code=400, detail="Минимальная ставка — 10 звезд")
     if not bets: raise HTTPException(status_code=400, detail="Нет выбранных исходов")
 
