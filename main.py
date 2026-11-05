@@ -7,7 +7,7 @@ import os
 import time
 import base64
 import re
-import requests as cffi_requests  # Заменили curl_cffi на обычный requests
+import requests as cffi_requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -199,6 +199,7 @@ def extract_live_score_and_time(ev):
         s2 = ev.get("score2") or ev.get("awayScore")
         if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
 
+    # 1. Ищем минуту в ответе API
     for field in ["minute", "currentMinute", "liveTime", "liveTimer", "elapsed",
                   "time", "timer", "matchTime", "gameTime", "periodTime",
                   "currentTime", "timeLive", "liveMinute", "scoreTime", "statusTime",
@@ -214,14 +215,22 @@ def extract_live_score_and_time(ev):
                 r = _try_extract_minute(nested)
                 if r is not None: minute = r; break
 
+    # 2. Если API не дало минуту, считаем сами от startDateTime
     if minute is None:
-        for pf in ["period", "timeStatus", "status", "liveStatus", "matchStatus", "half", "timePeriod"]:
-            v = ev.get(pf)
-            if isinstance(v, str):
-                vl = v.lower()
-                if any(x in vl for x in ["ht", "halftime", "перерыв", "half"]): minute = "HT"; break
-                if any(x in vl for x in ["1h", "1st", "первый тайм"]): minute = "1H"; break
-                if any(x in vl for x in ["2h", "2nd", "второй тайм"]): minute = "2H"; break
+        start_ts = ev.get("startDateTime")
+        if start_ts:
+            now = time.time()
+            elapsed_mins = (now - start_ts) / 60.0
+            if elapsed_mins < 0:
+                minute = 0
+            elif elapsed_mins < 47:  # 1-й тайм + компенсированное
+                minute = int(elapsed_mins)
+            elif elapsed_mins < 62:  # Перерыв (15 минут)
+                minute = "HT"
+            elif elapsed_mins < 107: # 2-й тайм + компенсированное
+                minute = int(elapsed_mins) - 15
+            else:
+                minute = "FT"
 
     return score, minute
 
