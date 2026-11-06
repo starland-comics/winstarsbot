@@ -582,25 +582,16 @@ async def get_match_markets(match_id: str):
             
             for market in items:
                 gn = market.get("name", "Другое").strip()
-                
-                # Извлекаем исходы (рынки)
                 outs = market.get("outcomes") or market.get("orderedOutcomeTypes") or []
-                
                 for out in outs:
                     sn = (out.get("shortName") or out.get("name") or "").strip()
                     prob = out.get("probability") or out.get("odds") or out.get("price") or out.get("value")
-                    
-                    if prob is None or not sn: 
-                        continue
-                        
-                    if gn not in markets_data:
-                        markets_data[gn] = []
+                    if prob is None or not sn: continue
+                    if gn not in markets_data: markets_data[gn] = []
                     markets_data[gn].append({"name": sn, "odds": prob})
-                    
     except Exception as e:
         print(f"   ⚠️ [MARKETS] Ошибка запроса: {e}")
     
-    # Если API не отдало рынки, делаем фоллбэк на П1/Х/П2
     if not markets_data:
         match_db = await firebase_get(f"matches/{match_id}")
         if isinstance(match_db, dict) and match_db.get("odds"):
@@ -614,6 +605,47 @@ async def get_match_markets(match_id: str):
                 ]}
     
     return {"markets": markets_data}
+
+# ==============================================================================
+# НОВЫЙ ТЕСТОВЫЙ ЭНДПОИНТ ДЛЯ ПОИСКА РЕАЛЬНЫХ КЭФОВ
+# ==============================================================================
+@app.get("/api/test-markets-v2/{ev_id}")
+async def test_markets_v2(ev_id: str):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", 
+        "Accept": "application/json"
+    }
+    results = {}
+    
+    # 1. GET Requests
+    get_urls = [
+        f"https://www.olimp.bet/api/v4/0/line/events/{ev_id}",
+        f"https://www.olimp.bet/api/v4/0/events/{ev_id}",
+        f"https://olimpbet.kz/api/v2/events?eventIds={ev_id}&includeMarkets=true&locale=ru&pageSize=1",
+        f"https://olimpbet.kz/api/v2/events/{ev_id}?includeMarkets=true&pageSize=1"
+    ]
+    for url in get_urls:
+        try:
+            resp = await http_client.get(url, headers=headers, timeout=5.0)
+            results[f"GET {url}"] = {"status": resp.status_code, "preview": resp.text[:400]}
+        except Exception as e:
+            results[f"GET {url}"] = {"error": str(e)[:100]}
+
+    # 2. POST Requests
+    post_endpoints = [
+        ("https://www.olimp.bet/api/v4/0/events", {"eventIds": [int(ev_id)]}),
+        ("https://olimpbet.kz/api/v2/events/filter", {"eventIds": [int(ev_id)]}),
+        ("https://www.olimp.bet/api/v4/0/line/events", {"eventIds": [int(ev_id)]})
+    ]
+    for url, payload in post_endpoints:
+        try:
+            resp = await http_client.post(url, json=payload, headers=headers, timeout=5.0)
+            results[f"POST {url}"] = {"status": resp.status_code, "preview": resp.text[:400]}
+        except Exception as e:
+            results[f"POST {url}"] = {"error": str(e)[:100]}
+
+    return {"results": results}
+# ==============================================================================
 
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
