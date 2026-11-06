@@ -568,33 +568,14 @@ async def get_matches():
 
 @app.get("/api/match/{match_id}/markets")
 async def get_match_markets(match_id: str):
-    ev_id = match_id.replace("olimp_", "")
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-    url = f"https://olimpbet.kz/api/markets?eventId={ev_id}&locale=ru"
-    
     markets_data = {}
+    match_db = await firebase_get(f"matches/{match_id}")
     
-    try:
-        resp = await http_client.get(url, headers=headers, timeout=5.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            items = data.get("items", [])
-            
-            for market in items:
-                gn = market.get("name", "Другое").strip()
-                outs = market.get("outcomes") or market.get("orderedOutcomeTypes") or []
-                for out in outs:
-                    sn = (out.get("shortName") or out.get("name") or "").strip()
-                    prob = out.get("probability") or out.get("odds") or out.get("price") or out.get("value")
-                    if prob is None or not sn: continue
-                    if gn not in markets_data: markets_data[gn] = []
-                    markets_data[gn].append({"name": sn, "odds": prob})
-    except Exception as e:
-        print(f"   ⚠️ [MARKETS] Ошибка запроса: {e}")
-    
-    if not markets_data:
-        match_db = await firebase_get(f"matches/{match_id}")
-        if isinstance(match_db, dict) and match_db.get("odds"):
+    if isinstance(match_db, dict):
+        if isinstance(match_db.get("markets"), dict) and match_db["markets"]:
+            markets_data = match_db["markets"]
+        
+        if not markets_data and match_db.get("odds"):
             odds = match_db["odds"]
             p1, px, p2 = odds.get("1"), odds.get("X"), odds.get("2")
             if p1 and px and p2:
@@ -605,41 +586,6 @@ async def get_match_markets(match_id: str):
                 ]}
     
     return {"markets": markets_data}
-
-# ==============================================================================
-# ТЕСТОВЫЙ ЭНДПОИНТ V3 (проверка скрытых API для полных рынков)
-# ==============================================================================
-@app.get("/api/test-markets-v3/{ev_id}")
-async def test_markets_v3(ev_id: str):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.olimp.bet/",
-        "X-Platform": "web-desktop",
-        "X-GUID": "82cc43ab0d3e1fcb24fff0ef8242dd70"
-    }
-    results = {}
-    
-    urls = [
-        f"https://www.olimp.bet/apiru/live/matches/all",
-        f"https://www.olimp.bet/api/v4/0/live/broadcast/sports-with-competitions-with-events",
-        f"https://api4.olimpbet.kz/api/v4/0/events/{ev_id}",
-        f"https://api4.olimpbet.kz/api/v4/0/line/events/{ev_id}",
-        f"https://olimpbet.kz/api/markets?locale=ru&eventId={ev_id}",
-        f"https://olimpbet.kz/api/counters/events?eventId={ev_id}&includeMarkets=true"
-    ]
-    
-    for url in urls:
-        try:
-            resp = await http_client.get(url, headers=headers, timeout=5.0)
-            results[url] = {"status": resp.status_code, "preview": resp.text[:500]}
-            print(f"🧪 [V3] {url} → {resp.status_code} | {resp.text[:200]}")
-        except Exception as e:
-            results[url] = {"error": str(e)[:100]}
-            print(f"🧪 [V3] {url} → EXCEPTION: {str(e)[:100]}")
-            
-    return {"results": results}
-# ==============================================================================
 
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
