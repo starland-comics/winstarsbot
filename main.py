@@ -572,11 +572,9 @@ async def get_match_markets(match_id: str):
     match_db = await firebase_get(f"matches/{match_id}")
     
     if isinstance(match_db, dict):
-        # 1. Если пришли готовые рынки из воркера
         if isinstance(match_db.get("markets"), dict) and match_db["markets"]:
             markets_data = match_db["markets"]
         
-        # 2. Иначе собираем реальный исход П1/Х/П2
         if not markets_data and match_db.get("odds"):
             odds = match_db["odds"]
             p1, px, p2 = odds.get("1"), odds.get("X"), odds.get("2")
@@ -588,6 +586,35 @@ async def get_match_markets(match_id: str):
                 ]}
     
     return {"markets": markets_data}
+
+# ==============================================================================
+# ТЕСТОВЫЙ ЭНДПОИНТ ДЛЯ ПОИСКА ПОЛНЫХ РЫНКОВ (ВАРИАНТ 1)
+# ==============================================================================
+@app.get("/api/test-markets/{ev_id}")
+async def test_markets(ev_id: str):
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
+    test_urls = [
+        f"https://olimpbet.kz/api/v2/events/{ev_id}?includeMarkets=true",
+        f"https://olimpbet.kz/api/v2/events/{ev_id}?locale=ru&includeMarkets=true",
+        f"https://olimpbet.kz/api/markets?eventId={ev_id}&locale=ru",
+        f"https://olimpbet.kz/api/match-phases?eventId={ev_id}&locale=ru",
+        f"https://olimpbet.kz/api/v2/events?eventIds={ev_id}&includeMarkets=true&locale=ru",
+    ]
+    
+    results = {}
+    for url in test_urls:
+        try:
+            resp = await http_client.get(url, headers=headers, timeout=5.0)
+            results[url] = {
+                "status": resp.status_code,
+                "preview": resp.text[:300] if resp.text else ""
+            }
+            print(f"🧪 [TEST] {url} → {resp.status_code} | {resp.text[:200]}")
+        except Exception as e:
+            results[url] = {"error": str(e)[:100]}
+    
+    return {"results": results}
+# ==============================================================================
 
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
