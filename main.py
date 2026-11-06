@@ -607,43 +607,37 @@ async def get_match_markets(match_id: str):
     return {"markets": markets_data}
 
 # ==============================================================================
-# НОВЫЙ ТЕСТОВЫЙ ЭНДПОИНТ ДЛЯ ПОИСКА РЕАЛЬНЫХ КЭФОВ
+# ТЕСТОВЫЙ ЭНДПОИНТ V3 (проверка скрытых API для полных рынков)
 # ==============================================================================
-@app.get("/api/test-markets-v2/{ev_id}")
-async def test_markets_v2(ev_id: str):
+@app.get("/api/test-markets-v3/{ev_id}")
+async def test_markets_v3(ev_id: str):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", 
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.olimp.bet/",
+        "X-Platform": "web-desktop",
+        "X-GUID": "82cc43ab0d3e1fcb24fff0ef8242dd70"
     }
     results = {}
     
-    # 1. GET Requests
-    get_urls = [
-        f"https://www.olimp.bet/api/v4/0/line/events/{ev_id}",
-        f"https://www.olimp.bet/api/v4/0/events/{ev_id}",
-        f"https://olimpbet.kz/api/v2/events?eventIds={ev_id}&includeMarkets=true&locale=ru&pageSize=1",
-        f"https://olimpbet.kz/api/v2/events/{ev_id}?includeMarkets=true&pageSize=1"
+    urls = [
+        f"https://www.olimp.bet/apiru/live/matches/all",
+        f"https://www.olimp.bet/api/v4/0/live/broadcast/sports-with-competitions-with-events",
+        f"https://api4.olimpbet.kz/api/v4/0/events/{ev_id}",
+        f"https://api4.olimpbet.kz/api/v4/0/line/events/{ev_id}",
+        f"https://olimpbet.kz/api/markets?locale=ru&eventId={ev_id}",
+        f"https://olimpbet.kz/api/counters/events?eventId={ev_id}&includeMarkets=true"
     ]
-    for url in get_urls:
+    
+    for url in urls:
         try:
             resp = await http_client.get(url, headers=headers, timeout=5.0)
-            results[f"GET {url}"] = {"status": resp.status_code, "preview": resp.text[:400]}
+            results[url] = {"status": resp.status_code, "preview": resp.text[:500]}
+            print(f"🧪 [V3] {url} → {resp.status_code} | {resp.text[:200]}")
         except Exception as e:
-            results[f"GET {url}"] = {"error": str(e)[:100]}
-
-    # 2. POST Requests
-    post_endpoints = [
-        ("https://www.olimp.bet/api/v4/0/events", {"eventIds": [int(ev_id)]}),
-        ("https://olimpbet.kz/api/v2/events/filter", {"eventIds": [int(ev_id)]}),
-        ("https://www.olimp.bet/api/v4/0/line/events", {"eventIds": [int(ev_id)]})
-    ]
-    for url, payload in post_endpoints:
-        try:
-            resp = await http_client.post(url, json=payload, headers=headers, timeout=5.0)
-            results[f"POST {url}"] = {"status": resp.status_code, "preview": resp.text[:400]}
-        except Exception as e:
-            results[f"POST {url}"] = {"error": str(e)[:100]}
-
+            results[url] = {"error": str(e)[:100]}
+            print(f"🧪 [V3] {url} → EXCEPTION: {str(e)[:100]}")
+            
     return {"results": results}
 # ==============================================================================
 
