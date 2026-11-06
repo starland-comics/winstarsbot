@@ -35,7 +35,6 @@
     .league-filter-btn { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border); padding: 0 16px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; color: var(--text-main); cursor: pointer; width: 45%; }
     .league-filter-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
 
-    /* Общие стили для модалок */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 500; display: none; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(4px); }
     .modal-overlay.open { display: block; opacity: 1; }
     .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 90vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
@@ -43,7 +42,6 @@
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: 800; font-size: 1.1rem; }
     .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer; }
     
-    /* Стили для деталей матча (все рынки) */
     .market-group { margin-bottom: 20px; }
     .market-title { font-size: 0.9rem; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; text-transform: uppercase; }
     .market-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -52,7 +50,6 @@
     .market-btn-name { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
     .market-btn-val { font-size: 0.95rem; font-weight: 800; color: #fff; }
 
-    /* Купон */
     .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(135deg, var(--accent), #7b2cbf); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
     .bet-slip-bar.active { display: flex; }
     .bet-slip-info { display: flex; flex-direction: column; }
@@ -70,7 +67,6 @@
     .slip-input-row .input-group { margin-bottom: 0; flex: 1; }
     .slip-potential { font-weight: 800; color: var(--green); margin-bottom: 16px; text-align: center; font-size: 1.1rem; }
 
-    /* Окно результата */
     #result-modal .modal-content { align-items: center; text-align: center; padding: 32px 20px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); }
     .result-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-bottom: 16px; }
     .result-icon.success { background: rgba(16, 185, 129, 0.2); color: var(--green); }
@@ -223,7 +219,6 @@
     <div class="nav-item" onclick="switchTab(this, 'tab-profile')"><svg class="icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Профиль</span></div>
   </nav>
 
-  <!-- Модалка выбора лиг -->
   <div class="modal-overlay" id="league-modal" onclick="closeLeagueModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">Выбор лиги <button class="modal-close" onclick="closeLeagueModal()">✕</button></div>
@@ -231,18 +226,18 @@
     </div>
   </div>
 
-  <!-- Модалка деталей матча (ВСЕ РЫНКИ) -->
   <div class="modal-overlay" id="match-details-modal" onclick="closeMatchDetails(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
         <div id="match-details-title" style="font-size:1rem;">Матч</div>
         <button class="modal-close" onclick="closeMatchDetails()">✕</button>
       </div>
-      <div id="match-markets-container" style="overflow-y:auto; flex:1; padding-bottom:20px;"></div>
+      <div id="match-markets-container" style="overflow-y:auto; flex:1; padding-bottom:20px;">
+        <div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>
+      </div>
     </div>
   </div>
 
-  <!-- Модалка купона -->
   <div class="modal-overlay" id="bet-slip-modal" onclick="closeBetSlipModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
@@ -264,7 +259,6 @@
     </div>
   </div>
 
-  <!-- Модалка результата ставки -->
   <div class="modal-overlay" id="result-modal">
     <div class="modal-content">
       <div class="result-icon" id="result-icon"></div>
@@ -526,8 +520,8 @@
       });
     }
 
-    // --- ЛОГИКА ДЕТАЛЕЙ МАТЧА ---
-    function openMatchDetails(matchId) {
+    // Динамическая загрузка рынков
+    async function openMatchDetails(matchId) {
       const match = allMatchesRaw.find(m => m.id === matchId);
       if (!match) return;
 
@@ -535,33 +529,40 @@
       document.getElementById('match-details-title').innerText = `${match.home} - ${match.away}`;
       
       const container = document.getElementById('match-markets-container');
-      container.innerHTML = '';
-
-      if (!match.markets) {
-        container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Дополнительные рынки отсутствуют</div>';
-      } else {
-        for (const [groupName, outcomes] of Object.entries(match.markets)) {
-          if (!outcomes || outcomes.length === 0) continue;
-          
-          let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
-          
-          outcomes.forEach(out => {
-            const isSelected = betSlip.some(b => b.matchId === match.id && b.outcomeKey === out.name);
-            const selectedClass = isSelected ? 'selected' : '';
-            groupHtml += `
-              <div class="market-btn ${selectedClass}" onclick="toggleBet('${match.id}', '${match.title}', '${out.name}', ${out.odds}, '${match.league}', '${out.name}', '${groupName}')">
-                <span class="market-btn-name">${out.name}</span>
-                <span class="market-btn-val">${out.odds}</span>
-              </div>
-            `;
-          });
-          
-          groupHtml += `</div></div>`;
-          container.innerHTML += groupHtml;
-        }
-      }
-
+      container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>';
       document.getElementById('match-details-modal').classList.add('open');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/match/${matchId}/markets`);
+        const data = await res.json();
+        container.innerHTML = '';
+
+        if (!data.markets || Object.keys(data.markets).length === 0) {
+          container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Дополнительные рынки отсутствуют</div>';
+        } else {
+          for (const [groupName, outcomes] of Object.entries(data.markets)) {
+            if (!outcomes || outcomes.length === 0) continue;
+            
+            let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
+            
+            outcomes.forEach(out => {
+              const isSelected = betSlip.some(b => b.matchId === match.id && b.outcomeKey === out.name);
+              const selectedClass = isSelected ? 'selected' : '';
+              groupHtml += `
+                <div class="market-btn ${selectedClass}" onclick="toggleBet('${match.id}', '${match.title}', '${out.name}', ${out.odds}, '${match.league}', '${out.name}', '${groupName}')">
+                  <span class="market-btn-name">${out.name}</span>
+                  <span class="market-btn-val">${out.odds}</span>
+                </div>
+              `;
+            });
+            
+            groupHtml += `</div></div>`;
+            container.innerHTML += groupHtml;
+          }
+        }
+      } catch (e) {
+        container.innerHTML = '<div style="text-align:center; color:var(--red); padding:20px;">Ошибка загрузки рынков</div>';
+      }
     }
 
     function closeMatchDetails(e) {
@@ -570,7 +571,6 @@
       }
     }
 
-    // --- ЛОГИКА КУПОНА ---
     function toggleBet(matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName) {
       if (coeff === 0) return;
       
@@ -583,9 +583,18 @@
       }
       
       updateBetSlipUI();
-      renderMatches(); 
+      renderMatches();
+      
       if (document.getElementById('match-details-modal').classList.contains('open')) {
-        openMatchDetails(matchId); // обновляем подсветку в деталях
+        // Обновляем подсветку в модалке без перезагрузки
+        document.querySelectorAll('.market-btn').forEach(btn => {
+          const nameEl = btn.querySelector('.market-btn-name');
+          if (nameEl) {
+            const outName = nameEl.innerText;
+            const isSel = betSlip.some(b => b.matchId === matchId && b.outcomeKey === outName);
+            btn.classList.toggle('selected', isSel);
+          }
+        });
       }
     }
 
