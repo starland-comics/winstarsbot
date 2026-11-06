@@ -252,13 +252,12 @@ async def live_scraper_worker():
 
     while True:
         try:
-            # Очистка базы от зависших старых матчей
             cached = await get_matches_cached()
             if isinstance(cached, dict):
                 now_ts = time.time()
                 for mid, m in list(cached.items()):
                     st = m.get("start_time")
-                    if st and now_ts > st + 10800: # больше 3 часов
+                    if st and now_ts > st + 10800:
                         await firebase_delete(f"matches/{mid}")
                         invalidate_matches_cache()
                         print(f"   🗑 Удалён старый матч из базы: {m.get('title')}")
@@ -376,7 +375,6 @@ async def live_scraper_worker():
         if cycle % GC_EVERY == 0: gc.collect()
         await asyncio.sleep(LIVE_POLL_SEC)
 
-# ============== ДВИЖОК РАСЧЕТА СТАВОК ==============
 def calculate_outcome(outcome_str, s1, s2):
     o = outcome_str.lower().strip()
     
@@ -571,6 +569,69 @@ async def sync_user(initData: str = Query("")):
 async def get_matches():
     matches = await firebase_get("matches")
     return {"matches": matches if isinstance(matches, dict) else {}}
+
+@app.get("/api/match/{match_id}/markets")
+async def get_match_markets(match_id: str):
+    ev_id = match_id.replace("olimp_", "")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
+    
+    candidate_urls = [
+        f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}",
+        f"https://www.olimp.bet/api/v4/0/live/event/{ev_id}",
+        f"https://www.olimp.bet/api/v4/0/event/{ev_id}",
+        f"https://www.olimp.bet/api/v4/0/line/events/{ev_id}",
+        f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}/markets",
+        f"https://www.olimp.bet/api/v4/0/live/event/{ev_id}/markets",
+        f"https://www.olimp.bet/api/v4/0/line/event-with-markets/{ev_id}",
+        f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}?include=markets",
+    ]
+    
+    markets_data = {}
+    
+    for url in candidate_urls:
+        try:
+            resp = await asyncio.to_thread(cffi_requests.get, url, headers=headers, impersonate="chrome120", timeout=10)
+            body_preview = ""
+            if resp.status_code == 200:
+                try:
+                    body_preview = resp.text[:400]
+                except: pass
+            print(f"   🔍 [MARKETS] {url}")
+            print(f"      → status={resp.status_code} | preview={body_preview}")
+            
+            if resp.status_code == 200:
+                raw = resp.json()
+                ev = raw if isinstance(raw, dict) else (raw[0] if isinstance(raw, list) and raw else {})
+                outcomes = ev.get("outcomes") or ev.get("markets") or ev.get("event", {}).get("outcomes") or []
+                for out in outcomes:
+                    gn = (out.get("groupName") or out.get("group") or "Другое").strip()
+                    sn = (out.get("shortName") or out.get("name") or "").strip()
+                    prob = out.get("probability") or out.get("odds") or out.get("value")
+                    if prob is None or not sn: continue
+                    if gn not in markets_data: markets_data[gn] = []
+                    markets_data[gn].append({"name": sn, "odds": prob})
+                
+                if markets_data:
+                    print(f"   ✅ [MARKETS] Найдено {len(markets_data)} групп через {url}")
+                    break
+                else:
+                    print(f"   ⚠️ [MARKETS] 200, но outcomes пустой. Ключи ответа: {list(ev.keys())[:20]}")
+        except Exception as e:
+            print(f"   ⚠️ [MARKETS] {url} → exception: {str(e)[:100]}")
+    
+    if not markets_data:
+        match_db = await firebase_get(f"matches/{match_id}")
+        if isinstance(match_db, dict) and match_db.get("odds"):
+            odds = match_db["odds"]
+            p1, px, p2 = odds.get("1"), odds.get("X"), odds.get("2")
+            if p1 and px and p2:
+                markets_data = {"Исход": [
+                    {"name": "П1", "odds": p1},
+                    {"name": "Х", "odds": px},
+                    {"name": "П2", "odds": p2},
+                ]}
+    
+    return {"markets": markets_data}
 
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
