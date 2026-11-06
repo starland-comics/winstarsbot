@@ -442,6 +442,9 @@
         const isLive = m.status.includes('LIVE');
         const isStarted = m.start_time && m.start_time < now;
         
+        // ЖЕСТКИЙ ФИКС: если матч начался больше 3 часов назад, скрываем его везде
+        if (m.start_time && m.start_time < now - 10800) return false;
+
         if (currentMode === 'live') {
             if (!isLive && !isStarted) return false;
         } else {
@@ -528,10 +531,9 @@
       const container = document.getElementById('match-markets-container');
       container.innerHTML = '';
 
-      let markets = match.markets;
+      let markets = match.markets || {};
 
-      if (!markets || Object.keys(markets).length === 0) {
-          markets = {};
+      if (Object.keys(markets).length === 0) {
           if (match.odds && match.odds['1']) {
               markets['Исход'] = [
                   { name: 'П1', odds: match.odds['1'] },
