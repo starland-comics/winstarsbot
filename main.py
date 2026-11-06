@@ -46,8 +46,6 @@ ALLOWED_LEAGUES = [
     "отбор", "товарищеск", "копа", "кубок азии", "кубок африки"
 ]
 
-DEBUG_MINUTE_LOGGED = set()
-
 _LOGOS_CACHE = {"map": {}, "ts": 0}
 _MATCHES_CACHE = {"data": {}, "ts": 0}
 _FINISHED_CACHE = {"data": {}, "ts": 0}
@@ -570,57 +568,16 @@ async def get_matches():
 
 @app.get("/api/match/{match_id}/markets")
 async def get_match_markets(match_id: str):
-    ev_id = match_id.replace("olimp_", "")
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-    
-    candidate_urls = [
-        f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}",
-        f"https://www.olimp.bet/api/v4/0/live/event/{ev_id}",
-        f"https://www.olimp.bet/api/v4/0/event/{ev_id}",
-        f"https://www.olimp.bet/api/v4/0/line/events/{ev_id}",
-        f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}/markets",
-        f"https://www.olimp.bet/api/v4/0/live/event/{ev_id}/markets",
-        f"https://www.olimp.bet/api/v4/0/line/event-with-markets/{ev_id}",
-        f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}?include=markets",
-    ]
-    
     markets_data = {}
+    match_db = await firebase_get(f"matches/{match_id}")
     
-    for url in candidate_urls:
-        try:
-            resp = await http_client.get(url, headers=headers, timeout=3.0)
-            body_preview = ""
-            if resp.status_code == 200:
-                try:
-                    body_preview = resp.text[:400]
-                except: pass
-            
-            print(f"   🔍 [MARKETS] {url}")
-            print(f"      → status={resp.status_code} | preview={body_preview}")
-            
-            if resp.status_code == 200:
-                raw = resp.json()
-                ev = raw if isinstance(raw, dict) else (raw[0] if isinstance(raw, list) and raw else {})
-                outcomes = ev.get("outcomes") or ev.get("markets") or ev.get("event", {}).get("outcomes") or []
-                for out in outcomes:
-                    gn = (out.get("groupName") or out.get("group") or "Другое").strip()
-                    sn = (out.get("shortName") or out.get("name") or "").strip()
-                    prob = out.get("probability") or out.get("odds") or out.get("value")
-                    if prob is None or not sn: continue
-                    if gn not in markets_data: markets_data[gn] = []
-                    markets_data[gn].append({"name": sn, "odds": prob})
-                
-                if markets_data:
-                    print(f"   ✅ [MARKETS] Найдено {len(markets_data)} групп через {url}")
-                    break
-                else:
-                    print(f"   ⚠️ [MARKETS] 200, но outcomes пустой. Ключи ответа: {list(ev.keys())[:20]}")
-        except Exception as e:
-            print(f"   ⚠️ [MARKETS] {url} → exception: {str(e)[:100]}")
-    
-    if not markets_data:
-        match_db = await firebase_get(f"matches/{match_id}")
-        if isinstance(match_db, dict) and match_db.get("odds"):
+    if isinstance(match_db, dict):
+        # 1. Если пришли готовые рынки из воркера
+        if isinstance(match_db.get("markets"), dict) and match_db["markets"]:
+            markets_data = match_db["markets"]
+        
+        # 2. Иначе собираем реальный исход П1/Х/П2
+        if not markets_data and match_db.get("odds"):
             odds = match_db["odds"]
             p1, px, p2 = odds.get("1"), odds.get("X"), odds.get("2")
             if p1 and px and p2:
