@@ -252,6 +252,17 @@ async def live_scraper_worker():
 
     while True:
         try:
+            # Очистка базы от зависших старых матчей
+            cached = await get_matches_cached()
+            if isinstance(cached, dict):
+                now_ts = time.time()
+                for mid, m in list(cached.items()):
+                    st = m.get("start_time")
+                    if st and now_ts > st + 10800: # больше 3 часов
+                        await firebase_delete(f"matches/{mid}")
+                        invalidate_matches_cache()
+                        print(f"   🗑 Удалён старый матч из базы: {m.get('title')}")
+
             resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
@@ -276,6 +287,11 @@ async def live_scraper_worker():
 
                             ev_id = ev.get("id")
                             if not ev_id: continue
+                            
+                            st = ev.get("startDateTime")
+                            if st and time.time() > st + 10800:
+                                print(f"   ⏭️ Olimpbet глючит: пропускаю старый матч {t1} - {t2}")
+                                continue
 
                             mid = f"olimp_{ev_id}"
                             current_live_ids.add(mid)
@@ -325,7 +341,6 @@ async def live_scraper_worker():
 
                         existing_finished = await firebase_get(f"finished_matches/{mid}")
                         if isinstance(existing_finished, dict) and "score1" in existing_finished:
-                            # Уже есть результат, просто удаляем из matches
                             await firebase_delete(f"matches/{mid}")
                             invalidate_matches_cache()
                             continue
@@ -343,7 +358,6 @@ async def live_scraper_worker():
                                 print(f"   🏁 [ФИНАЛ] {title}: {s1}:{s2} (последний счёт из LIVE)")
                             except Exception: pass
                         
-                        # УДАЛЯЕМ матч из базы matches
                         await firebase_delete(f"matches/{mid}")
                         invalidate_matches_cache()
                         print(f"   🗑 Удалён завершенный матч {mid} из базы matches")
