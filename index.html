@@ -232,9 +232,7 @@
         <div id="match-details-title" style="font-size:1rem;">Матч</div>
         <button class="modal-close" onclick="closeMatchDetails()">✕</button>
       </div>
-      <div id="match-markets-container" style="overflow-y:auto; flex:1; padding-bottom:20px;">
-        <div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>
-      </div>
+      <div id="match-markets-container" style="overflow-y:auto; flex:1; padding-bottom:20px;"></div>
     </div>
   </div>
 
@@ -520,8 +518,7 @@
       });
     }
 
-    // Динамическая загрузка рынков
-    async function openMatchDetails(matchId) {
+    function openMatchDetails(matchId) {
       const match = allMatchesRaw.find(m => m.id === matchId);
       if (!match) return;
 
@@ -529,40 +526,50 @@
       document.getElementById('match-details-title').innerText = `${match.home} - ${match.away}`;
       
       const container = document.getElementById('match-markets-container');
-      container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>';
-      document.getElementById('match-details-modal').classList.add('open');
+      container.innerHTML = '';
 
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/match/${matchId}/markets`);
-        const data = await res.json();
-        container.innerHTML = '';
+      let markets = match.markets;
 
-        if (!data.markets || Object.keys(data.markets).length === 0) {
-          container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Дополнительные рынки отсутствуют</div>';
-        } else {
-          for (const [groupName, outcomes] of Object.entries(data.markets)) {
-            if (!outcomes || outcomes.length === 0) continue;
-            
-            let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
-            
-            outcomes.forEach(out => {
-              const isSelected = betSlip.some(b => b.matchId === match.id && b.outcomeKey === out.name);
-              const selectedClass = isSelected ? 'selected' : '';
-              groupHtml += `
-                <div class="market-btn ${selectedClass}" onclick="toggleBet('${match.id}', '${match.title}', '${out.name}', ${out.odds}, '${match.league}', '${out.name}', '${groupName}')">
-                  <span class="market-btn-name">${out.name}</span>
-                  <span class="market-btn-val">${out.odds}</span>
-                </div>
-              `;
-            });
-            
-            groupHtml += `</div></div>`;
-            container.innerHTML += groupHtml;
+      if (!markets || Object.keys(markets).length === 0) {
+          markets = {};
+          if (match.odds && match.odds['1']) {
+              markets['Исход'] = [
+                  { name: 'П1', odds: match.odds['1'] },
+                  { name: 'Х', odds: match.odds['X'] },
+                  { name: 'П2', odds: match.odds['2'] }
+              ];
+              markets['Тотал (симуляция)'] = [
+                  { name: 'ТБ 2.5', odds: 1.85 },
+                  { name: 'ТМ 2.5', odds: 1.95 }
+              ];
           }
-        }
-      } catch (e) {
-        container.innerHTML = '<div style="text-align:center; color:var(--red); padding:20px;">Ошибка загрузки рынков</div>';
       }
+
+      if (Object.keys(markets).length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Дополнительные рынки отсутствуют</div>';
+      } else {
+        for (const [groupName, outcomes] of Object.entries(markets)) {
+          if (!outcomes || outcomes.length === 0) continue;
+          
+          let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
+          
+          outcomes.forEach(out => {
+            const isSelected = betSlip.some(b => b.matchId === match.id && b.outcomeKey === out.name);
+            const selectedClass = isSelected ? 'selected' : '';
+            groupHtml += `
+              <div class="market-btn ${selectedClass}" onclick="toggleBet('${match.id}', '${match.title}', '${out.name}', ${out.odds}, '${match.league}', '${out.name}', '${groupName}')">
+                <span class="market-btn-name">${out.name}</span>
+                <span class="market-btn-val">${out.odds}</span>
+              </div>
+            `;
+          });
+          
+          groupHtml += `</div></div>`;
+          container.innerHTML += groupHtml;
+        }
+      }
+
+      document.getElementById('match-details-modal').classList.add('open');
     }
 
     function closeMatchDetails(e) {
@@ -586,7 +593,6 @@
       renderMatches();
       
       if (document.getElementById('match-details-modal').classList.contains('open')) {
-        // Обновляем подсветку в модалке без перезагрузки
         document.querySelectorAll('.market-btn').forEach(btn => {
           const nameEl = btn.querySelector('.market-btn-name');
           if (nameEl) {
