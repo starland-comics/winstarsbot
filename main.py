@@ -7,7 +7,6 @@ import os
 import time
 import base64
 import re
-import requests as cffi_requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -262,7 +261,7 @@ async def live_scraper_worker():
                         invalidate_matches_cache()
                         print(f"   🗑 Удалён старый матч из базы: {m.get('title')}")
 
-            resp = await asyncio.to_thread(cffi_requests.get, OLIMP_LIVE_URL, headers=headers, timeout=15)
+            resp = await http_client.get(OLIMP_LIVE_URL, headers=headers, timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
                 del resp
@@ -364,8 +363,7 @@ async def live_scraper_worker():
                 prev_live_ids = current_live_ids
 
                 if live_updates:
-                    async with httpx.AsyncClient() as client:
-                        await client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
+                    await http_client.patch(f"{FIREBASE_DB_URL}/matches.json", json=live_updates, timeout=10.0)
                     invalidate_matches_cache()
                     print(f"🔄 [LIVE] Записано: {len(live_updates)}")
         except Exception as e:
@@ -590,12 +588,13 @@ async def get_match_markets(match_id: str):
     
     for url in candidate_urls:
         try:
-            resp = await asyncio.to_thread(cffi_requests.get, url, headers=headers, impersonate="chrome120", timeout=10)
+            resp = await http_client.get(url, headers=headers, timeout=3.0)
             body_preview = ""
             if resp.status_code == 200:
                 try:
                     body_preview = resp.text[:400]
                 except: pass
+            
             print(f"   🔍 [MARKETS] {url}")
             print(f"      → status={resp.status_code} | preview={body_preview}")
             
