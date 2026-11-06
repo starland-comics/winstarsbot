@@ -283,12 +283,23 @@ async def live_scraper_worker():
                             status = _status_from_minute(minute)
 
                             p1 = px = p2 = None
+                            markets_data = {}
+
                             for out in ev.get("outcomes", []):
-                                sn = out.get("shortName", "")
-                                if "Исход" in out.get("groupName", "") or "Результат" in out.get("groupName", ""):
-                                    if sn in ["П1", "1"]: p1 = out.get("probability")
-                                    elif sn in ["X", "Х"]: px = out.get("probability")
-                                    elif sn in ["П2", "2"]: p2 = out.get("probability")
+                                gn = out.get("groupName", "Другое").strip()
+                                sn = out.get("shortName", "").strip()
+                                prob = out.get("probability")
+                                
+                                if prob is None or not sn: continue
+                                
+                                if gn not in markets_data:
+                                    markets_data[gn] = []
+                                markets_data[gn].append({"name": sn, "odds": prob})
+
+                                if "Исход" in gn or "Результат" in gn:
+                                    if sn in ["П1", "1"]: p1 = prob
+                                    elif sn in ["X", "Х"]: px = prob
+                                    elif sn in ["П2", "2"]: p2 = prob
 
                             live_updates[mid] = {
                                 "title": f"{t1} - {t2}", "home": t1, "away": t2,
@@ -298,9 +309,10 @@ async def live_scraper_worker():
                                 "status": status,
                                 "score": score or "VS",
                                 "start_time": ev.get("startDateTime"),
-                                "odds": {"1": p1, "X": px, "2": p2}
+                                "odds": {"1": p1, "X": px, "2": p2},
+                                "markets": markets_data
                             }
-                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | {comp_name}")
+                            print(f"   ⚽ [LIVE] {t1} — {t2} | {score or 'VS'} | {status} | рынков: {len(markets_data)}")
 
                 del data
 
@@ -313,6 +325,9 @@ async def live_scraper_worker():
 
                         existing_finished = await firebase_get(f"finished_matches/{mid}")
                         if isinstance(existing_finished, dict) and "score1" in existing_finished:
+                            # Уже есть результат, просто удаляем из matches
+                            await firebase_delete(f"matches/{mid}")
+                            invalidate_matches_cache()
                             continue
 
                         score_str = match.get("score", "")
@@ -327,6 +342,11 @@ async def live_scraper_worker():
                                 _FINISHED_CACHE["ts"] = 0
                                 print(f"   🏁 [ФИНАЛ] {title}: {s1}:{s2} (последний счёт из LIVE)")
                             except Exception: pass
+                        
+                        # УДАЛЯЕМ матч из базы matches
+                        await firebase_delete(f"matches/{mid}")
+                        invalidate_matches_cache()
+                        print(f"   🗑 Удалён завершенный матч {mid} из базы matches")
 
                 prev_live_ids = current_live_ids
 
@@ -537,43 +557,6 @@ async def sync_user(initData: str = Query("")):
 async def get_matches():
     matches = await firebase_get("matches")
     return {"matches": matches if isinstance(matches, dict) else {}}
-
-@app.get("/api/match/{match_id}/markets")
-async def get_match_markets(match_id: str):
-    ev_id = match_id.replace("olimp_", "")
-    url = f"https://www.olimp.bet/api/v4/0/line/event/{ev_id}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-    
-    markets_data = {}
-    try:
-        resp = await asyncio.to_thread(cffi_requests.get, url, headers=headers, impersonate="chrome120", timeout=10)
-        if resp.status_code == 200:
-            ev = resp.json()
-            for out in ev.get("outcomes", []):
-                gn = out.get("groupName", "Другое").strip()
-                sn = out.get("shortName", "").strip()
-                prob = out.get("probability")
-                if prob is None or not sn: continue
-                if gn not in markets_data: markets_data[gn] = []
-                markets_data[gn].append({"name": sn, "odds": prob})
-    except Exception as e:
-        print(f"   ⚠️ Ошибка загрузки рынков для {ev_id}: {e}")
-
-    if not markets_data:
-        match_db = await firebase_get(f"matches/{match_id}")
-        if isinstance(match_db, dict) and match_db.get("odds"):
-            odds = match_db["odds"]
-            p1 = odds.get("1")
-            px = odds.get("X")
-            p2 = odds.get("2")
-            if p1 and px and p2:
-                markets_data = {
-                    "Исход": [{"name": "П1", "odds": p1}, {"name": "Х", "odds": px}, {"name": "П2", "odds": p2}],
-                    "Двойной шанс": [{"name": "1X", "odds": round(1/(1/p1 + 1/px) * 0.9, 2)}, {"name": "12", "odds": round(1/(1/p1 + 1/p2) * 0.9, 2)}],
-                    "Тотал (симуляция)": [{"name": "ТБ 2.5", "odds": 1.85}, {"name": "ТМ 2.5", "odds": 1.95}]
-                }
-
-    return {"markets": markets_data}
 
 @app.get("/api/user/bets")
 async def get_user_bets(user_id: int):
