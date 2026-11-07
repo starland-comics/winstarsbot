@@ -35,28 +35,56 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
-# === ФАКТОРЫ FONBET ===
+# === ПОЛНЫЙ МАППИНГ FONBET ===
 FONBET_FACTORS = {
+    # 1X2
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
+    # Двойной шанс
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
-    928: ("Обе забьют", "Да", False), 929: ("Обе забьют", "Нет", False),
+    # Обе забьют
+    927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
+    # Тотал (главная)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
-    932: ("Фора", "Ф1", True), 933: ("Фора", "Ф2", True),
-    934: ("ИТБ1", "ТБ", True), 935: ("ИТМ1", "ТМ", True),
-    936: ("ИТБ2", "ТБ", True), 937: ("ИТМ2", "ТМ", True),
-    938: ("1-й тайм Исход", "П1", False), 939: ("1-й тайм Исход", "Х", False), 940: ("1-й тайм Исход", "П2", False),
-    941: ("1-й тайм Тотал", "ТБ", True), 942: ("1-й тайм Тотал", "ТМ", True),
-    943: ("1-й тайм Фора", "Ф1", True), 944: ("1-й тайм Фора", "Ф2", True),
-    11: ("Тотал", "ТБ", True), 12: ("Тотал", "ТМ", True),
-    13: ("Фора", "Ф1", True), 14: ("Фора", "Ф2", True),
-    15: ("Тотал", "ТБ", True), 16: ("Тотал", "ТМ", True),
-    17: ("Тотал", "ТБ", True), 18: ("Тотал", "ТМ", True),
-    19: ("Тотал", "ТБ", True), 20: ("Тотал", "ТМ", True),
-    21: ("ИТБ1", "ТБ", True), 22: ("ИТМ1", "ТМ", True),
-    23: ("ИТБ2", "ТБ", True), 24: ("ИТМ2", "ТМ", True),
+    # Форы (все серии) - каждая пара = Ф1/Ф2 с p
+    910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
+    989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
+    1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
+    1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
+    1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
+    1683: ("Фора", "Ф1", True), 1684: ("Фора", "Ф2", True),
+    1686: ("Фора", "Ф1", True), 1687: ("Фора", "Ф2", True),
+    1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
+    1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
+    1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
+    1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
+    1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
+    1824: ("Фора", "Ф1", True), 1825: ("Фора", "Ф2", True),
+    1827: ("Фора", "Ф1", True), 1828: ("Фора", "Ф2", True),
+    1830: ("Фора", "Ф1", True), 1831: ("Фора", "Ф2", True),
+    # Инд. тоталы ИТ1/ИТ2
+    1696: ("Инд. тотал 1", "ТБ", True), 1697: ("Инд. тотал 2", "ТБ", True),
+    1727: ("Инд. тотал 1", "ТБ", True), 1728: ("Инд. тотал 2", "ТБ", True),
+    1730: ("Инд. тотал 1", "ТБ", True), 1731: ("Инд. тотал 2", "ТБ", True),
+    1733: ("Инд. тотал 1", "ТБ", True), 1734: ("Инд. тотал 2", "ТБ", True),
+    1736: ("Инд. тотал 1", "ТБ", True), 1737: ("Инд. тотал 2", "ТБ", True),
+    1739: ("Инд. тотал 1", "ТБ", True), 1791: ("Инд. тотал 2", "ТБ", True),
+    1793: ("Инд. тотал 1", "ТБ", True), 1794: ("Инд. тотал 2", "ТБ", True),
+    1796: ("Инд. тотал 1", "ТБ", True), 1797: ("Инд. тотал 2", "ТБ", True),
+    1799: ("Инд. тотал 1", "ТБ", True), 1800: ("Инд. тотал 2", "ТБ", True),
+    1802: ("Инд. тотал 1", "ТБ", True), 1803: ("Инд. тотал 2", "ТБ", True),
+    1805: ("Инд. тотал 1", "ТБ", True), 1806: ("Инд. тотал 2", "ТБ", True),
+    # Доп. тоталы (пары ТБ/ТМ)
+    1569: ("Тотал", "ТМ", True), 1571: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
+    1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
+    1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
+    1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),
+    1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
+    1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
+    2203: ("Тотал", "ТБ", True), 2204: ("Тотал", "ТМ", True),
+    # ОЗ 1-й тайм
+    4241: ("Обе забьют 1-й тайм", "Нет", False), 4242: ("Обе забьют 1-й тайм", "Да", False),
 }
 
-# === WHITELIST ЛИГ ===
 ALLOWED_LEAGUE_PATTERNS = [
     r'^россия\.\s*(премьер|рпл|фнл|первая лига|кубок)',
     r'^англия\.\s*(премьер|чемпионшип|кубок англии|fa cup|кубок лиги|efl cup|carabao)($|\s*\.|\s*сезон)',
@@ -108,8 +136,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
 http_client = httpx.AsyncClient(timeout=10.0)
@@ -118,7 +145,6 @@ http_client = httpx.AsyncClient(timeout=10.0)
 async def shutdown_event():
     await http_client.aclose()
 
-# ===== Соединения WS =====
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -135,7 +161,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# ===== Firebase helpers =====
 async def firebase_get(path: str):
     try:
         resp = await http_client.get(f"{FIREBASE_DB_URL}/{path}.json")
@@ -166,7 +191,6 @@ async def get_finished_cached():
     _FINISHED_CACHE["ts"] = now
     return raw
 
-# ===== Fonbet helpers =====
 def _is_allowed_league(league):
     if not league or league == "Футбол": return False
     low = league.lower().strip()
@@ -178,7 +202,8 @@ def _is_allowed_league(league):
         except: pass
     return False
 
-def _format_total_param(p):
+def _format_param(p):
+    """Нормализует p: 350→3.5, -350→-3.5, 1.5→1.5, 0→0"""
     if p is None: return None
     try: p_val = float(p)
     except: return str(p)
@@ -187,6 +212,16 @@ def _format_total_param(p):
     if abs(p_int) >= 100: return f"{p_int / 100:g}"
     elif abs(p_int) >= 10: return f"{p_int / 10:g}"
     return str(p_int)
+
+def _format_p_with_sign(p):
+    """Формат с явным знаком для фор/тоталов: 1.5→'+1.5', -1→'-1', 0→'0'"""
+    s = _format_param(p)
+    if s is None: return ""
+    try:
+        v = float(s)
+        if v > 0: return f"+{s}"
+        return s
+    except: return s
 
 def _parse_start_ts(ev):
     st = ev.get("startTime")
@@ -199,12 +234,6 @@ def _is_match_live(ev, now_ts):
     if st <= 0: return False
     elapsed = now_ts - st
     return 0 <= elapsed < int(3.5 * 3600)
-
-def _first_not_none(d, keys):
-    for k in keys:
-        if k in d and d[k] is not None:
-            return d[k]
-    return None
 
 def _extract_score(li):
     if not li: return None, None, None
@@ -245,10 +274,8 @@ def _parse_markets(factors_list):
         if odds <= 1.0: continue
         name = base
         if has_param:
-            p_str = _format_total_param(f.get("p"))
-            if p_str is None: continue
-            if p_str.startswith("-") and "Тотал" in group:
-                group = group.replace("Тотал", "Фора")
+            p_str = _format_p_with_sign(f.get("p"))
+            if not p_str: continue
             name = f"{base} {p_str}"
         key = (group, name)
         if key in seen: continue
@@ -273,7 +300,7 @@ def _filter_decided(markets, s1, s2):
                 if n.startswith("ТБ "): lim_str = n[3:]
                 elif n.startswith("ТМ "): lim_str = n[3:]
                 if lim_str:
-                    try: lim = float(lim_str)
+                    try: lim = float(lim_str.replace("+",""))
                     except: new_outs.append(o); continue
                     if total > lim: continue
                 new_outs.append(o)
@@ -308,9 +335,7 @@ def _build_logo_index(raw_cache):
     return idx
 
 def _build_sport_hierarchy(all_sports):
-    """Строит: entry_by_id, top_by_id (id → top-sport с kind='sport')."""
-    entry_by_id = {}
-    parent_by_id = {}
+    entry_by_id = {}; parent_by_id = {}
     for sp in all_sports:
         sp_id = sp.get('id')
         if sp_id is None: continue
@@ -320,30 +345,23 @@ def _build_sport_hierarchy(all_sports):
             v = sp.get(field)
             if v is not None and v != sp_id:
                 parent = v; break
-        if parent is not None:
-            parent_by_id[sp_id] = parent
-    
+        if parent is not None: parent_by_id[sp_id] = parent
     def find_top(entry_id):
-        cur = entry_id
-        visited = set()
+        cur = entry_id; visited = set()
         for _ in range(20):
             if cur in visited: return None
             visited.add(cur)
             entry = entry_by_id.get(cur)
             if not entry: return None
-            if entry.get('kind') == 'sport':
-                return entry
+            if entry.get('kind') == 'sport': return entry
             p = parent_by_id.get(cur)
             if p is None: return None
             cur = p
         return None
-    
     top_by_id = {}
-    for sp_id in entry_by_id:
-        top_by_id[sp_id] = find_top(sp_id)
+    for sp_id in entry_by_id: top_by_id[sp_id] = find_top(sp_id)
     return entry_by_id, parent_by_id, top_by_id
 
-# ===== Fonbet scraper worker =====
 async def fonbet_scraper_worker():
     print(f"⚡ fonbet_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
     cycle = 0
@@ -359,8 +377,7 @@ async def fonbet_scraper_worker():
             live_data = _fetch_fonbet(FONBET_BASE + FONBET_LIVE_PATH)
             
             if not line_data and not live_data:
-                await asyncio.sleep(LIVE_POLL_SEC)
-                continue
+                await asyncio.sleep(LIVE_POLL_SEC); continue
             
             events_by_id = {}
             all_factors = {}
@@ -392,17 +409,14 @@ async def fonbet_scraper_worker():
                     if eid and eid not in events_by_id:
                         events_by_id[eid] = dict(ev)
             
-            # Иерархия спорта
             entry_by_id, parent_by_id, top_by_id = _build_sport_hierarchy(all_sports)
             
-            # Карты
             tournament_by_id = {}
             for sp in all_sports:
                 if sp.get('kind') == 'sport': continue
                 sid = sp.get('id'); nm = sp.get('name', '')
                 if sid and nm: tournament_by_id[sid] = nm
             
-            # Логотипы из кэша
             raw_cache = await firebase_get("team_logos") or {}
             logo_idx = _build_logo_index(raw_cache)
             
@@ -418,7 +432,6 @@ async def fonbet_scraper_worker():
                 st = _parse_start_ts(ev)
                 if st <= 0: continue
                 
-                # Только футбол через top sport
                 sid = ev.get("sportId")
                 top_sport = top_by_id.get(sid)
                 if not top_sport: continue
@@ -471,7 +484,6 @@ async def fonbet_scraper_worker():
                     "markets": markets_data
                 }
             
-            # Фиксация завершённых (были в prev, но пропали)
             disappeared = prev_event_ids - current_ids
             if disappeared:
                 cached_old = await firebase_get("matches") or {}
@@ -503,7 +515,6 @@ async def fonbet_scraper_worker():
         if cycle % 15 == 0: gc.collect()
         await asyncio.sleep(LIVE_POLL_SEC)
 
-# ===== Расчёт ставок =====
 def calculate_outcome(outcome_str, s1, s2):
     o = outcome_str.lower().strip()
     if o in ["п1", "1", "победа 1", "победа хозяев"]: return s1 > s2
@@ -514,13 +525,13 @@ def calculate_outcome(outcome_str, s1, s2):
     if o in ["x2", "х2"]: return s2 >= s1
     if o in ["да", "обе забьют", "оз да"]: return s1 > 0 and s2 > 0
     if o in ["нет", "оз нет"]: return s1 == 0 or s2 == 0
-    m_over = re.search(r'(?:тб|тотал больше|больше)\s*(\d+(?:\.\d+)?)', o)
+    m_over = re.search(r'(?:тб|тотал больше|больше)\s*([+-]?\d+(?:\.\d+)?)', o)
     if m_over:
         limit = float(m_over.group(1)); total = s1 + s2
         if total > limit: return True
         if total < limit: return False
         return None
-    m_under = re.search(r'(?:тм|тотал меньше|меньше)\s*(\d+(?:\.\d+)?)', o)
+    m_under = re.search(r'(?:тм|тотал меньше|меньше)\s*([+-]?\d+(?:\.\d+)?)', o)
     if m_under:
         limit = float(m_under.group(1)); total = s1 + s2
         if total < limit: return True
@@ -603,7 +614,6 @@ async def settle_bets_worker():
         if cycle % 15 == 0: gc.collect()
         await asyncio.sleep(SETTLE_POLL_SEC)
 
-# ===== Startup =====
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
@@ -612,7 +622,6 @@ async def startup_event():
     asyncio.create_task(settle_bets_worker())
     print("✅ Все фоновые воркеры запущены")
 
-# ===== API =====
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
     try:
@@ -689,7 +698,7 @@ async def place_bet(request: Request):
     if not isinstance(user_balance, (int, float)): user_balance = 0
     if user_balance < amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
     
-    # === ЗАЩИТА ОТ ДУБЛЕЙ (10 секунд) ===
+    # Защита от дублей
     new_fingerprint = hashlib.md5(
         f"{user_id}|{amount}|{json.dumps(bets, sort_keys=True)}".encode()
     ).hexdigest()
