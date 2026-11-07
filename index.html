@@ -34,11 +34,12 @@
     
     .league-filter-btn { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border); padding: 0 16px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; color: var(--text-main); cursor: pointer; width: 45%; }
     .league-filter-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+    
     .league-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 60vh; padding-bottom: 20px; }
-.league-item { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 0.9rem; font-weight: 600; color: var(--text-main); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
-.league-item:active { transform: scale(0.98); }
-.league-item.active { border-color: var(--accent); background: rgba(157, 78, 221, 0.15); }
-.league-top { background: var(--accent); color: #fff; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; font-weight: 800; letter-spacing: 0.5px; }
+    .league-item { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 0.9rem; font-weight: 600; color: var(--text-main); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
+    .league-item:active { transform: scale(0.98); }
+    .league-item.active { border-color: var(--accent); background: rgba(157, 78, 221, 0.15); }
+    .league-top { background: var(--accent); color: #fff; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; font-weight: 800; letter-spacing: 0.5px; }
 
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 500; display: none; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(4px); }
     .modal-overlay.open { display: block; opacity: 1; }
@@ -108,6 +109,7 @@
     .input-group input { background: transparent; border: none; outline: none; color: #fff; font-family: inherit; font-size: 0.95rem; width: 100%; }
     .btn-submit { background: linear-gradient(135deg, var(--accent), #7b2cbf); border: none; border-radius: 12px; padding: 12px; width: 100%; color: #fff; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
     .btn-submit:active { transform: scale(0.98); }
+    .btn-submit:disabled { cursor: not-allowed; }
     
     .chat-container { display: flex; flex-direction: column; height: 100%; }
     .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; }
@@ -447,7 +449,6 @@
         const isLive = m.status.includes('LIVE');
         const isStarted = m.start_time && m.start_time < now;
         
-        // ЖЕСТКИЙ ФИКС: если матч начался больше 3 часов назад, скрываем его везде
         if (m.start_time && m.start_time < now - 10800) return false;
 
         if (currentMode === 'live') {
@@ -667,6 +668,14 @@
       document.getElementById('slip-stake').value = '';
       updatePotentialWin();
       
+      // Сброс кнопки при открытии
+      const confirmBtn = document.querySelector('#bet-slip-modal .btn-submit');
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.innerText = 'Подтвердить прогноз';
+      }
+      
       document.getElementById('bet-slip-modal').classList.add('open');
     }
 
@@ -718,13 +727,27 @@
     }
 
     async function confirmBet() {
+      const confirmBtn = document.querySelector('#bet-slip-modal .btn-submit');
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      confirmBtn.style.opacity = '0.5';
+      confirmBtn.innerText = 'Обработка...';
+
       const stakeInput = document.getElementById('slip-stake').value;
       const stake = parseFloat(stakeInput);
       
       if (isNaN(stake) || stake < 10) {
-        return showBetResult(false, 'Ошибка', 'Минимальная ставка — 10 звезд. Копейки допускаются (например, 10.56).');
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.innerText = 'Подтвердить прогноз';
+        return showBetResult(false, 'Ошибка', 'Минимальная ставка — 10 звезд.');
       }
-      if (!currentUser) return;
+      if (!currentUser) {
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.innerText = 'Подтвердить прогноз';
+        return;
+      }
       
       const betType = betSlip.length === 1 ? 'single' : 'express';
       
@@ -758,10 +781,20 @@
           renderMatches();
           showBetResult(true, 'Ставка принята!', `Сумма: ${formatStars(stake)} ★. Баланс: ${formatStars(currentUser.balance)} ★`);
         } else { 
-          showBetResult(false, 'Ошибка', data.detail || "Не удалось сделать ставку"); 
+          showBetResult(false, 'Ошибка', data.detail || "Не удалось сделать ставку");
+          setTimeout(() => {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+            confirmBtn.innerText = 'Подтвердить прогноз';
+          }, 1500);
         }
       } catch (err) { 
-        showBetResult(false, 'Ошибка', 'Ошибка соединения'); 
+        showBetResult(false, 'Ошибка', 'Ошибка соединения');
+        setTimeout(() => {
+          confirmBtn.disabled = false;
+          confirmBtn.style.opacity = '1';
+          confirmBtn.innerText = 'Подтвердить прогноз';
+        }, 1500);
       }
     }
 
