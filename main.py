@@ -21,8 +21,9 @@ WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
 FONBET_BASE = "https://line-lb51.bk6bba-resources.com"
-FONBET_LINE_PATH = "/events/listBase?scopeMarket=1600&lang=ru"
-FONBET_LIVE_PATH = "/events/list?scopeMarket=1600&lang=ru&live=true"
+# ✅ МЕНЯЕМ scopeMarket=1600 на scopeMarket=1 (полная линия!)
+FONBET_LINE_PATH = "/events/listBase?scopeMarket=1&lang=ru"
+FONBET_LIVE_PATH = "/events/list?scopeMarket=1&lang=ru&live=true"
 
 FONBET_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -35,17 +36,11 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
-# === ПОЛНЫЙ МАППИНГ FONBET ===
 FONBET_FACTORS = {
-    # 1X2
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
-    # Двойной шанс
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
-    # Обе забьют
     927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
-    # Тотал (главная)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
-    # Форы (все серии) - каждая пара = Ф1/Ф2 с p
     910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
     989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
@@ -61,7 +56,6 @@ FONBET_FACTORS = {
     1824: ("Фора", "Ф1", True), 1825: ("Фора", "Ф2", True),
     1827: ("Фора", "Ф1", True), 1828: ("Фора", "Ф2", True),
     1830: ("Фора", "Ф1", True), 1831: ("Фора", "Ф2", True),
-    # Инд. тоталы ИТ1/ИТ2
     1696: ("Инд. тотал 1", "ТБ", True), 1697: ("Инд. тотал 2", "ТБ", True),
     1727: ("Инд. тотал 1", "ТБ", True), 1728: ("Инд. тотал 2", "ТБ", True),
     1730: ("Инд. тотал 1", "ТБ", True), 1731: ("Инд. тотал 2", "ТБ", True),
@@ -73,7 +67,6 @@ FONBET_FACTORS = {
     1799: ("Инд. тотал 1", "ТБ", True), 1800: ("Инд. тотал 2", "ТБ", True),
     1802: ("Инд. тотал 1", "ТБ", True), 1803: ("Инд. тотал 2", "ТБ", True),
     1805: ("Инд. тотал 1", "ТБ", True), 1806: ("Инд. тотал 2", "ТБ", True),
-    # Доп. тоталы (пары ТБ/ТМ)
     1569: ("Тотал", "ТМ", True), 1571: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
     1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
     1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
@@ -81,7 +74,6 @@ FONBET_FACTORS = {
     1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
     1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
     2203: ("Тотал", "ТБ", True), 2204: ("Тотал", "ТМ", True),
-    # ОЗ 1-й тайм
     4241: ("Обе забьют 1-й тайм", "Нет", False), 4242: ("Обе забьют 1-й тайм", "Да", False),
 }
 
@@ -121,7 +113,11 @@ FORBIDDEN_LEAGUE_WORDS = [
     "rfef", "feb", "futsal", "мини-футбол", "мини футбол", "кариока", "гойяно", "паулиста",
     "минейро", "баияно", "catarinense", "gaúcho", "gaucho", "парана", "paranaense", "cearense",
     "pernambucano", "азии", "азия", "afc", "африки", "африка", "caf", "конкакаф", "concacaf",
-    "южной америки", "conmebol", "олимпийск", "olympic"
+    "южной америки", "conmebol", "олимпийск", "olympic",
+    # Фьючерсы и долгосрочные
+    "кто выше", "победитель", "призер", "вылет", "квалификация", "кто попадет",
+    "выход в", "чемпионство", "выиграет лигу", "финал (кто", "лучший бомбардир",
+    "голы за", "регулярный сезон", "плей-офф (кто",
 ]
 
 BLACKLIST_WORDS = [
@@ -203,7 +199,6 @@ def _is_allowed_league(league):
     return False
 
 def _format_param(p):
-    """Нормализует p: 350→3.5, -350→-3.5, 1.5→1.5, 0→0"""
     if p is None: return None
     try: p_val = float(p)
     except: return str(p)
@@ -214,7 +209,6 @@ def _format_param(p):
     return str(p_int)
 
 def _format_p_with_sign(p):
-    """Формат с явным знаком для фор/тоталов: 1.5→'+1.5', -1→'-1', 0→'0'"""
     s = _format_param(p)
     if s is None: return ""
     try:
@@ -698,7 +692,6 @@ async def place_bet(request: Request):
     if not isinstance(user_balance, (int, float)): user_balance = 0
     if user_balance < amount: raise HTTPException(status_code=400, detail="Недостаточно звёзд")
     
-    # Защита от дублей
     new_fingerprint = hashlib.md5(
         f"{user_id}|{amount}|{json.dumps(bets, sort_keys=True)}".encode()
     ).hexdigest()
