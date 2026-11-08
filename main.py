@@ -35,27 +35,17 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
-# === ПОЛНЫЙ МАППИНГ FONBET (60/60 факторов) ===
+# === ПОЛНЫЙ МАППИНГ (60 ID, включая 1569/1572) ===
 FONBET_FACTORS = {
-    # 1X2
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
-    # Двойной шанс
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
-    # Обе забьют
     927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
-    # Тотал (главная пара)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
-    # Форы — главная пара (-2.5 / +2.5)
     910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
-    # Форы -2 / +2
     989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
-    # Форы -1 / +1
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
-    # Форы +1 / -1
     1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
-    # Форы +1.5 / -1.5
     1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
-    # Инд. тотал 1 / 2 (серия 1696-1806)
     1696: ("Инд. тотал 1", "ТБ", True), 1697: ("Инд. тотал 2", "ТБ", True),
     1727: ("Инд. тотал 1", "ТБ", True), 1728: ("Инд. тотал 2", "ТБ", True),
     1730: ("Инд. тотал 1", "ТБ", True), 1731: ("Инд. тотал 2", "ТБ", True),
@@ -64,21 +54,18 @@ FONBET_FACTORS = {
     1739: ("Инд. тотал 1", "ТБ", True), 1791: ("Инд. тотал 2", "ТБ", True),
     1793: ("Инд. тотал 1", "ТБ", True), 1794: ("Инд. тотал 2", "ТБ", True),
     1796: ("Инд. тотал 1", "ТБ", True), 1797: ("Инд. тотал 2", "ТБ", True),
-    # Форы +5 / -5 и +1..+2.5 (серия 1809-1822)
     1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
     1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
     1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
     1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
     1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
-    # Доп. тоталы 5 / 1 / 1.5 / 2 / 2.5 (серия 1854-1887)
+    1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
     1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
     1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
     1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),
     1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
     1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
-    # Обе забьют 1-й тайм
     4241: ("Обе забьют 1-й тайм", "Нет", False), 4242: ("Обе забьют 1-й тайм", "Да", False),
-    # Убираем 1569/1571/1572 — там p="" и p=None, парсер всё равно отбрасывает
 }
 
 ALLOWED_LEAGUE_PATTERNS = [
@@ -118,7 +105,6 @@ FORBIDDEN_LEAGUE_WORDS = [
     "минейро", "баияно", "catarinense", "gaúcho", "gaucho", "парана", "paranaense", "cearense",
     "pernambucano", "азии", "азия", "afc", "африки", "африка", "caf", "конкакаф", "concacaf",
     "южной америки", "conmebol", "олимпийск", "olympic",
-    # Фьючерсы
     "кто выше", "победитель", "призер", "вылет", "квалификация", "кто попадет",
     "выход в", "чемпионство", "выиграет лигу", "финал (кто", "лучший бомбардир",
     "голы за", "регулярный сезон", "плей-офф (кто",
@@ -181,6 +167,33 @@ async def firebase_delete(path: str):
     try: await http_client.delete(f"{FIREBASE_DB_URL}/{path}.json")
     except: pass
 
+async def _save_matches_batched(matches_dict):
+    """Сохраняет matches по частям (PATCH по 20), чтобы не превысить лимит 1 МБ."""
+    if not matches_dict:
+        return
+    
+    # Удаляем устаревшие
+    existing = await firebase_get("matches") or {}
+    if isinstance(existing, dict):
+        to_delete = set(existing.keys()) - set(matches_dict.keys())
+        for k in to_delete:
+            try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
+            except: pass
+    
+    # Пишем по 20
+    items = list(matches_dict.items())
+    for i in range(0, len(items), 20):
+        chunk = dict(items[i:i+20])
+        try:
+            r = await http_client.patch(
+                f"{FIREBASE_DB_URL}/matches.json",
+                json=chunk, timeout=30.0
+            )
+            if r.status_code != 200:
+                print(f"   ⚠️ save_matches chunk {i//20}: HTTP {r.status_code} | {r.text[:200]}")
+        except Exception as e:
+            print(f"   ⚠️ save_matches chunk {i//20}: {e}")
+
 async def get_finished_cached():
     now = time.time()
     if now - _FINISHED_CACHE["ts"] < FINISHED_TTL and _FINISHED_CACHE["data"]:
@@ -201,25 +214,6 @@ def _is_allowed_league(league):
             if re.search(pattern, low): return True
         except: pass
     return False
-
-def _format_param(p):
-    if p is None: return None
-    try: p_val = float(p)
-    except: return str(p)
-    if p_val != int(p_val): return f"{p_val:g}"
-    p_int = int(p_val)
-    if abs(p_int) >= 100: return f"{p_int / 100:g}"
-    elif abs(p_int) >= 10: return f"{p_int / 10:g}"
-    return str(p_int)
-
-def _format_p_with_sign(p):
-    s = _format_param(p)
-    if s is None: return ""
-    try:
-        v = float(s)
-        if v > 0: return f"+{s}"
-        return s
-    except: return s
 
 def _parse_start_ts(ev):
     st = ev.get("startTime")
@@ -253,7 +247,7 @@ def _extract_score(li):
     return s1, s2, minute
 
 def _parse_markets(factors_list):
-    """Парсит рынки, пропускает пустые p."""
+    """Парсит рынки. Тоталы/Инд.тоталы: abs(p). Форы: p со знаком."""
     seen = set()
     markets = {}
     for f in factors_list:
@@ -268,10 +262,23 @@ def _parse_markets(factors_list):
         
         name = base
         if has_param:
-            p_str = _format_p_with_sign(f.get("p"))
-            if not p_str or p_str in ("—", "", "None"):
-                continue  # ⚠️ пропускаем без параметра
-            name = f"{base} {p_str}"
+            p = f.get("p")
+            if p is None: continue
+            try: p_val = float(p)
+            except: continue
+            
+            if p_val == 0 and (group == "Тотал" or group.startswith("Инд.")):
+                continue
+            
+            if group == "Тотал" or group.startswith("Инд."):
+                # Для тоталов — всегда abs
+                name = f"{base} {abs(p_val):g}"
+            else:
+                # Для фор — со знаком
+                if p_val == int(p_val): p_str = str(int(p_val))
+                else: p_str = f"{p_val:g}"
+                if p_val > 0: p_str = f"+{p_str}"
+                name = f"{base} {p_str}"
         
         key = (group, name)
         if key in seen: continue
@@ -360,6 +367,8 @@ def _build_sport_hierarchy(all_sports):
 
 async def fonbet_scraper_worker():
     print(f"⚡ fonbet_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
+    print(f"📡 LINE_URL: {FONBET_BASE + FONBET_LINE_PATH}")
+    print(f"📡 LIVE_URL: {FONBET_BASE + FONBET_LIVE_PATH}")
     cycle = 0
     prev_event_ids = set()
     
@@ -373,6 +382,7 @@ async def fonbet_scraper_worker():
             live_data = _fetch_fonbet(FONBET_BASE + FONBET_LIVE_PATH)
             
             if not line_data and not live_data:
+                print("⚠️ [FONBET] оба запроса вернули None")
                 await asyncio.sleep(LIVE_POLL_SEC); continue
             
             events_by_id = {}
@@ -445,14 +455,12 @@ async def fonbet_scraper_worker():
                 s1, s2, timer = _extract_score(all_live.get(eid))
                 is_live = s1 is not None and s2 is not None and timer is not None
                 
-                # ⚠️ ФИКС №1: зависшие матчи (timer + 45 мин < реального времени)
                 if is_live and timer is not None and isinstance(timer, int):
                     elapsed_real_min = (now_ts - st) / 60.0
                     if elapsed_real_min > timer + 45:
                         skipped_stuck += 1
                         continue
                 
-                # ⚠️ ФИКС №2: матч должен был начаться, но live-данных нет — пропускаем
                 if not is_live:
                     if st < now_ts - int(3.5 * 3600): continue
                     if st > now_ts + seven_days: continue
@@ -463,7 +471,8 @@ async def fonbet_scraper_worker():
                 mid = f"fonbet_{eid}"
                 current_ids.add(mid)
                 
-                markets_data = _parse_markets(all_factors.get(eid, []))
+                factors_for_ev = all_factors.get(eid, [])
+                markets_data = _parse_markets(factors_for_ev)
                 if is_live and s1 is not None and s2 is not None:
                     markets_data = _filter_decided(markets_data, s1, s2)
                 
@@ -507,20 +516,28 @@ async def fonbet_scraper_worker():
                             await firebase_patch(f"finished_matches/{mid}", {
                                 "score1": s1_old, "score2": s2_old, "source": "fonbet_last"
                             })
-                            print(f"   🏁 [ФИНАЛ] {old_m.get('title')}: {s1_old}:{s2_old}")
                         except: pass
             
             prev_event_ids = current_ids
             
             if matches_dict:
-                await firebase_put("matches", matches_dict)
+                # Размер JSON для контроля
+                try:
+                    approx_size = len(json.dumps(matches_dict, ensure_ascii=False))
+                    size_mb = approx_size / 1024 / 1024
+                except:
+                    size_mb = 0
+                
+                await _save_matches_batched(matches_dict)
                 extra = ""
                 if skipped_stuck or skipped_started_no_data:
                     extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data})"
-                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}){extra} за {time.time()-t0:.1f}s")
+                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}){extra} | {size_mb:.1f}MB за {time.time()-t0:.1f}s")
         
         except Exception as e:
+            import traceback
             print(f"⚠️ fonbet_scraper: {e}")
+            traceback.print_exc()
         
         cycle += 1
         if cycle % 15 == 0: gc.collect()
@@ -628,6 +645,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
+    print(f"   Версия: Fonbet scopeMarket=1600, 60 f-IDs, батчевое сохранение")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
