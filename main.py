@@ -35,7 +35,6 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
-# === ПОЛНЫЙ МАППИНГ (60 ID) ===
 FONBET_FACTORS = {
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
@@ -167,31 +166,41 @@ async def firebase_delete(path: str):
     try: await http_client.delete(f"{FIREBASE_DB_URL}/{path}.json")
     except: pass
 
-async def _save_matches_batched(matches_dict):
-    """Сохраняет matches по 20 штук через PATCH, чтобы не превысить лимит 1 МБ."""
+async def _save_matches(matches_dict):
+    """Сохраняет matches: один PUT если <900KB, иначе по одному матчу."""
     if not matches_dict:
         return
     
-    # Удаляем устаревшие
-    existing = await firebase_get("matches") or {}
-    if isinstance(existing, dict):
-        to_delete = set(existing.keys()) - set(matches_dict.keys())
-        for k in to_delete:
-            try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
-            except: pass
+    try:
+        size = len(json.dumps(matches_dict, ensure_ascii=False))
+    except:
+        size = 0
     
-    items = list(matches_dict.items())
-    for i in range(0, len(items), 20):
-        chunk = dict(items[i:i+20])
+    if size < 900_000:
+        # Один PUT — быстрее и проще
         try:
-            r = await http_client.patch(
-                f"{FIREBASE_DB_URL}/matches.json",
-                json=chunk, timeout=30.0
-            )
+            r = await http_client.put(f"{FIREBASE_DB_URL}/matches.json", json=matches_dict, timeout=45.0)
             if r.status_code != 200:
-                print(f"   ⚠️ save_matches chunk {i//20}: HTTP {r.status_code} | {r.text[:200]}")
+                print(f"   ⚠️ save_matches PUT: HTTP {r.status_code} | {r.text[:200]}")
         except Exception as e:
-            print(f"   ⚠️ save_matches chunk {i//20}: {e}")
+            print(f"   ⚠️ save_matches PUT: {e}")
+    else:
+        # Слишком большой — по одному через PUT на ключ + удаление устаревших
+        print(f"   ⚠️ matches большой ({size//1024} KB) — сохраняю по одному")
+        existing = await firebase_get("matches") or {}
+        if isinstance(existing, dict):
+            to_delete = set(existing.keys()) - set(matches_dict.keys())
+            for k in to_delete:
+                try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
+                except: pass
+        
+        for mid, mdata in matches_dict.items():
+            try:
+                r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
+                if r.status_code != 200:
+                    print(f"   ⚠️ save {mid}: HTTP {r.status_code} | {r.text[:100]}")
+            except Exception as e:
+                print(f"   ⚠️ save {mid}: {e}")
 
 async def get_finished_cached():
     now = time.time()
@@ -245,8 +254,16 @@ def _extract_score(li):
         except: pass
     return s1, s2, minute
 
+def _normalize_p(p_val):
+    """Fonbet присылает p как 250 (это 2.5), -150 (это -1.5), 50 (это 0.5)."""
+    if abs(p_val) >= 100:
+        return p_val / 100.0
+    elif abs(p_val) >= 10:
+        return p_val / 10.0
+    return float(p_val)
+
 def _parse_markets(factors_list):
-    """Парсит рынки. Тоталы/Инд.тоталы: abs(p). Форы: p со знаком."""
+    """Парсит рынки с нормализацией p."""
     seen = set()
     markets = {}
     for f in factors_list:
@@ -263,12 +280,11 @@ def _parse_markets(factors_list):
         if has_param:
             p = f.get("p")
             if p is None: continue
-            try: p_val = float(p)
+            try: p_raw = float(p)
             except: continue
-            
+            p_val = _normalize_p(p_raw)
             if p_val == 0 and (group == "Тотал" or group.startswith("Инд.")):
                 continue
-            
             if group == "Тотал" or group.startswith("Инд."):
                 name = f"{base} {abs(p_val):g}"
             else:
@@ -528,7 +544,7 @@ async def fonbet_scraper_worker():
                 except:
                     size_mb = 0
                 
-                await _save_matches_batched(matches_dict)
+                await _save_matches(matches_dict)
                 extra = ""
                 if skipped_stuck or skipped_started_no_data:
                     extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data})"
@@ -645,17 +661,15 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: Fonbet scopeMarket=1600, 60 f-IDs, batched save, debug endpoint")
+    print("   ВЕРСИЯ: Fonbet PUT-save, p-normalize, 60 f-IDs")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
     print("✅ Все фоновые воркеры запущены")
 
-# ============ DEBUG ENDPOINT ============
 @app.get("/api/debug/fonbet/{ev_id}")
 async def debug_fonbet(ev_id: str):
     result = {"ev_id": ev_id, "endpoints": {}}
-    
     try:
         r = cffi_requests.get(
             f"{FONBET_BASE}/events/listBase?scopeMarket=1600&lang=ru",
@@ -664,71 +678,43 @@ async def debug_fonbet(ev_id: str):
         if r.status_code != 200:
             result["endpoints"]["listBase"] = {"status": r.status_code}
             return result
-        
         data = r.json()
         events = data.get("events", [])
         custom = data.get("customFactors", [])
-        sports_list = data.get("sports", [])
-        
         target_ev = None
         for ev in events:
             if str(ev.get("id")) == ev_id:
-                target_ev = ev
-                break
-        
+                target_ev = ev; break
         factors_for_ev = []
         for cf in custom:
             if str(cf.get("e")) == ev_id:
                 factors_for_ev.extend(cf.get("factors", []))
-        
         markets = _parse_markets(factors_for_ev)
-        
-        # Карта турниров для лиги
-        tournament_by_id = {}
-        for sp in sports_list:
-            if sp.get('kind') == 'sport': continue
-            sid = sp.get('id'); nm = sp.get('name', '')
-            if sid and nm: tournament_by_id[sid] = nm
-        
-        league_name = ""
-        if target_ev:
-            sid = target_ev.get("sportId")
-            league_name = tournament_by_id.get(sid, "")
-        
         result["endpoints"]["listBase"] = {
             "status": r.status_code,
             "event_found": target_ev is not None,
-            "event_data": target_ev,
-            "league_name": league_name,
             "factors_count": len(factors_for_ev),
-            "factors_sample": factors_for_ev[:15],
-            "markets_groups_summary": {g: len(outs) for g, outs in markets.items()},
+            "factors_sample": factors_for_ev[:5],
+            "markets_summary": {g: len(outs) for g, outs in markets.items()},
             "markets_full": markets,
-            "is_valid_league": _is_allowed_league(league_name),
         }
     except Exception as e:
         result["endpoints"]["listBase"] = {"error": str(e)[:300]}
-    
-    # Что лежит в Firebase
     try:
         fb_match = await firebase_get(f"matches/fonbet_{ev_id}")
         if isinstance(fb_match, dict):
             fb_markets = fb_match.get("markets", {})
             result["firebase"] = {
                 "exists": True,
-                "league": fb_match.get("league"),
                 "status": fb_match.get("status"),
-                "score": fb_match.get("score"),
-                "markets_groups_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {},
+                "markets_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {},
                 "odds": fb_match.get("odds"),
             }
         else:
             result["firebase"] = {"exists": False}
     except Exception as e:
         result["firebase"] = {"error": str(e)[:200]}
-    
     return result
-# ============ END DEBUG ============
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
