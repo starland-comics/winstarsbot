@@ -287,15 +287,19 @@ def _extract_score(li):
     return s1, s2, minute
 
 def _normalize_p(p_val):
-    # Fonbet отдаёт p как целое (500, 50, 150) или как float (1.5).
-    # Если целое и >= 10 (например 50, 100, 500), значит это умножено на 100 (0.5, 1.0, 5.0).
-    # Если p = 1, 2, 3 (редко), то оставляем как есть.
-    p_str = str(p_val)
-    if '.' in p_str:
-        return float(p_val)
-    if abs(p_val) >= 10:
-        return p_val / 100.0
-    return float(p_val)
+    """Fonbet отдаёт p как целое ×100 для тоталов/фор (50→0.5, 250→2.5, -150→-1.5).
+    Если p уже дробное (2.5, -1.5) — оставляем как есть."""
+    try:
+        num = float(p_val)
+    except (TypeError, ValueError):
+        return 0.0
+    # Дробное значение — уже в правильном формате
+    if num != int(num):
+        return num
+    # Целое и >= 10 — это ×100 (0.5, 1.0, 2.5, ...)
+    if abs(num) >= 10:
+        return num / 100.0
+    return num
 
 def _extract_number_from_name(name):
     m = re.search(r'([+-]?\d+(?:\.\d+)?)', name)
@@ -704,7 +708,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: Fonbet bulk PUT + no-dot keys + p-normalize + sort markets")
+    print("   ВЕРСИЯ: Fonbet bulk PUT + no-dot keys + p-normalize(fixed) + sort markets")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
