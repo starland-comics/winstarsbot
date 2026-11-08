@@ -21,9 +21,8 @@ WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
 FONBET_BASE = "https://line-lb51.bk6bba-resources.com"
-# ✅ МЕНЯЕМ scopeMarket=1600 на scopeMarket=1 (полная линия!)
-FONBET_LINE_PATH = "/events/listBase?scopeMarket=1&lang=ru"
-FONBET_LIVE_PATH = "/events/list?scopeMarket=1&lang=ru&live=true"
+FONBET_LINE_PATH = "/events/listBase?scopeMarket=1600&lang=ru"
+FONBET_LIVE_PATH = "/events/list?scopeMarket=1600&lang=ru&live=true"
 
 FONBET_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -36,26 +35,27 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
+# === ПОЛНЫЙ МАППИНГ FONBET (60/60 факторов) ===
 FONBET_FACTORS = {
+    # 1X2
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
+    # Двойной шанс
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
+    # Обе забьют
     927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
+    # Тотал (главная пара)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
+    # Форы — главная пара (-2.5 / +2.5)
     910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
+    # Форы -2 / +2
     989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
+    # Форы -1 / +1
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
+    # Форы +1 / -1
     1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
+    # Форы +1.5 / -1.5
     1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
-    1683: ("Фора", "Ф1", True), 1684: ("Фора", "Ф2", True),
-    1686: ("Фора", "Ф1", True), 1687: ("Фора", "Ф2", True),
-    1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
-    1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
-    1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
-    1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
-    1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
-    1824: ("Фора", "Ф1", True), 1825: ("Фора", "Ф2", True),
-    1827: ("Фора", "Ф1", True), 1828: ("Фора", "Ф2", True),
-    1830: ("Фора", "Ф1", True), 1831: ("Фора", "Ф2", True),
+    # Инд. тотал 1 / 2 (серия 1696-1806)
     1696: ("Инд. тотал 1", "ТБ", True), 1697: ("Инд. тотал 2", "ТБ", True),
     1727: ("Инд. тотал 1", "ТБ", True), 1728: ("Инд. тотал 2", "ТБ", True),
     1730: ("Инд. тотал 1", "ТБ", True), 1731: ("Инд. тотал 2", "ТБ", True),
@@ -64,17 +64,21 @@ FONBET_FACTORS = {
     1739: ("Инд. тотал 1", "ТБ", True), 1791: ("Инд. тотал 2", "ТБ", True),
     1793: ("Инд. тотал 1", "ТБ", True), 1794: ("Инд. тотал 2", "ТБ", True),
     1796: ("Инд. тотал 1", "ТБ", True), 1797: ("Инд. тотал 2", "ТБ", True),
-    1799: ("Инд. тотал 1", "ТБ", True), 1800: ("Инд. тотал 2", "ТБ", True),
-    1802: ("Инд. тотал 1", "ТБ", True), 1803: ("Инд. тотал 2", "ТБ", True),
-    1805: ("Инд. тотал 1", "ТБ", True), 1806: ("Инд. тотал 2", "ТБ", True),
-    1569: ("Тотал", "ТМ", True), 1571: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
+    # Форы +5 / -5 и +1..+2.5 (серия 1809-1822)
+    1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
+    1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
+    1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
+    1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
+    1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
+    # Доп. тоталы 5 / 1 / 1.5 / 2 / 2.5 (серия 1854-1887)
     1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
     1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
     1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),
     1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
     1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
-    2203: ("Тотал", "ТБ", True), 2204: ("Тотал", "ТМ", True),
+    # Обе забьют 1-й тайм
     4241: ("Обе забьют 1-й тайм", "Нет", False), 4242: ("Обе забьют 1-й тайм", "Да", False),
+    # Убираем 1569/1571/1572 — там p="" и p=None, парсер всё равно отбрасывает
 }
 
 ALLOWED_LEAGUE_PATTERNS = [
@@ -114,7 +118,7 @@ FORBIDDEN_LEAGUE_WORDS = [
     "минейро", "баияно", "catarinense", "gaúcho", "gaucho", "парана", "paranaense", "cearense",
     "pernambucano", "азии", "азия", "afc", "африки", "африка", "caf", "конкакаф", "concacaf",
     "южной америки", "conmebol", "олимпийск", "olympic",
-    # Фьючерсы и долгосрочные
+    # Фьючерсы
     "кто выше", "победитель", "призер", "вылет", "квалификация", "кто попадет",
     "выход в", "чемпионство", "выиграет лигу", "финал (кто", "лучший бомбардир",
     "голы за", "регулярный сезон", "плей-офф (кто",
@@ -223,12 +227,6 @@ def _parse_start_ts(ev):
     try: return int(st)
     except: return 0
 
-def _is_match_live(ev, now_ts):
-    st = _parse_start_ts(ev)
-    if st <= 0: return False
-    elapsed = now_ts - st
-    return 0 <= elapsed < int(3.5 * 3600)
-
 def _extract_score(li):
     if not li: return None, None, None
     timer_str = li.get("timer")
@@ -255,6 +253,7 @@ def _extract_score(li):
     return s1, s2, minute
 
 def _parse_markets(factors_list):
+    """Парсит рынки, пропускает пустые p."""
     seen = set()
     markets = {}
     for f in factors_list:
@@ -266,11 +265,14 @@ def _parse_markets(factors_list):
         try: odds = float(odds)
         except: continue
         if odds <= 1.0: continue
+        
         name = base
         if has_param:
             p_str = _format_p_with_sign(f.get("p"))
-            if not p_str: continue
+            if not p_str or p_str in ("—", "", "None"):
+                continue  # ⚠️ пропускаем без параметра
             name = f"{base} {p_str}"
+        
         key = (group, name)
         if key in seen: continue
         seen.add(key)
@@ -417,6 +419,8 @@ async def fonbet_scraper_worker():
             matches_dict = {}
             current_ids = set()
             live_cnt = 0
+            skipped_stuck = 0
+            skipped_started_no_data = 0
             
             for ev in events_by_id.values():
                 if ev.get("rootKind") != 1 or ev.get("kind") != 1: continue
@@ -432,19 +436,29 @@ async def fonbet_scraper_worker():
                 sport_name = (top_sport.get('name') or '').lower()
                 if sport_name not in ('футбол', 'football', 'soccer'): continue
                 
-                eid = ev.get("id")
-                s1, s2, timer = _extract_score(all_live.get(eid))
-                is_live = s1 is not None and s2 is not None and _is_match_live(ev, now_ts)
-                if not is_live: is_live = _is_match_live(ev, now_ts) and timer is not None
-                
-                if not is_live:
-                    if st < now_ts - int(3.5 * 3600): continue
-                    if st > now_ts + seven_days: continue
-                
                 league = tournament_by_id.get(sid, "")
                 text = f"{t1} {t2}".lower()
                 if any(w in text for w in BLACKLIST_WORDS): continue
                 if not _is_allowed_league(league): continue
+                
+                eid = ev.get("id")
+                s1, s2, timer = _extract_score(all_live.get(eid))
+                is_live = s1 is not None and s2 is not None and timer is not None
+                
+                # ⚠️ ФИКС №1: зависшие матчи (timer + 45 мин < реального времени)
+                if is_live and timer is not None and isinstance(timer, int):
+                    elapsed_real_min = (now_ts - st) / 60.0
+                    if elapsed_real_min > timer + 45:
+                        skipped_stuck += 1
+                        continue
+                
+                # ⚠️ ФИКС №2: матч должен был начаться, но live-данных нет — пропускаем
+                if not is_live:
+                    if st < now_ts - int(3.5 * 3600): continue
+                    if st > now_ts + seven_days: continue
+                    if st < now_ts:
+                        skipped_started_no_data += 1
+                        continue
                 
                 mid = f"fonbet_{eid}"
                 current_ids.add(mid)
@@ -500,7 +514,10 @@ async def fonbet_scraper_worker():
             
             if matches_dict:
                 await firebase_put("matches", matches_dict)
-                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}) за {time.time()-t0:.1f}s")
+                extra = ""
+                if skipped_stuck or skipped_started_no_data:
+                    extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data})"
+                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}){extra} за {time.time()-t0:.1f}s")
         
         except Exception as e:
             print(f"⚠️ fonbet_scraper: {e}")
