@@ -35,7 +35,6 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
-# Ключи без точек для Firebase
 FONBET_FACTORS = {
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
@@ -287,8 +286,6 @@ def _extract_score(li):
     return s1, s2, minute
 
 def _normalize_p(p_val):
-    """Fonbet отдаёт p как целое ×100 для тоталов/фор (50→0.5, 250→2.5, -150→-1.5).
-    Если p уже дробное (2.5, -1.5) — оставляем как есть."""
     try:
         num = float(p_val)
     except (TypeError, ValueError):
@@ -307,37 +304,21 @@ def _extract_number_from_name(name):
 _LOGGED_FLIPS = set()
 
 def _fix_market_orientation(markets):
-    """
-    Fonbet иногда отдаёт факторы, где ТБ-лейбл в нашем FONBET_FACTORS на самом деле
-    является Under-линией. Паттерн: кэф на ТБ ПАДАЕТ с ростом линии (нарушение монотонности).
-    В этом случае флипаем ТБ↔ТМ для всей группы.
-    
-    Применяем только к односторонним группам (только ТБ или только ТМ внутри), где есть
-    3+ точки — иначе монотонность не определить.
-    """
     for group_name, outcomes in markets.items():
         if not (group_name == "Тотал" or group_name.startswith("Инд ")):
             continue
-        
-        tb_items = []
-        tm_items = []
+        tb_items = []; tm_items = []
         for o in outcomes:
             n = o["name"]
             try:
-                if n.startswith("ТБ "):
-                    tb_items.append((float(n[3:]), o))
-                elif n.startswith("ТМ "):
-                    tm_items.append((float(n[3:]), o))
+                if n.startswith("ТБ "): tb_items.append((float(n[3:]), o))
+                elif n.startswith("ТМ "): tm_items.append((float(n[3:]), o))
             except (ValueError, IndexError):
                 continue
         
-        # ТБ→ТМ: если группа односторонняя (только ТБ) и кэфы падают с ростом линии
         if tb_items and not tm_items and len(tb_items) >= 3:
             tb_items.sort(key=lambda x: x[0])
-            violations = sum(
-                1 for i in range(1, len(tb_items))
-                if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"]
-            )
+            violations = sum(1 for i in range(1, len(tb_items)) if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"])
             if violations >= len(tb_items) - 2:
                 for lim, o in tb_items:
                     o["name"] = f"ТМ {lim:g}"
@@ -346,13 +327,9 @@ def _fix_market_orientation(markets):
                     print(f"   🔄 Auto-flip '{group_name}': ТБ→ТМ (violations={violations}/{len(tb_items)-1})")
                 continue
         
-        # ТМ→ТБ: симметричный случай
         if tm_items and not tb_items and len(tm_items) >= 3:
             tm_items.sort(key=lambda x: x[0])
-            violations = sum(
-                1 for i in range(1, len(tm_items))
-                if tm_items[i][1]["odds"] > tm_items[i-1][1]["odds"]
-            )
+            violations = sum(1 for i in range(1, len(tm_items)) if tm_items[i][1]["odds"] > tm_items[i-1][1]["odds"])
             if violations >= len(tm_items) - 2:
                 for lim, o in tm_items:
                     o["name"] = f"ТБ {lim:g}"
@@ -399,7 +376,6 @@ def _parse_markets(factors_list):
         if group not in markets: markets[group] = []
         markets[group].append({"name": name, "odds": odds})
     
-    # Автоопределение ориентации ТБ/ТМ (фикс бага Fonbet с перевёрнутыми факторами)
     _fix_market_orientation(markets)
     
     for g in markets:
@@ -420,12 +396,10 @@ def _filter_total_group(outs, current_score):
         if n.startswith("ТБ "):
             try: lim = float(n[3:])
             except: new_outs.append(o); continue
-            # ТБ X: уже выиграл если current > X (скрываем)
             if current_score > lim: continue
         elif n.startswith("ТМ "):
             try: lim = float(n[3:])
             except: new_outs.append(o); continue
-            # ТМ X: уже проиграл если current >= X (скрываем)
             if current_score >= lim: continue
         new_outs.append(o)
     return new_outs
@@ -559,11 +533,16 @@ async def fonbet_scraper_worker():
             raw_cache = await firebase_get("team_logos") or {}
             logo_idx = _build_logo_index(raw_cache)
             
+            cached_prev_matches = await firebase_get("matches") or {}
+            if not isinstance(cached_prev_matches, dict):
+                cached_prev_matches = {}
+            
             matches_dict = {}
             current_ids = set()
             live_cnt = 0
             skipped_stuck = 0
             skipped_started_no_data = 0
+            cached_frozen = 0
             total_markets_count = 0
             
             for ev in events_by_id.values():
@@ -586,6 +565,8 @@ async def fonbet_scraper_worker():
                 if not _is_allowed_league(league): continue
                 
                 eid = ev.get("id")
+                mid = f"fonbet_{eid}"
+                
                 s1, s2, timer = _extract_score(all_live.get(eid))
                 is_live = s1 is not None and s2 is not None and timer is not None
                 
@@ -599,10 +580,37 @@ async def fonbet_scraper_worker():
                     if st < now_ts - int(3.5 * 3600): continue
                     if st > now_ts + seven_days: continue
                     if st < now_ts:
+                        # Матч уже начался, но live нет. Если он был LIVE и ещё "свежий" (<2.5ч)
+                        # — оставляем замороженный снимок чтобы не пропадал при перерыве.
+                        old_m = cached_prev_matches.get(mid)
+                        if isinstance(old_m, dict):
+                            old_status = old_m.get("status", "")
+                            was_live = old_status.startswith("LIVE") or old_status == "ИДЕТ"
+                            hours_since = (now_ts - st) / 3600.0
+                            if was_live and hours_since < 2.5:
+                                cached_markets = old_m.get("markets", {}) or {}
+                                if isinstance(cached_markets, dict):
+                                    for grp in cached_markets.values():
+                                        if isinstance(grp, list):
+                                            total_markets_count += len(grp)
+                                matches_dict[mid] = {
+                                    "title": old_m.get("title", f"{t1} - {t2}"),
+                                    "home": t1, "away": t2,
+                                    "homeLogo": old_m.get("homeLogo", logo_idx.get(t1, "")),
+                                    "awayLogo": old_m.get("awayLogo", logo_idx.get(t2, "")),
+                                    "league": league,
+                                    "status": "ИДЕТ",
+                                    "score": old_m.get("score", "VS"),
+                                    "start_time": st,
+                                    "odds": old_m.get("odds", {"1": None, "X": None, "2": None}),
+                                    "markets": cached_markets
+                                }
+                                current_ids.add(mid)
+                                cached_frozen += 1
+                                continue
                         skipped_started_no_data += 1
                         continue
                 
-                mid = f"fonbet_{eid}"
                 current_ids.add(mid)
                 
                 factors_for_ev = all_factors.get(eid, [])
@@ -666,8 +674,8 @@ async def fonbet_scraper_worker():
                 
                 await _save_matches(matches_dict)
                 extra = ""
-                if skipped_stuck or skipped_started_no_data:
-                    extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data})"
+                if skipped_stuck or skipped_started_no_data or cached_frozen:
+                    extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data}, заморожено: {cached_frozen})"
                 print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}) | {total_markets_count} рынков | {size_mb:.1f}MB{extra} за {time.time()-t0:.1f}s")
         
         except Exception as e:
@@ -781,7 +789,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: p-normalize + auto-orientation-fix (ТБ↔ТМ по монотонности) + filter-decided(per-team)")
+    print("   ВЕРСИЯ: p-normalize + auto-orientation + cached-live (не пропадают на перерыве)")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -835,7 +843,7 @@ async def debug_fonbet(ev_id: str):
 
 @app.get("/api/debug/fonbet/{ev_id}/raw")
 async def debug_fonbet_raw(ev_id: str):
-    """Возвращает сырые факторы для события (для отладки маппинга ТБ/ТМ)."""
+    """Возвращает сырые факторы события (для отладки ТБ/ТМ ориентации)."""
     results = {}
     for label, url in [("listBase", FONBET_BASE + FONBET_LINE_PATH), ("live", FONBET_BASE + FONBET_LIVE_PATH)]:
         try:
