@@ -23,6 +23,7 @@ FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 FONBET_BASE = "https://line-lb51.bk6bba-resources.com"
 FONBET_LINE_PATH = "/events/listBase?scopeMarket=1600&lang=ru"
 FONBET_LIVE_PATH = "/events/list?scopeMarket=1600&lang=ru&live=true"
+FONBET_FULL_LINE_PATH = "/events/event?scopeMarket=1600&lang=ru"
 
 FONBET_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -34,12 +35,23 @@ FONBET_HEADERS = {
 LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
+FULL_LINE_TTL = 120       # кэш полной линии на 2 минуты
+FULL_LINE_MAX_PER_CYCLE = 30  # максимум матчей, для которых тянем полную линию за цикл
 
 # Ключи без точек для Firebase.
 # Приоритет источников — см. FACTOR_PRIORITY ниже.
-# Инд. тоталы (1696..1803) и «Обе забьют 1-й тайм» (4241/4242) удалены:
-#   - инд. тоталы: маппинг ID нестабилен между матчами (переклассифицирован вручную по сырым Napoli–Lazio);
-#   - 1-й тайм: calculate_outcome не умеет считать по таймам (использует полный счёт → баг).
+#
+# История правок:
+#   v1: удалены инд. тоталы (1696..1803) — маппинг ID нестабилен между матчами.
+#   v1: удалён «Обе забьют 1-й тайм» (4241/4242) — calculate_outcome не умеет по таймам.
+#   v2: удалены 1880/1881/1883/1884/1886/1887 — аудит показал несовместимые кэфы.
+#   v3: источник полной линии — /events/event (761 фактор против 74 из listBase).
+#   v3: НЕ добавляем четвертные тоталы 1.75 / 2.25 — calculate_outcome не умеет возвраты,
+#       это привело бы к неправильному расчёту (напр. ТМ 1.75 при счёте 2 должна давать возврат).
+#   v3: простые линии тотала: 1854/1871 = 0.5, 1873/1874 = 1.0, 1569/1572 = 1.5,
+#       930/931 = переменная (в прематче 1.5 или 2.5, в live 2.5/3.5 — зависит от матча).
+#   v3: 2.5 / 3.5 / 4.5 / 5.5 (фиксированные) — ждут подтверждения по 3 аудитам
+#       (кандидаты: 1733/1734, 1739/1791, 1097/1098, 2058-2072 — могут быть инд.).
 FONBET_FACTORS = {
     # Исход
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
@@ -47,8 +59,14 @@ FONBET_FACTORS = {
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
     # Обе забьют
     927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
-    # Тотал — основной источник (всегда primary)
+    # Тотал — главный, линия переменная (930/931 + p — фактическая линия)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
+    # Тотал — 0.5
+    1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
+    # Тотал — 1.0
+    1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
+    # Тотал — 1.5
+    1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
     # Фора
     910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
     989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
@@ -60,31 +78,23 @@ FONBET_FACTORS = {
     1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
     1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
     1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
-    # Тотал — расширенный источник (fallback, используется только если 930/931 не дали эту линию)
-    1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
-    1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
-    1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
-    1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),
-    1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
-    1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
 }
 
-# Приоритет источника при дедупликации одной и той же линии (group + name).
-# Меньше = приоритетнее. 1 = основной ID Fonbet. 5 = расширенный fallback.
-# Логика: если 930 отдал "ТБ 2.5", а 1854 отдал "ТБ 2.5" — побеждает 930 (prio=1).
+# Приоритет источника при дедупликации (group + name). Меньше = приоритетнее.
+# 930/931 — prio=1 (главный, всегда выигрывает). Фиксированные линии — prio=2
+# (это не fallback, а отдельные линии без дублей; нужны для стабильности,
+#  если 930/931 вдруг не придёт).
 FACTOR_PRIORITY = {
-    # Primary
     921: 1, 922: 1, 923: 1,
     924: 1, 925: 1, 926: 1,
     927: 1, 928: 1,
     930: 1, 931: 1,
+    1854: 2, 1871: 2,
+    1873: 2, 1874: 2,
+    1569: 2, 1572: 2,
     910: 1, 912: 1, 989: 1, 991: 1,
     1672: 1, 1675: 1, 1677: 1, 1678: 1, 1680: 1, 1681: 1,
     1809: 1, 1810: 1, 1812: 1, 1813: 1, 1815: 1, 1816: 1, 1818: 1, 1819: 1, 1821: 1, 1822: 1,
-    # Fallback (total-expanded)
-    1569: 5, 1572: 5,
-    1854: 5, 1871: 5, 1873: 5, 1874: 5,
-    1880: 5, 1881: 5, 1883: 5, 1884: 5, 1886: 5, 1887: 5,
 }
 
 ALLOWED_LEAGUE_PATTERNS = [
@@ -135,6 +145,7 @@ BLACKLIST_WORDS = [
 ]
 
 _FINISHED_CACHE = {"data": {}, "ts": 0}
+_FULL_LINE_CACHE = {}  # ev_id -> {"factors": [...], "ts": unix_ts}
 _FIREBASE_BAD_CHARS = re.compile(r'[\.\$#\[\]/]')
 
 app = FastAPI(title="WinStars API")
@@ -429,10 +440,6 @@ def _parse_markets(factors_list):
 
     return markets
 
-def _get_group_score(group_name, s1, s2):
-    if group_name == "Тотал": return s1 + s2
-    return None
-
 def _filter_total_group(outs, current_score):
     new_outs = []
     for o in outs:
@@ -456,8 +463,7 @@ def _filter_decided(markets, s1, s2):
             if s1 > 0 and s2 > 0: continue
             filtered[g] = outs
         elif g == "Тотал":
-            group_score = s1 + s2
-            new_outs = _filter_total_group(outs, group_score)
+            new_outs = _filter_total_group(outs, s1 + s2)
             if new_outs: filtered[g] = new_outs
         else:
             filtered[g] = outs
@@ -472,6 +478,32 @@ def _fetch_fonbet(url):
                 except: return None
         except: time.sleep(1)
     return None
+
+def _fetch_full_line_sync(ev_id):
+    """Синхронный запрос полной линии через /events/event. Возвращает список факторов для основного события."""
+    url = f"{FONBET_BASE}{FONBET_FULL_LINE_PATH}&eventId={ev_id}"
+    data = _fetch_fonbet(url)
+    if not data:
+        return []
+    for cf in data.get("customFactors", []):
+        if cf.get("e") == ev_id:
+            return cf.get("factors", [])
+    return []
+
+async def _fetch_full_line(ev_id):
+    """Асинхронная обёртка с TTL-кэшем. Возвращает список факторов (пустой если не удалось)."""
+    now = time.time()
+    cached = _FULL_LINE_CACHE.get(ev_id)
+    if cached and now - cached["ts"] < FULL_LINE_TTL:
+        return cached["factors"]
+
+    factors = await asyncio.to_thread(_fetch_full_line_sync, ev_id)
+    if factors:
+        _FULL_LINE_CACHE[ev_id] = {"factors": factors, "ts": now}
+        return factors
+    if cached:
+        return cached["factors"]
+    return []
 
 def _build_logo_index(raw_cache):
     idx = {}
@@ -517,7 +549,7 @@ def _build_sport_hierarchy(all_sports):
     return entry_by_id, parent_by_id, top_by_id
 
 async def fonbet_scraper_worker():
-    print(f"⚡ fonbet_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
+    print(f"⚡ fonbet_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек, full-line via /events/event)...")
     cycle = 0
     prev_event_ids = set()
     
@@ -585,7 +617,10 @@ async def fonbet_scraper_worker():
             skipped_started_no_data = 0
             cached_frozen = 0
             total_markets_count = 0
+            full_line_fetched = 0
             
+            # Сначала отберём «валидные» матчи — для них будем тянуть полную линию
+            candidates = []
             for ev in events_by_id.values():
                 if ev.get("rootKind") != 1 or ev.get("kind") != 1: continue
                 t1 = ev.get("team1", ""); t2 = ev.get("team2", "")
@@ -605,8 +640,20 @@ async def fonbet_scraper_worker():
                 if any(w in text for w in BLACKLIST_WORDS): continue
                 if not _is_allowed_league(league): continue
                 
+                candidates.append((ev, league))
+            
+            # Приоритет для полной линии: live-матчи в первую очередь (у них чаще меняются кэфы),
+            # потом ближайшие по времени прематчи.
+            candidates.sort(key=lambda x: (
+                0 if x[0].get("id") in all_live else 1,
+                abs(_parse_start_ts(x[0]) - now_ts)
+            ))
+            
+            for idx, (ev, league) in enumerate(candidates):
                 eid = ev.get("id")
                 mid = f"fonbet_{eid}"
+                t1 = ev.get("team1", ""); t2 = ev.get("team2", "")
+                st = _parse_start_ts(ev)
                 
                 s1, s2, timer = _extract_score(all_live.get(eid))
                 is_live = s1 is not None and s2 is not None and timer is not None
@@ -621,8 +668,6 @@ async def fonbet_scraper_worker():
                     if st < now_ts - int(3.5 * 3600): continue
                     if st > now_ts + seven_days: continue
                     if st < now_ts:
-                        # Матч уже начался, но live нет. Если он был LIVE и ещё "свежий" (<2.5ч)
-                        # — оставляем замороженный снимок, чтобы не пропадал при перерыве.
                         old_m = cached_prev_matches.get(mid)
                         if isinstance(old_m, dict):
                             old_status = old_m.get("status", "")
@@ -654,7 +699,17 @@ async def fonbet_scraper_worker():
                 
                 current_ids.add(mid)
                 
-                factors_for_ev = all_factors.get(eid, [])
+                # Полная линия (только для первых N кандидатов — чтобы не спамить Fonbet)
+                factors_for_ev = None
+                if idx < FULL_LINE_MAX_PER_CYCLE:
+                    full_factors = await _fetch_full_line(eid)
+                    if full_factors:
+                        factors_for_ev = full_factors
+                        full_line_fetched += 1
+                
+                if not factors_for_ev:
+                    factors_for_ev = all_factors.get(eid, [])
+                
                 markets_data = _parse_markets(factors_for_ev)
                 if is_live and s1 is not None and s2 is not None:
                     markets_data = _filter_decided(markets_data, s1, s2)
@@ -706,6 +761,13 @@ async def fonbet_scraper_worker():
             
             prev_event_ids = current_ids
             
+            # Чистим старый кэш полной линии (чтобы не рос бесконечно)
+            if len(_FULL_LINE_CACHE) > 500:
+                cutoff = now_ts - 3600
+                for _eid in list(_FULL_LINE_CACHE.keys()):
+                    if _FULL_LINE_CACHE[_eid]["ts"] < cutoff:
+                        _FULL_LINE_CACHE.pop(_eid, None)
+            
             if matches_dict:
                 try:
                     approx_size = len(json.dumps(matches_dict, ensure_ascii=False))
@@ -717,7 +779,7 @@ async def fonbet_scraper_worker():
                 extra = ""
                 if skipped_stuck or skipped_started_no_data or cached_frozen:
                     extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data}, заморожено: {cached_frozen})"
-                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}) | {total_markets_count} рынков | {size_mb:.1f}MB{extra} за {time.time()-t0:.1f}s")
+                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}) | {total_markets_count} рынков | full-line: {full_line_fetched} | {size_mb:.1f}MB{extra} за {time.time()-t0:.1f}s")
         
         except Exception as e:
             import traceback
@@ -834,7 +896,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: markets-normalized-v1 (no ind-totals, no 1st-half-BTTS, priority-dedup, audit-endpoint)")
+    print("   ВЕРСИЯ: markets-v3 (full-line via /events/event, totals 0.5/1.0/1.5/2.5, no quarter lines)")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -911,13 +973,16 @@ async def debug_fonbet_raw(ev_id: str):
 
 @app.get("/api/debug/market-audit/{ev_id}")
 async def debug_market_audit(ev_id: str):
-    """Полный дамп: сырые факторы Fonbet + как их интерпретирует парсер + что лежит в Firebase.
+    """Полный дамп: сырые факторы Fonbet (listBase, live, /events/event) + как их
+    интерпретирует парсер + что лежит в Firebase.
     Использование: /api/debug/market-audit/<числовой eventId Fonbet>"""
     raw = []
-    for label, url in [
+    sources = [
         ("listBase", FONBET_BASE + FONBET_LINE_PATH),
         ("live",     FONBET_BASE + FONBET_LIVE_PATH),
-    ]:
+        ("full",     f"{FONBET_BASE}{FONBET_FULL_LINE_PATH}&eventId={ev_id}"),
+    ]
+    for label, url in sources:
         try:
             r = cffi_requests.get(
                 url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=30
@@ -948,10 +1013,16 @@ async def debug_market_audit(ev_id: str):
         except Exception as e:
             raw.append({"src": label, "error": str(e)[:200]})
 
+    # Дедуп для by_fid: один и тот же (f, p) может прийти из listBase и full — оставим по одному
     by_fid = {}
+    seen_pairs = set()
     for r in raw:
         if "f" not in r or r.get("f") is None:
             continue
+        key = (r["f"], r.get("p"))
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
         by_fid.setdefault(r["f"], []).append({"p": r.get("p"), "v": r.get("v"), "src": r.get("src")})
 
     computed = _parse_markets(
