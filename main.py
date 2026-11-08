@@ -293,10 +293,8 @@ def _normalize_p(p_val):
         num = float(p_val)
     except (TypeError, ValueError):
         return 0.0
-    # Дробное значение — уже в правильном формате
     if num != int(num):
         return num
-    # Целое и >= 10 — это ×100 (0.5, 1.0, 2.5, ...)
     if abs(num) >= 10:
         return num / 100.0
     return num
@@ -305,6 +303,63 @@ def _extract_number_from_name(name):
     m = re.search(r'([+-]?\d+(?:\.\d+)?)', name)
     if m: return float(m.group(1))
     return 999.0
+
+_LOGGED_FLIPS = set()
+
+def _fix_market_orientation(markets):
+    """
+    Fonbet иногда отдаёт факторы, где ТБ-лейбл в нашем FONBET_FACTORS на самом деле
+    является Under-линией. Паттерн: кэф на ТБ ПАДАЕТ с ростом линии (нарушение монотонности).
+    В этом случае флипаем ТБ↔ТМ для всей группы.
+    
+    Применяем только к односторонним группам (только ТБ или только ТМ внутри), где есть
+    3+ точки — иначе монотонность не определить.
+    """
+    for group_name, outcomes in markets.items():
+        if not (group_name == "Тотал" or group_name.startswith("Инд ")):
+            continue
+        
+        tb_items = []
+        tm_items = []
+        for o in outcomes:
+            n = o["name"]
+            try:
+                if n.startswith("ТБ "):
+                    tb_items.append((float(n[3:]), o))
+                elif n.startswith("ТМ "):
+                    tm_items.append((float(n[3:]), o))
+            except (ValueError, IndexError):
+                continue
+        
+        # ТБ→ТМ: если группа односторонняя (только ТБ) и кэфы падают с ростом линии
+        if tb_items and not tm_items and len(tb_items) >= 3:
+            tb_items.sort(key=lambda x: x[0])
+            violations = sum(
+                1 for i in range(1, len(tb_items))
+                if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"]
+            )
+            if violations >= len(tb_items) - 2:
+                for lim, o in tb_items:
+                    o["name"] = f"ТМ {lim:g}"
+                if group_name not in _LOGGED_FLIPS:
+                    _LOGGED_FLIPS.add(group_name)
+                    print(f"   🔄 Auto-flip '{group_name}': ТБ→ТМ (violations={violations}/{len(tb_items)-1})")
+                continue
+        
+        # ТМ→ТБ: симметричный случай
+        if tm_items and not tb_items and len(tm_items) >= 3:
+            tm_items.sort(key=lambda x: x[0])
+            violations = sum(
+                1 for i in range(1, len(tm_items))
+                if tm_items[i][1]["odds"] > tm_items[i-1][1]["odds"]
+            )
+            if violations >= len(tm_items) - 2:
+                for lim, o in tm_items:
+                    o["name"] = f"ТБ {lim:g}"
+                key = group_name + "|tm"
+                if key not in _LOGGED_FLIPS:
+                    _LOGGED_FLIPS.add(key)
+                    print(f"   🔄 Auto-flip '{group_name}': ТМ→ТБ (violations={violations}/{len(tm_items)-1})")
 
 def _parse_markets(factors_list):
     seen = set()
@@ -344,32 +399,50 @@ def _parse_markets(factors_list):
         if group not in markets: markets[group] = []
         markets[group].append({"name": name, "odds": odds})
     
-    # Сортировка внутри каждой группы по возрастанию параметра
+    # Автоопределение ориентации ТБ/ТМ (фикс бага Fonbet с перевёрнутыми факторами)
+    _fix_market_orientation(markets)
+    
     for g in markets:
         markets[g].sort(key=lambda x: _extract_number_from_name(x['name']))
         
     return markets
 
+def _get_group_score(group_name, s1, s2):
+    if group_name == "Тотал": return s1 + s2
+    if "Инд тотал 1" in group_name: return s1
+    if "Инд тотал 2" in group_name: return s2
+    return None
+
+def _filter_total_group(outs, current_score):
+    new_outs = []
+    for o in outs:
+        n = o["name"]
+        if n.startswith("ТБ "):
+            try: lim = float(n[3:])
+            except: new_outs.append(o); continue
+            # ТБ X: уже выиграл если current > X (скрываем)
+            if current_score > lim: continue
+        elif n.startswith("ТМ "):
+            try: lim = float(n[3:])
+            except: new_outs.append(o); continue
+            # ТМ X: уже проиграл если current >= X (скрываем)
+            if current_score >= lim: continue
+        new_outs.append(o)
+    return new_outs
+
 def _filter_decided(markets, s1, s2):
     if s1 is None or s2 is None: return markets
     filtered = {}
-    total = s1 + s2
     for g, outs in markets.items():
         if g == "Обе забьют":
             if s1 > 0 and s2 > 0: continue
             filtered[g] = outs
         elif g == "Тотал" or g.startswith("Инд "):
-            new_outs = []
-            for o in outs:
-                n = o["name"]
-                lim_str = None
-                if n.startswith("ТБ "): lim_str = n[3:]
-                elif n.startswith("ТМ "): lim_str = n[3:]
-                if lim_str:
-                    try: lim = float(lim_str.replace("+",""))
-                    except: new_outs.append(o); continue
-                    if total > lim: continue
-                new_outs.append(o)
+            group_score = _get_group_score(g, s1, s2)
+            if group_score is None:
+                filtered[g] = outs
+                continue
+            new_outs = _filter_total_group(outs, group_score)
             if new_outs: filtered[g] = new_outs
         else:
             filtered[g] = outs
@@ -708,7 +781,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: Fonbet bulk PUT + no-dot keys + p-normalize(fixed) + sort markets")
+    print("   ВЕРСИЯ: p-normalize + auto-orientation-fix (ТБ↔ТМ по монотонности) + filter-decided(per-team)")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -759,6 +832,30 @@ async def debug_fonbet(ev_id: str):
     except Exception as e:
         result["firebase"] = {"error": str(e)[:200]}
     return result
+
+@app.get("/api/debug/fonbet/{ev_id}/raw")
+async def debug_fonbet_raw(ev_id: str):
+    """Возвращает сырые факторы для события (для отладки маппинга ТБ/ТМ)."""
+    results = {}
+    for label, url in [("listBase", FONBET_BASE + FONBET_LINE_PATH), ("live", FONBET_BASE + FONBET_LIVE_PATH)]:
+        try:
+            r = cffi_requests.get(url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=30)
+            if r.status_code != 200:
+                results[label] = {"status": r.status_code}
+                continue
+            data = r.json()
+            found = []
+            for cf in data.get("customFactors", []):
+                if str(cf.get("e")) == ev_id:
+                    for f in cf.get("factors", []):
+                        found.append({"f": f.get("f"), "p": f.get("p"), "v": f.get("v")})
+            for f in data.get("factors", []):
+                if str(f.get("e")) == ev_id:
+                    found.append({"f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "src": "factors"})
+            results[label] = {"count": len(found), "factors": found}
+        except Exception as e:
+            results[label] = {"error": str(e)[:200]}
+    return results
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
