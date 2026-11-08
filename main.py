@@ -35,6 +35,7 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
+# ⚠️ БЕЗ ТОЧЕК в ключах (Firebase RTDB запрещает . $ # [ ] / в ключах)
 FONBET_FACTORS = {
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
@@ -45,14 +46,14 @@ FONBET_FACTORS = {
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
     1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
     1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
-    1696: ("Инд. тотал 1", "ТБ", True), 1697: ("Инд. тотал 2", "ТБ", True),
-    1727: ("Инд. тотал 1", "ТБ", True), 1728: ("Инд. тотал 2", "ТБ", True),
-    1730: ("Инд. тотал 1", "ТБ", True), 1731: ("Инд. тотал 2", "ТБ", True),
-    1733: ("Инд. тотал 1", "ТБ", True), 1734: ("Инд. тотал 2", "ТБ", True),
-    1736: ("Инд. тотал 1", "ТБ", True), 1737: ("Инд. тотал 2", "ТБ", True),
-    1739: ("Инд. тотал 1", "ТБ", True), 1791: ("Инд. тотал 2", "ТБ", True),
-    1793: ("Инд. тотал 1", "ТБ", True), 1794: ("Инд. тотал 2", "ТБ", True),
-    1796: ("Инд. тотал 1", "ТБ", True), 1797: ("Инд. тотал 2", "ТБ", True),
+    1696: ("Инд тотал 1", "ТБ", True), 1697: ("Инд тотал 2", "ТБ", True),
+    1727: ("Инд тотал 1", "ТБ", True), 1728: ("Инд тотал 2", "ТБ", True),
+    1730: ("Инд тотал 1", "ТБ", True), 1731: ("Инд тотал 2", "ТБ", True),
+    1733: ("Инд тотал 1", "ТБ", True), 1734: ("Инд тотал 2", "ТБ", True),
+    1736: ("Инд тотал 1", "ТБ", True), 1737: ("Инд тотал 2", "ТБ", True),
+    1739: ("Инд тотал 1", "ТБ", True), 1791: ("Инд тотал 2", "ТБ", True),
+    1793: ("Инд тотал 1", "ТБ", True), 1794: ("Инд тотал 2", "ТБ", True),
+    1796: ("Инд тотал 1", "ТБ", True), 1797: ("Инд тотал 2", "ТБ", True),
     1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
     1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
     1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
@@ -116,6 +117,9 @@ BLACKLIST_WORDS = [
 
 _FINISHED_CACHE = {"data": {}, "ts": 0}
 
+# Запрещённые в Firebase RTDB символы для ключей
+_FIREBASE_BAD_CHARS = re.compile(r'[\.\$#\[\]/]')
+
 app = FastAPI(title="WinStars API")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -166,6 +170,22 @@ async def firebase_delete(path: str):
     try: await http_client.delete(f"{FIREBASE_DB_URL}/{path}.json")
     except: pass
 
+def _find_bad_key(obj, path=""):
+    """Ищет первое невалидное для Firebase имя ключа (для лога)."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if not isinstance(k, str) or not k:
+                return f"empty key at {path}"
+            if _FIREBASE_BAD_CHARS.search(k):
+                return f"bad key '{k}' at {path}"
+            r = _find_bad_key(v, f"{path}/{k}")
+            if r: return r
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            r = _find_bad_key(v, f"{path}[{i}]")
+            if r: return r
+    return None
+
 async def _save_matches_fallback(matches_dict):
     print("   ⚠️ Saving per-match (fallback)...")
     existing = await firebase_get("matches") or {}
@@ -174,8 +194,13 @@ async def _save_matches_fallback(matches_dict):
         for k in to_delete:
             try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
             except: pass
-            
+    
     for mid, mdata in matches_dict.items():
+        # Проверка на невалидные ключи внутри самого матча
+        bad = _find_bad_key(mdata, "")
+        if bad:
+            print(f"   ❌ {mid}: {bad} — пропускаю")
+            continue
         try:
             r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
             if r.status_code != 200:
@@ -185,11 +210,20 @@ async def _save_matches_fallback(matches_dict):
 
 async def _save_matches(matches_dict):
     if not matches_dict: return
+    
+    # Локальная проверка ДО отправки
+    bad = _find_bad_key(matches_dict, "")
+    if bad:
+        print(f"   ❌ [SAVE] Невалидный ключ: {bad}")
+        # Пробуем по одному
+        await _save_matches_fallback(matches_dict)
+        return
+    
     try:
         payload = json.dumps(matches_dict, allow_nan=False, ensure_ascii=False)
         size = len(payload)
     except ValueError as e:
-        print(f"   ⚠️ JSON serialization error: {e} (возможно NaN в кэфах)")
+        print(f"   ⚠️ JSON serialization error: {e}")
         return
 
     if size < 900_000:
@@ -288,9 +322,9 @@ def _parse_markets(factors_list):
             try: p_raw = float(p)
             except: continue
             p_val = _normalize_p(p_raw)
-            if p_val == 0 and (group == "Тотал" or group.startswith("Инд.")):
+            if p_val == 0 and (group == "Тотал" or group.startswith("Инд ")):
                 continue
-            if group == "Тотал" or group.startswith("Инд."):
+            if group == "Тотал" or group.startswith("Инд "):
                 name = f"{base} {abs(p_val):g}"
             else:
                 if p_val == int(p_val): p_str = str(int(p_val))
@@ -313,7 +347,7 @@ def _filter_decided(markets, s1, s2):
         if g == "Обе забьют":
             if s1 > 0 and s2 > 0: continue
             filtered[g] = outs
-        elif "Тотал" in g:
+        elif g == "Тотал" or g.startswith("Инд "):
             new_outs = []
             for o in outs:
                 n = o["name"]
@@ -666,7 +700,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: Fonbet bulk PUT + fallback, p-normalize, 60 f-IDs")
+    print("   ВЕРСИЯ: Fonbet bulk PUT + no-dot keys + p-normalize")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -700,8 +734,11 @@ async def debug_fonbet(ev_id: str):
             "event_found": target_ev is not None,
             "factors_count": len(factors_for_ev),
             "markets_summary": {g: len(outs) for g, outs in markets.items()},
-            "markets_full": markets,
         }
+        # Проверка на невалидные ключи
+        bad = _find_bad_key(markets)
+        if bad:
+            result["endpoints"]["listBase"]["bad_key"] = bad
     except Exception as e:
         result["endpoints"]["listBase"] = {"error": str(e)[:300]}
     try:
@@ -712,7 +749,6 @@ async def debug_fonbet(ev_id: str):
                 "exists": True,
                 "status": fb_match.get("status"),
                 "markets_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {},
-                "odds": fb_match.get("odds"),
             }
         else:
             result["firebase"] = {"exists": False}
