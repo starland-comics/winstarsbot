@@ -86,17 +86,19 @@
     .mm-score { font-size: 1.8rem; font-weight: 800; color: var(--accent); line-height: 1; letter-spacing: 1px; }
     .mm-time { font-size: 0.75rem; color: var(--red); font-weight: 700; margin-top: 4px; background: rgba(239, 68, 68, 0.1); padding: 2px 8px; border-radius: 8px; }
 
-    /* Filter Pills */
+    /* Filter Pills — FIX: full-bleed horizontal scroll без обрезки */
     .market-filters {
         display: flex;
         overflow-x: auto;
+        overflow-y: hidden;
         gap: 8px;
-        padding-bottom: 12px;
-        padding-right: 16px; /* Отступ чтобы последняя кнопка не прилипала */
-        margin-bottom: 16px;
+        padding: 4px 20px 12px 20px;
+        margin: 0 -20px 16px -20px;
         border-bottom: 1px solid rgba(255,255,255,0.05);
         scrollbar-width: none;
         -webkit-overflow-scrolling: touch;
+        justify-content: flex-start;
+        scroll-padding: 0 20px;
     }
     .market-filters::-webkit-scrollbar { display: none; }
     .filter-pill {
