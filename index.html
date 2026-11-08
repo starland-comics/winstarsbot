@@ -89,14 +89,14 @@
     .slip-input-row { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
     .slip-input-row .input-group { margin-bottom: 0; flex: 1; }
     .slip-potential { font-weight: 800; color: var(--green); margin-bottom: 16px; text-align: center; font-size: 1.1rem; }
-    #result-modal .modal-content { align-items: stretch; text-align: left; padding: 24px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+    #result-modal .modal-content, #info-modal .modal-content { align-items: stretch; text-align: left; padding: 24px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
     .receipt-header { text-align: center; margin-bottom: 20px; }
     .receipt-icon { width: 56px; height: 56px; background: rgba(16, 185, 129, 0.2); color: var(--green); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; }
     .receipt-title { font-size: 1.2rem; font-weight: 800; color: var(--green); margin-bottom: 4px; }
     .receipt-brand-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .receipt-brand { font-weight: 800; font-size: 1.1rem; color: var(--text-main); }
     .receipt-status-badge { background: rgba(16, 185, 129, 0.1); color: var(--green); padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
-    .receipt-info { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 16px; }
+    .receipt-info { font-size: 0.9rem; color: var(--text-main); margin-bottom: 20px; text-align: center; line-height: 1.5; }
     .receipt-events { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; }
     .receipt-event-item { background: var(--bg-card-hover); border-radius: 12px; padding: 12px; border: 1px solid var(--border); }
     .receipt-event-match { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
@@ -291,7 +291,7 @@
         <div class="stat-box"><div class="stat-val" id="stat-count">0</div><div class="stat-lbl">Всего ставок</div></div>
       </div>
       <div class="chart-card">
-        <div style="font-size:0.9rem; font-weight:800; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">Чистая прибыль</div>
+        <div style="font-size:0.9rem; font-weight:800; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">Прибыль</div>
         <div class="chart-val neutral" id="chart-total">0 ★</div>
         <svg class="svg-chart" viewBox="0 0 300 100" preserveAspectRatio="none">
           <path id="chart-fill" d="M 0,50 L 300,50 L 300,100 L 0,100 Z" fill="rgba(138, 129, 155, 0.2)" />
@@ -374,7 +374,21 @@
         <div class="receipt-stat"><div class="receipt-stat-label">Коэф</div><div class="receipt-stat-value" id="receipt-odds-val">0.0</div></div>
         <div class="receipt-stat"><div class="receipt-stat-label">Выплата</div><div class="receipt-stat-value" style="color: var(--green);" id="receipt-payout-val">0 ★</div></div>
       </div>
-      <button class="btn-submit" id="btn-close-result" onclick="closeResultModal()">Закрыть</button>
+      <button class="btn-submit" onclick="document.getElementById('result-modal').classList.remove('open')">Закрыть</button>
+    </div>
+  </div>
+
+  <!-- NEW: Info Modal для промокодов, вывода и других уведомлений -->
+  <div class="modal-overlay" id="info-modal">
+    <div class="modal-content">
+      <div class="receipt-header">
+        <div class="receipt-icon" id="info-icon-el">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="receipt-title" id="info-title-el">Готово</div>
+      </div>
+      <div class="receipt-info" id="info-text-el"></div>
+      <button class="btn-submit" onclick="document.getElementById('info-modal').classList.remove('open')">Закрыть</button>
     </div>
   </div>
 
@@ -460,7 +474,6 @@
     let currentMatchDetails = null;
     let currentMarketsCache = {};
     let currentActiveFilter = 'all';
-    let isTempModalOpen = false;
     window.matchTimers = {};
 
     function formatStars(val) {
@@ -477,16 +490,32 @@
       else { el.innerHTML = SVG_ICONS.infoBig; el.style.color = 'var(--accent)'; el.style.background = 'rgba(157, 78, 221, 0.2)'; }
     }
 
-    function closeResultModal() {
-      document.getElementById('result-modal').classList.remove('open');
-      isTempModalOpen = false;
-      // Восстанавливаем стоковый вид
-      document.querySelector('#result-modal .receipt-stats').style.display = 'grid';
-      document.querySelector('#result-modal .receipt-brand-row').style.display = 'flex';
-      document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
-      document.getElementById('receipt-title-el').style.color = 'var(--green)';
-      setReceiptIcon('success');
-      document.getElementById('btn-close-result').innerText = 'Закрыть';
+    function showInfoModal(type, title, message) {
+      const modal = document.getElementById('info-modal');
+      const iconEl = document.getElementById('info-icon-el');
+      const titleEl = document.getElementById('info-title-el');
+      const textEl = document.getElementById('info-text-el');
+      
+      if (type === 'success') {
+        iconEl.innerHTML = SVG_ICONS.checkBig;
+        iconEl.style.color = 'var(--green)';
+        iconEl.style.background = 'rgba(16, 185, 129, 0.2)';
+        titleEl.style.color = 'var(--green)';
+      } else if (type === 'error') {
+        iconEl.innerHTML = SVG_ICONS.x;
+        iconEl.style.color = 'var(--red)';
+        iconEl.style.background = 'rgba(239, 68, 68, 0.2)';
+        titleEl.style.color = 'var(--red)';
+      } else {
+        iconEl.innerHTML = SVG_ICONS.infoBig;
+        iconEl.style.color = 'var(--accent)';
+        iconEl.style.background = 'rgba(157, 78, 221, 0.2)';
+        titleEl.style.color = 'var(--accent)';
+      }
+      
+      titleEl.innerText = title;
+      textEl.innerHTML = message;
+      modal.classList.add('open');
     }
 
     const LEAGUE_PRIORITY = {
@@ -962,18 +991,15 @@
         document.querySelector('#result-modal .receipt-stats').style.display = 'none';
         modal.classList.add('open');
         setTimeout(() => {
-            if (document.getElementById('result-modal').classList.contains('open') && !isTempModalOpen) {
-              setReceiptIcon('success');
-              document.getElementById('receipt-title-el').style.color = 'var(--green)';
-              document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
-              modal.querySelector('.receipt-brand-row').style.display = 'flex';
-              document.querySelector('#result-modal .receipt-stats').style.display = 'grid';
-            }
+            setReceiptIcon('success');
+            document.getElementById('receipt-title-el').style.color = 'var(--green)';
+            document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
+            modal.querySelector('.receipt-brand-row').style.display = 'flex';
+            document.querySelector('#result-modal .receipt-stats').style.display = 'grid';
         }, 3000);
     }
 
     function showReceiptModal(stake, odds, payout, betType) {
-      isTempModalOpen = false;
       setReceiptIcon('success');
       document.getElementById('receipt-title-el').style.color = 'var(--green)';
       document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
@@ -1124,51 +1150,16 @@
           currentUser.frozen_balance = (currentUser.frozen_balance || 0) + amt;
           updateUI();
           loadWithdrawStatus();
-          showResultModal('info', 'Заявка создана!', 
+          showInfoModal('info', 'Заявка создана!', 
             `Сумма: <b>${data.amount} ★</b><br>К зачислению: <b>${data.amount_after_commission} ★</b><br><br>Заявка рассматривается в течение 5 рабочих дней.`);
         } else {
-          alert(data.detail || 'Ошибка');
+          showInfoModal('error', 'Ошибка', data.detail || 'Не удалось создать заявку');
           btn.disabled = false; btn.innerText = 'Заявка на вывод';
         }
       } catch(e) {
-        alert('Ошибка соединения');
+        showInfoModal('error', 'Ошибка', 'Ошибка соединения');
         btn.disabled = false; btn.innerText = 'Заявка на вывод';
       }
-    }
-
-    // Специальный модал для промокодов и простых сообщений
-    function showSimpleModal(type, title, info) {
-      isTempModalOpen = true;
-      const modal = document.getElementById('result-modal');
-      setReceiptIcon(type);
-      document.getElementById('receipt-title-el').innerText = title;
-      document.getElementById('receipt-title-el').style.color = type === 'success' ? 'var(--green)' : (type === 'error' ? 'var(--red)' : 'var(--accent)');
-      modal.querySelector('.receipt-brand-row').style.display = 'none';
-      document.getElementById('receipt-info').innerHTML = info;
-      document.getElementById('receipt-events').innerHTML = '';
-      document.querySelector('#result-modal .receipt-stats').style.display = 'none';
-      
-      const btn = document.getElementById('btn-close-result');
-      btn.innerText = 'Ок';
-      
-      modal.classList.add('open');
-    }
-
-    function showResultModal(type, title, info) {
-      isTempModalOpen = true;
-      const modal = document.getElementById('result-modal');
-      setReceiptIcon(type);
-      document.getElementById('receipt-title-el').innerText = title;
-      document.getElementById('receipt-title-el').style.color = 'var(--accent)';
-      modal.querySelector('.receipt-brand-row').style.display = 'none';
-      document.getElementById('receipt-info').innerHTML = info;
-      document.getElementById('receipt-events').innerHTML = '';
-      document.querySelector('#result-modal .receipt-stats').style.display = 'none';
-      
-      const btn = document.getElementById('btn-close-result');
-      btn.innerText = 'Ок';
-      
-      modal.classList.add('open');
     }
 
     async function loadTransactions() {
@@ -1273,17 +1264,19 @@
           if (data.type === 'fixed_stars') {
             currentUser.balance = data.new_balance; 
             updateUI(); 
-            showSimpleModal('success', 'Успех', data.message);
+            showInfoModal('success', 'Промокод активирован!', `Начислено <b>${data.amount} ★</b>`);
           } else {
             currentUser.pending_bonus = { percent: data.percent, min_deposit: data.min_deposit };
             updatePendingBonusBanner();
-            showSimpleModal('success', 'Активировано', data.message);
+            showInfoModal('success', 'Бонус активирован!', `+${data.percent}% к следующему пополнению${data.min_deposit ? ` (мин. ${data.min_deposit}★)` : ''}`);
           }
           document.getElementById(inputId).value = ''; 
         } else {
-          showSimpleModal('error', 'Ошибка', data.detail || 'Промокод не найден или недействителен');
+          showInfoModal('error', 'Ошибка', data.detail || "Промокод не найден");
         }
-      } catch (err) { showSimpleModal('error', 'Ошибка', 'Ошибка соединения'); }
+      } catch (err) { 
+        showInfoModal('error', 'Ошибка', 'Ошибка соединения');
+      }
     }
 
     async function loadUserBets() {
@@ -1325,7 +1318,7 @@
                 </div>
               `;
             });
-            if (bet.status === 'lost' && bet.type === 'express') {
+            if (bet.status === 'lost') {
               const lostCount = bet.leg_results.filter(l => l.status === 'lost').length;
               if (lostCount === 1) eventsHtml += `<div class="leg-hint">1 матч заруинил экспресс</div>`;
               else if (lostCount > 1) eventsHtml += `<div class="leg-hint">${lostCount} матчей проиграли</div>`;
@@ -1382,27 +1375,49 @@
       const profitEl = document.getElementById("chart-total"); 
       const profit = currentUser.profit || 0;
       profitEl.innerText = `${profit > 0 ? '+' : ''}${formatStars(profit)} ★`;
+      
+      // ✅ Улучшенное масштабирование графика
       const chartPath = document.getElementById("chart-path"); 
       const chartFill = document.getElementById("chart-fill");
+      
+      // Базовая шкала: 500★. При |profit| > 500 масштаб расширяется.
+      const SCALE = Math.max(500, Math.abs(profit));
+      
+      // -40 + 50 = 10 (максимум вверх), 50 + 40 = 90 (максимум вниз)
+      let targetY = 50 - (profit / SCALE) * 40;
+      if (targetY < 5) targetY = 5;
+      if (targetY > 95) targetY = 95;
+      
       let steps = 8, stepX = 300 / steps;
-      
-      // График теперь может уходить вниз, если profit < 0
-      let targetY = 50 - (profit * 1.5); 
-      if (targetY < 10) targetY = 10;
-      if (targetY > 90) targetY = 90;
-      
       let curY = 50, pathD = "M 0,50";
       for (let i = 1; i <= steps; i++) {
           let x = stepX * i;
           if (i === steps) curY = targetY;
-          else { let delta = (targetY - 50) / steps; let noise = (Math.random() - 0.5) * 20; curY = curY + delta + noise; }
+          else { 
+            let delta = (targetY - 50) / steps; 
+            let noise = (Math.random() - 0.5) * 20; 
+            curY = curY + delta + noise; 
+          }
           pathD += ` L ${x},${curY.toFixed(1)}`;
       }
       chartPath.setAttribute("d", pathD);
       chartFill.setAttribute("d", pathD + " L 300,100 L 0,100 Z");
-      if (profit > 0) { profitEl.className = "chart-val positive"; chartPath.setAttribute("stroke", "#10b981"); chartFill.setAttribute("fill", "rgba(16, 185, 129, 0.2)"); }
-      else if (profit < 0) { profitEl.className = "chart-val negative"; chartPath.setAttribute("stroke", "#ef4444"); chartFill.setAttribute("fill", "rgba(239, 68, 68, 0.2)"); }
-      else { profitEl.className = "chart-val neutral"; chartPath.setAttribute("stroke", "#8a819b"); chartFill.setAttribute("fill", "rgba(138, 129, 155, 0.2)"); }
+      
+      if (profit > 0) { 
+        profitEl.className = "chart-val positive"; 
+        chartPath.setAttribute("stroke", "#10b981"); 
+        chartFill.setAttribute("fill", "rgba(16, 185, 129, 0.2)"); 
+      }
+      else if (profit < 0) { 
+        profitEl.className = "chart-val negative"; 
+        chartPath.setAttribute("stroke", "#ef4444"); 
+        chartFill.setAttribute("fill", "rgba(239, 68, 68, 0.2)"); 
+      }
+      else { 
+        profitEl.className = "chart-val neutral"; 
+        chartPath.setAttribute("stroke", "#8a819b"); 
+        chartFill.setAttribute("fill", "rgba(138, 129, 155, 0.2)"); 
+      }
       
       updatePendingBonusBanner();
     }
