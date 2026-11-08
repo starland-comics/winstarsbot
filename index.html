@@ -15,6 +15,7 @@
       --bg-card-hover: #1b162b; 
       --border: rgba(157, 78, 221, 0.15); 
       --accent: #9d4edd; 
+      --accent-glow: rgba(157, 78, 221, 0.4);
       --text-main: #f3f0f8; 
       --text-muted: #8a819b; 
       --green: #10b981; 
@@ -58,7 +59,8 @@
     .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 90vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
     .modal-overlay.open .modal-content { bottom: 0; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: 800; font-size: 1.1rem; }
-    .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer; }
+    .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer; transition: 0.2s; }
+    .modal-close:active { background: rgba(255,255,255,0.2); transform: scale(0.95); }
 
     /* League List */
     .league-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 60vh; padding-bottom: 20px; }
@@ -67,42 +69,81 @@
     .league-item.active { border-color: var(--accent); background: rgba(157, 78, 221, 0.15); }
     .league-top { background: var(--accent); color: #fff; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; font-weight: 800; letter-spacing: 0.5px; }
 
-    /* Match Markets Filters */
+    /* ===== MATCH MODAL UI (PREMIUM) ===== */
+    .mm-header {
+        background: linear-gradient(180deg, rgba(30, 20, 45, 0.8) 0%, rgba(19, 15, 30, 0) 100%);
+        padding: 16px;
+        border-radius: 16px;
+        margin-bottom: 20px;
+        text-align: center;
+    }
+    .mm-league { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .mm-teams-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; }
+    .mm-team { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .mm-team-logo { width: 48px; height: 48px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,0.05); padding: 4px; border: 1px solid rgba(255,255,255,0.1); }
+    .mm-team-name { font-size: 0.8rem; font-weight: 700; line-height: 1.1; text-align: center; }
+    .mm-center-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 60px; }
+    .mm-score { font-size: 1.8rem; font-weight: 800; color: var(--accent); line-height: 1; letter-spacing: 1px; }
+    .mm-time { font-size: 0.75rem; color: var(--red); font-weight: 700; margin-top: 4px; background: rgba(239, 68, 68, 0.1); padding: 2px 8px; border-radius: 8px; }
+
+    /* Filter Pills */
     .market-filters {
         display: flex;
         overflow-x: auto;
         gap: 8px;
         padding-bottom: 12px;
-        margin-bottom: 12px;
-        border-bottom: 1px solid var(--border);
+        margin-bottom: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
         scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
     }
     .market-filters::-webkit-scrollbar { display: none; }
     .filter-pill {
-        padding: 8px 16px;
+        flex-shrink: 0;
+        padding: 10px 18px;
         background: var(--bg-card-hover);
         border: 1px solid var(--border);
         border-radius: 20px;
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         white-space: nowrap;
         color: var(--text-muted);
         cursor: pointer;
-        transition: 0.2s;
-        font-weight: 600;
+        transition: all 0.2s ease;
+        font-weight: 700;
     }
     .filter-pill.active {
-        background: var(--accent);
+        background: linear-gradient(135deg, var(--accent), #7b2cbf);
         color: #fff;
-        border-color: var(--accent);
+        border-color: transparent;
+        box-shadow: 0 4px 15px var(--accent-glow);
+        transform: translateY(-1px);
     }
 
-    .market-group { margin-bottom: 20px; }
-    .market-title { font-size: 0.9rem; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase; }
-    .market-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .market-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: 0.2s; }
-    .market-btn.selected { border-color: var(--accent); background: rgba(157, 78, 221, 0.2); }
-    .market-btn-name { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
-    .market-btn-val { font-size: 1rem; font-weight: 800; color: #fff; }
+    /* Market Grid */
+    .market-group { margin-bottom: 24px; }
+    .market-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+    .market-title::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
+    .market-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .market-btn { 
+        background: var(--bg-card-hover); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 12px 14px; 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        cursor: pointer; 
+        transition: all 0.15s ease; 
+    }
+    .market-btn:active { transform: scale(0.96); background: rgba(157, 78, 221, 0.15); }
+    .market-btn.selected { 
+        border-color: var(--accent); 
+        background: linear-gradient(135deg, rgba(157, 78, 221, 0.2), rgba(157, 78, 221, 0.1)); 
+        box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .market-btn-name { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); transition: 0.2s; }
+    .market-btn.selected .market-btn-name { color: var(--text-main); }
+    .market-btn-val { font-size: 1.05rem; font-weight: 800; color: #fff; }
 
     /* Bet Slip Bar */
     .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(135deg, var(--accent), #7b2cbf); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
@@ -125,27 +166,11 @@
 
     /* Result Receipt Modal */
     #result-modal .modal-content { 
-        align-items: stretch; 
-        text-align: left; 
-        padding: 24px; 
-        border-radius: 24px; 
-        bottom: 50%; 
-        transform: translateY(50%); 
-        width: 90%; 
-        left: 5%; 
-        right: 5%; 
-        border: 1px solid var(--border); 
+        align-items: stretch; text-align: left; padding: 24px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.6);
     }
     .receipt-header { text-align: center; margin-bottom: 20px; }
-    .receipt-icon {
-        width: 56px; height: 56px; 
-        background: rgba(16, 185, 129, 0.2); color: var(--green);
-        border-radius: 50%;
-        display: inline-flex; align-items: center; justify-content: center;
-        font-size: 1.8rem; margin-bottom: 12px;
-    }
+    .receipt-icon { width: 56px; height: 56px; background: rgba(16, 185, 129, 0.2); color: var(--green); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 12px; }
     .receipt-title { font-size: 1.2rem; font-weight: 800; color: var(--green); margin-bottom: 4px; }
-    .receipt-subtitle { font-size: 0.8rem; color: var(--text-muted); }
     .receipt-brand-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .receipt-brand { font-weight: 800; font-size: 1.1rem; color: var(--text-main); }
     .receipt-status-badge { background: rgba(16, 185, 129, 0.1); color: var(--green); padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
@@ -159,8 +184,9 @@
     .receipt-stat-label { font-size: 0.7rem; color: var(--text-muted); }
     .receipt-stat-value { font-size: 1rem; font-weight: 800; }
 
-    /* Match Cards */
-    .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; cursor: pointer; }
+    /* Match Cards (Main Feed) */
+    .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; cursor: pointer; transition: 0.2s; }
+    .match-card:active { transform: scale(0.98); background: var(--bg-card-hover); }
     .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
     .live-tag { color: var(--red); font-weight: 700; display: flex; align-items: center; gap: 4px; }
     .live-dot { width: 6px; height: 6px; background: var(--red); border-radius: 50%; animation: pulse 1.5s infinite; }
@@ -308,7 +334,7 @@
     </div>
   </div>
 
-  <!-- МОДАЛКА МАТЧА С ФИЛЬТРАМИ -->
+  <!-- МОДАЛКА МАТЧА (ПРЕМИАЛЬНАЯ) -->
   <div class="modal-overlay" id="match-details-modal" onclick="closeMatchDetails(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
@@ -316,7 +342,10 @@
         <button class="modal-close" onclick="closeMatchDetails()">✕</button>
       </div>
       
-      <!-- Горизонтальные фильтры -->
+      <!-- Шапка матча внутри модалки -->
+      <div class="mm-header" id="mm-header-container"></div>
+      
+      <!-- Фильтры рынков -->
       <div class="market-filters" id="market-filters-container"></div>
       
       <div id="match-markets-container" style="overflow-y:auto; flex:1; padding-bottom:20px;"></div>
@@ -407,10 +436,8 @@
     let betSlip = []; 
     let currentMatchDetails = null;
     
-    // Для фильтрации рынков
     let currentMarketsCache = {};
     let currentActiveFilter = 'all';
-
     window.matchTimers = {};
 
     function formatStars(val) {
@@ -638,18 +665,49 @@
       });
     }
 
-    // ===== МОДАЛКА МАТЧА И ФИЛЬТРЫ =====
+    // ===== МОДАЛКА МАТЧА, ШАПКА И ФИЛЬТРЫ =====
 
     async function openMatchDetails(matchId) {
       const match = allMatchesRaw.find(m => m.id === matchId);
       if (!match) return;
 
       currentMatchDetails = match;
-      document.getElementById('match-details-title').innerText = `${match.home} - ${match.away}`;
+      document.getElementById('match-details-title').innerText = `Ставки`;
       
       const container = document.getElementById('match-markets-container');
       const filtersContainer = document.getElementById('market-filters-container');
+      const headerContainer = document.getElementById('mm-header-container');
       
+      // Рендер шапки матча
+      const now = Math.floor(Date.now() / 1000);
+      const isLive = match.status.includes('LIVE');
+      let displayStatus = isLive ? getLiveDisplayStatus(match) : (match.start_time && match.start_time <= now ? 'ИДЕТ' : match.status);
+      if (!isLive && match.start_time > now) {
+          const d = new Date(match.start_time * 1000);
+          displayStatus = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+      
+      const hLogo = match.homeLogo ? `<img src="${match.homeLogo}" class="mm-team-logo">` : `<div class="mm-team-logo" style="display:flex;align-items:center;justify-content:center;background:var(--accent);">${match.home.substring(0,2)}</div>`;
+      const aLogo = match.awayLogo ? `<img src="${match.awayLogo}" class="mm-team-logo">` : `<div class="mm-team-logo" style="display:flex;align-items:center;justify-content:center;background:var(--accent);">${match.away.substring(0,2)}</div>`;
+
+      headerContainer.innerHTML = `
+        <div class="mm-league">${match.league}</div>
+        <div class="mm-teams-row">
+            <div class="mm-team">
+                ${hLogo}
+                <div class="mm-team-name">${match.home}</div>
+            </div>
+            <div class="mm-center-box">
+                <div class="mm-score">${match.score || 'VS'}</div>
+                <div class="mm-time">${isLive ? '<span class="live-dot" style="display:inline-block;margin-right:4px;"></span>' : ''}${displayStatus}</div>
+            </div>
+            <div class="mm-team">
+                ${aLogo}
+                <div class="mm-team-name">${match.away}</div>
+            </div>
+        </div>
+      `;
+
       container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>';
       filtersContainer.innerHTML = '';
       
@@ -669,6 +727,7 @@
         }
 
         currentMarketsCache = markets;
+        currentActiveFilter = 'all';
         buildFiltersAndRender(markets);
       } catch (err) {
         console.error("Ошибка загрузки рынков:", err);
@@ -679,7 +738,6 @@
     function buildFiltersAndRender(markets) {
       const filtersContainer = document.getElementById('market-filters-container');
       
-      // Определяем категории на основе присутствующих групп
       const availableCategories = new Set(['all']);
       for (const g of Object.keys(markets)) {
           const low = g.toLowerCase();
@@ -709,10 +767,10 @@
 
     function setMarketFilter(cat) {
       currentActiveFilter = cat;
-      document.querySelectorAll('.filter-pill').forEach(el => el.classList.remove('active'));
-      // Найдём нажатую кнопку (по тексту, т.к. onclick передаёт только cat)
       const filterNames = { 'all': 'Все', 'outcome': 'Исход', 'totals': 'Тоталы', 'handicaps': 'Форы', 'btts': 'Обе забьют' };
+      
       document.querySelectorAll('.filter-pill').forEach(el => {
+          el.classList.remove('active');
           if (el.innerText === filterNames[cat]) el.classList.add('active');
       });
       
@@ -734,7 +792,6 @@
 
       if (!currentMatchDetails) return;
       const match = currentMatchDetails;
-
       let hasAny = false;
 
       for (const [groupName, outcomes] of Object.entries(currentMarketsCache)) {
@@ -782,10 +839,8 @@
       const existingIndex = betSlip.findIndex(b => b.matchId === matchId);
       if (existingIndex !== -1) {
         if (betSlip[existingIndex].outcomeKey === outcomeKey) {
-            // Если кликнули на тот же исход - убираем
             betSlip.splice(existingIndex, 1);
         } else {
-            // Если кликнули на другой исход в том же матче - заменяем
             betSlip[existingIndex] = { matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName };
         }
       } else {
@@ -796,7 +851,7 @@
       renderMatches();
       
       if (document.getElementById('match-details-modal').classList.contains('open')) {
-        renderFilteredMarkets(); // Обновляем визуал кнопок
+        renderFilteredMarkets();
       }
     }
 
@@ -922,7 +977,6 @@
           loadUserBets(); 
           closeBetSlipModal();
           
-          // Показываем красивый чек
           showReceiptModal(stake, totalOdds, stake * totalOdds, betType);
           
           betSlip = []; 
@@ -941,9 +995,7 @@
     }
 
     function showErrorAlert(msg) {
-        // Просто используем result-modal для ошибки (упрощённо)
         const modal = document.getElementById('result-modal');
-        // Меняем контент на ошибку
         modal.querySelector('.receipt-icon').style.color = 'var(--red)';
         modal.querySelector('.receipt-icon').style.background = 'rgba(239, 68, 68, 0.2)';
         modal.querySelector('.receipt-icon').innerText = '✕';
@@ -955,7 +1007,6 @@
         modal.querySelector('.receipt-stats').style.display = 'none';
         modal.classList.add('open');
         
-        // Восстанавливаем через 3 сек
         setTimeout(() => {
             modal.querySelector('.receipt-icon').style.color = 'var(--green)';
             modal.querySelector('.receipt-icon').style.background = 'rgba(16, 185, 129, 0.2)';
