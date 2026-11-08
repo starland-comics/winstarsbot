@@ -35,7 +35,7 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
-# === ПОЛНЫЙ МАППИНГ (60 ID, включая 1569/1572) ===
+# === ПОЛНЫЙ МАППИНГ (60 ID) ===
 FONBET_FACTORS = {
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
@@ -168,7 +168,7 @@ async def firebase_delete(path: str):
     except: pass
 
 async def _save_matches_batched(matches_dict):
-    """Сохраняет matches по частям (PATCH по 20), чтобы не превысить лимит 1 МБ."""
+    """Сохраняет matches по 20 штук через PATCH, чтобы не превысить лимит 1 МБ."""
     if not matches_dict:
         return
     
@@ -180,7 +180,6 @@ async def _save_matches_batched(matches_dict):
             try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
             except: pass
     
-    # Пишем по 20
     items = list(matches_dict.items())
     for i in range(0, len(items), 20):
         chunk = dict(items[i:i+20])
@@ -271,10 +270,8 @@ def _parse_markets(factors_list):
                 continue
             
             if group == "Тотал" or group.startswith("Инд."):
-                # Для тоталов — всегда abs
                 name = f"{base} {abs(p_val):g}"
             else:
-                # Для фор — со знаком
                 if p_val == int(p_val): p_str = str(int(p_val))
                 else: p_str = f"{p_val:g}"
                 if p_val > 0: p_str = f"+{p_str}"
@@ -431,6 +428,7 @@ async def fonbet_scraper_worker():
             live_cnt = 0
             skipped_stuck = 0
             skipped_started_no_data = 0
+            total_markets_count = 0
             
             for ev in events_by_id.values():
                 if ev.get("rootKind") != 1 or ev.get("kind") != 1: continue
@@ -475,6 +473,9 @@ async def fonbet_scraper_worker():
                 markets_data = _parse_markets(factors_for_ev)
                 if is_live and s1 is not None and s2 is not None:
                     markets_data = _filter_decided(markets_data, s1, s2)
+                
+                for grp in markets_data.values():
+                    total_markets_count += len(grp)
                 
                 p1 = px = p2 = None
                 if "Исход" in markets_data:
@@ -521,7 +522,6 @@ async def fonbet_scraper_worker():
             prev_event_ids = current_ids
             
             if matches_dict:
-                # Размер JSON для контроля
                 try:
                     approx_size = len(json.dumps(matches_dict, ensure_ascii=False))
                     size_mb = approx_size / 1024 / 1024
@@ -532,7 +532,7 @@ async def fonbet_scraper_worker():
                 extra = ""
                 if skipped_stuck or skipped_started_no_data:
                     extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data})"
-                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}){extra} | {size_mb:.1f}MB за {time.time()-t0:.1f}s")
+                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}) | {total_markets_count} рынков | {size_mb:.1f}MB{extra} за {time.time()-t0:.1f}s")
         
         except Exception as e:
             import traceback
@@ -645,11 +645,90 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print(f"   Версия: Fonbet scopeMarket=1600, 60 f-IDs, батчевое сохранение")
+    print("   ВЕРСИЯ: Fonbet scopeMarket=1600, 60 f-IDs, batched save, debug endpoint")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
     print("✅ Все фоновые воркеры запущены")
+
+# ============ DEBUG ENDPOINT ============
+@app.get("/api/debug/fonbet/{ev_id}")
+async def debug_fonbet(ev_id: str):
+    result = {"ev_id": ev_id, "endpoints": {}}
+    
+    try:
+        r = cffi_requests.get(
+            f"{FONBET_BASE}/events/listBase?scopeMarket=1600&lang=ru",
+            headers=FONBET_HEADERS, impersonate="chrome120", timeout=30
+        )
+        if r.status_code != 200:
+            result["endpoints"]["listBase"] = {"status": r.status_code}
+            return result
+        
+        data = r.json()
+        events = data.get("events", [])
+        custom = data.get("customFactors", [])
+        sports_list = data.get("sports", [])
+        
+        target_ev = None
+        for ev in events:
+            if str(ev.get("id")) == ev_id:
+                target_ev = ev
+                break
+        
+        factors_for_ev = []
+        for cf in custom:
+            if str(cf.get("e")) == ev_id:
+                factors_for_ev.extend(cf.get("factors", []))
+        
+        markets = _parse_markets(factors_for_ev)
+        
+        # Карта турниров для лиги
+        tournament_by_id = {}
+        for sp in sports_list:
+            if sp.get('kind') == 'sport': continue
+            sid = sp.get('id'); nm = sp.get('name', '')
+            if sid and nm: tournament_by_id[sid] = nm
+        
+        league_name = ""
+        if target_ev:
+            sid = target_ev.get("sportId")
+            league_name = tournament_by_id.get(sid, "")
+        
+        result["endpoints"]["listBase"] = {
+            "status": r.status_code,
+            "event_found": target_ev is not None,
+            "event_data": target_ev,
+            "league_name": league_name,
+            "factors_count": len(factors_for_ev),
+            "factors_sample": factors_for_ev[:15],
+            "markets_groups_summary": {g: len(outs) for g, outs in markets.items()},
+            "markets_full": markets,
+            "is_valid_league": _is_allowed_league(league_name),
+        }
+    except Exception as e:
+        result["endpoints"]["listBase"] = {"error": str(e)[:300]}
+    
+    # Что лежит в Firebase
+    try:
+        fb_match = await firebase_get(f"matches/fonbet_{ev_id}")
+        if isinstance(fb_match, dict):
+            fb_markets = fb_match.get("markets", {})
+            result["firebase"] = {
+                "exists": True,
+                "league": fb_match.get("league"),
+                "status": fb_match.get("status"),
+                "score": fb_match.get("score"),
+                "markets_groups_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {},
+                "odds": fb_match.get("odds"),
+            }
+        else:
+            result["firebase"] = {"exists": False}
+    except Exception as e:
+        result["firebase"] = {"error": str(e)[:200]}
+    
+    return result
+# ============ END DEBUG ============
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
