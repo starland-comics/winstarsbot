@@ -57,6 +57,9 @@
     .mm-center-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 60px; }
     .mm-score { font-size: 1.8rem; font-weight: 800; color: var(--accent); line-height: 1; letter-spacing: 1px; }
     .mm-time { font-size: 0.75rem; color: var(--red); font-weight: 700; margin-top: 4px; background: rgba(239, 68, 68, 0.1); padding: 2px 8px; border-radius: 8px; }
+    .mm-breakdown { margin-top: 14px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .mm-breakdown-item { background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 10px; font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .mm-breakdown-item b { color: var(--text-main); font-weight: 700; }
     .market-filters { display: flex; overflow-x: auto; overflow-y: hidden; gap: 8px; padding: 4px 20px 12px 20px; margin: 0 -20px 16px -20px; border-bottom: 1px solid rgba(255,255,255,0.05); scrollbar-width: none; -webkit-overflow-scrolling: touch; justify-content: flex-start; scroll-padding: 0 20px; flex-shrink: 0; }
     .market-filters::-webkit-scrollbar { display: none; }
     .filter-pill { flex-shrink: 0; padding: 10px 18px; background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 20px; font-size: 0.85rem; white-space: nowrap; color: var(--text-muted); cursor: pointer; transition: all 0.2s ease; font-weight: 700; }
@@ -159,6 +162,21 @@
     .history-title { font-weight: 700; font-size: 0.9rem; }
     .history-odds { font-weight: 800; color: var(--accent); font-size: 1.1rem; }
     .tx-label-row { display: flex; align-items: center; gap: 6px; }
+    .leg-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; margin-top: 6px; border-left: 3px solid var(--text-muted); background: rgba(255,255,255,0.02); }
+    .leg-row.won { border-left-color: var(--green); background: rgba(16, 185, 129, 0.08); }
+    .leg-row.lost { border-left-color: var(--red); background: rgba(239, 68, 68, 0.08); }
+    .leg-row.void { border-left-color: var(--orange); background: rgba(245, 158, 11, 0.08); }
+    .leg-row.active { border-left-color: var(--accent); background: rgba(157, 78, 221, 0.05); }
+    .leg-main { flex: 1; min-width: 0; }
+    .leg-match { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .leg-outcome { font-size: 0.82rem; font-weight: 600; margin-top: 2px; }
+    .leg-score { font-size: 0.7rem; color: var(--text-muted); }
+    .leg-status { text-align: right; flex-shrink: 0; }
+    .leg-status-label { font-size: 0.72rem; font-weight: 700; }
+    .leg-status-coeff { font-size: 0.72rem; color: var(--text-muted); }
+    .leg-hint { font-size: 0.75rem; color: var(--red); margin-top: 8px; text-align: center; }
+    .bonus-active-block { background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05)); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .bonus-active-block .bonus-text { flex: 1; font-size: 0.85rem; color: var(--text-main); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -214,6 +232,10 @@
       </div>
       
       <div id="cashier-deposit">
+        <div id="pending-bonus-banner" class="bonus-active-block" style="display:none;">
+          <svg class="icon-sm" viewBox="0 0 24 24" style="color:var(--green);"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <div class="bonus-text" id="pending-bonus-text"></div>
+        </div>
         <div style="font-size:0.9rem; font-weight:800; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px;">Пополнение звёзд (Telegram Stars)</div>
         <div class="input-group">
           <svg class="icon-sm" viewBox="0 0 24 24" style="color:var(--accent);"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -261,7 +283,7 @@
         <div class="user-info">
           <h3 id="profile-name">Игрок</h3>
           <p id="profile-username">@username</p>
-          <div id="profile-frozen" style="font-size: 0.75rem; color: var(--orange); margin-top: 4px; display: none; align-items: center; gap: 4px;"></div>
+          <div id="profile-frozen" style="font-size: 0.75rem; color: var(--orange); margin-top: 4px; display: none;"></div>
         </div>
       </div>
       <div class="stats-grid">
@@ -392,21 +414,38 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="terms-modal" style="z-index: 1001;" onclick="event.stopPropagation()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div style="text-align: center; padding: 20px;">
+        <div style="color: var(--accent); margin-bottom: 16px; display: inline-block;">
+          <svg class="icon-lg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div style="font-size: 1.15rem; font-weight: 800; margin-bottom: 12px;">Необходимо принять условия</div>
+        <div style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.85rem; line-height: 1.5;">
+          Для продолжения примите пользовательское соглашение в боте <b>@WinStarsPlaybot</b>.
+        </div>
+        <button class="btn-submit" onclick="openBot()">Перейти в бот</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_BASE_URL = 'https://winstarsbot.onrender.com';
     const CHANNEL_URL = 'https://t.me/winstarschannel';
+    const BOT_URL = 'https://t.me/WinStarsPlaybot';
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
 
-    // Иконки SVG (для использования в JS-рендере)
     const SVG_ICONS = {
       arrowUp: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
       arrowDown: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>',
       hourglass: '<svg class="icon-lg" viewBox="0 0 24 24" style="color:var(--accent);"><path d="M6 2h12M6 22h12M6 2v6a6 6 0 0 0 12 0V2M6 22v-6a6 6 0 0 1 12 0v6"/></svg>',
+      hourglassSm: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M6 2h12M6 22h12M6 2v6a6 6 0 0 0 12 0V2M6 22v-6a6 6 0 0 1 12 0v6"/></svg>',
       lock: '<svg class="icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
       check: '<svg class="icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>',
       warning: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
       copy: '<svg class="icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+      gift: '<svg class="icon-sm" viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
       x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
       checkBig: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><polyline points="20 6 9 17 4 12"/></svg>',
       infoBig: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
@@ -432,19 +471,9 @@
     function setReceiptIcon(type) {
       const el = document.getElementById('receipt-icon-el');
       if (!el) return;
-      if (type === 'success') {
-        el.innerHTML = SVG_ICONS.checkBig;
-        el.style.color = 'var(--green)';
-        el.style.background = 'rgba(16, 185, 129, 0.2)';
-      } else if (type === 'error') {
-        el.innerHTML = SVG_ICONS.x;
-        el.style.color = 'var(--red)';
-        el.style.background = 'rgba(239, 68, 68, 0.2)';
-      } else if (type === 'info') {
-        el.innerHTML = SVG_ICONS.infoBig;
-        el.style.color = 'var(--accent)';
-        el.style.background = 'rgba(157, 78, 221, 0.2)';
-      }
+      if (type === 'success') { el.innerHTML = SVG_ICONS.checkBig; el.style.color = 'var(--green)'; el.style.background = 'rgba(16, 185, 129, 0.2)'; }
+      else if (type === 'error') { el.innerHTML = SVG_ICONS.x; el.style.color = 'var(--red)'; el.style.background = 'rgba(239, 68, 68, 0.2)'; }
+      else { el.innerHTML = SVG_ICONS.infoBig; el.style.color = 'var(--accent)'; el.style.background = 'rgba(157, 78, 221, 0.2)'; }
     }
 
     const LEAGUE_PRIORITY = {
@@ -474,6 +503,10 @@
           document.getElementById('subscription-modal').classList.add('open');
           return;
         }
+        if (currentUser.agreed_terms === false) {
+          document.getElementById('terms-modal').classList.add('open');
+          return;
+        }
         updateUI();
         loadUserBets();
         initWebSocket();
@@ -492,11 +525,12 @@
     }
 
     function openChannel() {
-      if (tg && tg.openTelegramLink) {
-        tg.openTelegramLink(CHANNEL_URL);
-      } else {
-        window.open(CHANNEL_URL, '_blank');
-      }
+      if (tg && tg.openTelegramLink) tg.openTelegramLink(CHANNEL_URL);
+      else window.open(CHANNEL_URL, '_blank');
+    }
+    function openBot() {
+      if (tg && tg.openTelegramLink) tg.openTelegramLink(BOT_URL);
+      else window.open(BOT_URL, '_blank');
     }
 
     async function checkSubscriptionAndRetry() {
@@ -508,9 +542,9 @@
           document.getElementById('subscription-modal').classList.remove('open');
           await initApp();
         } else {
-          alert('Подписка не обнаружена. Убедитесь что вы подписались на канал и попробуйте снова.');
+          alert('Подписка не обнаружена.');
         }
-      } catch(e) { alert('Ошибка проверки. Попробуйте позже.'); }
+      } catch(e) { alert('Ошибка проверки.'); }
     }
 
     async function loadMatches() {
@@ -670,6 +704,17 @@
       }
       const hLogo = match.homeLogo ? `<img src="${match.homeLogo}" class="mm-team-logo">` : `<div class="mm-team-logo" style="display:flex;align-items:center;justify-content:center;background:var(--accent);">${match.home.substring(0,2)}</div>`;
       const aLogo = match.awayLogo ? `<img src="${match.awayLogo}" class="mm-team-logo">` : `<div class="mm-team-logo" style="display:flex;align-items:center;justify-content:center;background:var(--accent);">${match.away.substring(0,2)}</div>`;
+      
+      let breakdownHtml = '';
+      if (match.score_breakdown && match.score_breakdown.length > 0) {
+        const periods = { first: '1-й тайм', second: '2-й тайм' };
+        const items = match.score_breakdown.map(b => {
+          const label = periods[b.period] || b.period;
+          return `<div class="mm-breakdown-item"><b>${label}</b> ${b.s1}:${b.s2}</div>`;
+        }).join('');
+        if (items) breakdownHtml = `<div class="mm-breakdown">${items}</div>`;
+      }
+      
       headerContainer.innerHTML = `
         <div class="mm-league">${match.league}</div>
         <div class="mm-teams-row">
@@ -680,6 +725,7 @@
             </div>
             <div class="mm-team">${aLogo}<div class="mm-team-name">${match.away}</div></div>
         </div>
+        ${breakdownHtml}
       `;
       container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>';
       filtersContainer.innerHTML = '';
@@ -699,7 +745,6 @@
         currentActiveFilter = 'all';
         buildFiltersAndRender(markets);
       } catch (err) {
-        console.error("Ошибка загрузки рынков:", err);
         container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Ошибка загрузки</div>';
       }
     }
@@ -752,8 +797,7 @@
       for (const [groupName, outcomes] of Object.entries(currentMarketsCache)) {
         if (!outcomes || outcomes.length === 0) continue;
         if (currentActiveFilter !== 'all') {
-            const cat = getMarketCategory(groupName);
-            if (cat !== currentActiveFilter) continue;
+            if (getMarketCategory(groupName) !== currentActiveFilter) continue;
         }
         hasAny = true;
         let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
@@ -771,7 +815,7 @@
         container.innerHTML += groupHtml;
       }
       if (!hasAny) {
-          container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Нет доступных ставок в этой категории</div>';
+          container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Нет ставок в категории</div>';
       }
     }
 
@@ -785,20 +829,15 @@
       if (coeff === 0) return;
       const existingIndex = betSlip.findIndex(b => b.matchId === matchId && b.groupName === groupName);
       if (existingIndex !== -1) {
-        if (betSlip[existingIndex].outcomeKey === outcomeKey) {
-            betSlip.splice(existingIndex, 1);
-        } else {
-            betSlip[existingIndex] = { matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName };
-        }
+        if (betSlip[existingIndex].outcomeKey === outcomeKey) betSlip.splice(existingIndex, 1);
+        else betSlip[existingIndex] = { matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName };
       } else {
         betSlip = betSlip.filter(b => b.matchId !== matchId);
         betSlip.push({ matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName });
       }
       updateBetSlipUI();
       renderMatches();
-      if (document.getElementById('match-details-modal').classList.contains('open')) {
-        renderFilteredMarkets();
-      }
+      if (document.getElementById('match-details-modal').classList.contains('open')) renderFilteredMarkets();
     }
 
     function updateBetSlipUI() {
@@ -831,9 +870,8 @@
       document.getElementById('slip-type-title').innerText = betSlip.length === 1 ? 'Одинар' : `Экспресс · ${betSlip.length} матчей`;
       document.getElementById('slip-stake').value = '';
       updatePotentialWin();
-      const confirmBtn = document.getElementById('btn-confirm-bet');
-      confirmBtn.disabled = false;
-      confirmBtn.innerText = 'Подтвердить прогноз';
+      const btn = document.getElementById('btn-confirm-bet');
+      btn.disabled = false; btn.innerText = 'Подтвердить прогноз';
       document.getElementById('bet-slip-modal').classList.add('open');
     }
 
@@ -860,18 +898,16 @@
     }
 
     async function confirmBet() {
-      const confirmBtn = document.getElementById('btn-confirm-bet');
-      if (confirmBtn.disabled) return;
-      const stakeInput = document.getElementById('slip-stake').value;
-      const stake = parseFloat(stakeInput);
+      const btn = document.getElementById('btn-confirm-bet');
+      if (btn.disabled) return;
+      const stake = parseFloat(document.getElementById('slip-stake').value);
       if (isNaN(stake) || stake < 10) return showErrorAlert('Минимальная ставка — 10 звезд.');
       if (!currentUser) return;
-      confirmBtn.disabled = true;
-      confirmBtn.innerText = 'Обработка...';
+      btn.disabled = true; btn.innerText = 'Обработка...';
       const betType = betSlip.length === 1 ? 'single' : 'express';
       let totalOdds = 1;
       betSlip.forEach(b => totalOdds *= b.coeff);
-      const requestPayload = { 
+      const payload = { 
         user_id: currentUser.user_id, 
         bets: betSlip.map(b => ({
           match_id: b.matchId, match_title: b.matchTitle,
@@ -883,7 +919,7 @@
       try {
         const res = await fetch(`${API_BASE_URL}/api/bets/place`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestPayload)
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (res.ok) { 
@@ -894,11 +930,11 @@
           betSlip = []; updateBetSlipUI(); renderMatches();
         } else { 
           showErrorAlert(data.detail || "Не удалось сделать ставку");
-          confirmBtn.disabled = false; confirmBtn.innerText = 'Подтвердить прогноз';
+          btn.disabled = false; btn.innerText = 'Подтвердить прогноз';
         }
       } catch (err) { 
         showErrorAlert('Ошибка соединения');
-        confirmBtn.disabled = false; confirmBtn.innerText = 'Подтвердить прогноз';
+        btn.disabled = false; btn.innerText = 'Подтвердить прогноз';
       }
     }
 
@@ -958,12 +994,23 @@
       if (tabId === 'cashier-history') loadTransactions();
     }
 
+    function updatePendingBonusBanner() {
+      const banner = document.getElementById('pending-bonus-banner');
+      const text = document.getElementById('pending-bonus-text');
+      if (!currentUser || !currentUser.pending_bonus) { banner.style.display = 'none'; return; }
+      const pb = currentUser.pending_bonus;
+      banner.style.display = 'flex';
+      const minDep = pb.min_deposit ? ` (мин. ${pb.min_deposit}★)` : '';
+      text.innerHTML = `Активный бонус: <b>+${pb.percent}%</b> к следующему пополнению${minDep}`;
+    }
+
     async function loadWithdrawStatus() {
       if (!currentUser) return;
       try {
         const res = await fetch(`${API_BASE_URL}/api/withdraw/status?user_id=${currentUser.user_id}`);
         const data = await res.json();
         renderWithdraw(data);
+        updatePendingBonusBanner();
       } catch(e) { console.error(e); }
     }
 
@@ -995,7 +1042,7 @@
           </div>
           <div style="font-size: 0.75rem; color: var(--orange); margin-top: 10px; line-height: 1.4; display: flex; align-items: flex-start; gap: 6px;">
             <span style="flex-shrink: 0; padding-top: 1px;">${SVG_ICONS.warning}</span>
-            <span>Рефералы обязаны подписаться на <a href="https://t.me/winstarschannel" style="color: var(--accent);">канал</a>. Иначе они не засчитываются.</span>
+            <span>Рефералы обязаны подписаться на <a href="https://t.me/winstarschannel" style="color: var(--accent);">канал</a>. Иначе не засчитываются.</span>
           </div>
         </div>
         <div style="background: var(--bg-card); border-radius: 16px; padding: 16px; border: 1px solid var(--border); margin-bottom: 16px;">
@@ -1026,7 +1073,7 @@
       const txt = document.getElementById('ref-link').textContent;
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(txt).then(() => alert('Ссылка скопирована')).catch(() => fallbackCopy(txt));
-      } else { fallbackCopy(txt); }
+      } else fallbackCopy(txt);
     }
     function fallbackCopy(txt) {
       const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta);
@@ -1042,7 +1089,7 @@
         preview.innerHTML = `С учётом комиссии (5%) зачислится <b style="color: var(--green);">${after} ★</b>`;
       } else if (val > 0) {
         preview.innerHTML = `<span style="color: var(--red);">Минимум 1000 ★</span>`;
-      } else { preview.innerHTML = ''; }
+      } else preview.innerHTML = '';
     }
 
     async function submitWithdrawRequest() {
@@ -1108,6 +1155,10 @@
           let iconSvg, label, sign, color, statusText = '', reason = '', statusColor = '', iconColor = '';
           if (tx.type === 'deposit') {
             iconSvg = SVG_ICONS.arrowDown; label = 'Пополнение звёзд'; sign = '+'; color = 'var(--green)'; iconColor = 'var(--green)';
+          } else if (tx.type === 'bonus') {
+            iconSvg = SVG_ICONS.gift; label = tx.label || 'Бонус'; sign = '+'; color = 'var(--green)'; iconColor = 'var(--green)';
+          } else if (tx.type === 'promo') {
+            iconSvg = SVG_ICONS.gift; label = tx.label || 'Промокод'; sign = '+'; color = 'var(--green)'; iconColor = 'var(--green)';
           } else {
             iconSvg = SVG_ICONS.arrowUp; label = 'Вывод звёзд'; sign = '−'; color = 'var(--red)'; iconColor = 'var(--red)';
             if (tx.status === 'pending') { statusText = 'Ожидание'; statusColor = 'var(--orange)'; }
@@ -1145,10 +1196,12 @@
         const data = await res.json();
         if (res.ok && data.invoice_link) {
           if (tg && tg.openInvoice) {
-            tg.openInvoice(data.invoice_link, async (status) => { if (status === "paid") { alert("Оплата успешна!"); setTimeout(() => location.reload(), 2000); } });
-          } else { window.open(data.invoice_link, '_blank'); }
-        } else { alert(data.detail || "Ошибка инвойса"); }
-      } catch (e) { alert("Ошибка соединения с платежным шлюзом"); }
+            tg.openInvoice(data.invoice_link, async (status) => {
+              if (status === "paid") { alert("Оплата успешна!"); setTimeout(() => location.reload(), 2000); }
+            });
+          } else window.open(data.invoice_link, '_blank');
+        } else alert(data.detail || "Ошибка инвойса");
+      } catch (e) { alert("Ошибка соединения"); }
     }
 
     function initWebSocket() {
@@ -1184,7 +1237,18 @@
           body: JSON.stringify({ user_id: currentUser.user_id, code: code })
         });
         const data = await res.json();
-        if (res.ok) { currentUser.balance = data.new_balance; updateUI(); alert(data.message); document.getElementById(inputId).value = ''; } else { alert(data.detail || "Ошибка"); }
+        if (res.ok) { 
+          if (data.type === 'fixed_stars') {
+            currentUser.balance = data.new_balance; 
+            updateUI(); 
+            alert(data.message);
+          } else {
+            currentUser.pending_bonus = { percent: data.percent, min_deposit: data.min_deposit };
+            updatePendingBonusBanner();
+            alert(data.message);
+          }
+          document.getElementById(inputId).value = ''; 
+        } else alert(data.detail || "Ошибка");
       } catch (err) { alert("Ошибка соединения"); }
     }
 
@@ -1203,11 +1267,42 @@
         data.bets.forEach(bet => {
           const isActive = bet.status === 'active';
           let eventsHtml = '';
-          if (bet.events && Array.isArray(bet.events)) {
+          
+          // Приоритет: leg_results для детализации
+          if (!isActive && bet.leg_results && Array.isArray(bet.leg_results) && bet.leg_results.length > 0) {
+            bet.leg_results.forEach(leg => {
+              let rowClass, statusLabel, statusColor;
+              if (leg.status === 'won') { rowClass = 'won'; statusLabel = 'Выиграл'; statusColor = 'var(--green)'; }
+              else if (leg.status === 'lost') { rowClass = 'lost'; statusLabel = 'Проиграл'; statusColor = 'var(--red)'; }
+              else if (leg.status === 'void') { rowClass = 'void'; statusLabel = 'Возврат'; statusColor = 'var(--orange)'; }
+              else { rowClass = 'active'; statusLabel = 'Не рассчитан'; statusColor = 'var(--text-muted)'; }
+              const scoreStr = (leg.score1 !== undefined && leg.score2 !== undefined && leg.score1 !== null && leg.score2 !== null) 
+                                ? `${leg.score1}:${leg.score2}` : '—';
+              eventsHtml += `
+                <div class="leg-row ${rowClass}">
+                  <div class="leg-main">
+                    <div class="leg-match">${leg.match_title || ''}</div>
+                    <div class="leg-outcome">${leg.outcome || ''} <span style="color:var(--text-muted); font-weight:400; font-size:0.75rem;">(${leg.group_name || ''})</span></div>
+                    <div class="leg-score">Счёт: ${scoreStr}</div>
+                  </div>
+                  <div class="leg-status">
+                    <div class="leg-status-label" style="color:${statusColor};">${statusLabel}</div>
+                    <div class="leg-status-coeff">× ${formatStars(leg.coefficient)}</div>
+                  </div>
+                </div>
+              `;
+            });
+            if (bet.status === 'lost') {
+              const lostCount = bet.leg_results.filter(l => l.status === 'lost').length;
+              if (lostCount === 1) eventsHtml += `<div class="leg-hint">1 матч заруинил экспресс</div>`;
+              else if (lostCount > 1) eventsHtml += `<div class="leg-hint">${lostCount} матчей проиграли</div>`;
+            }
+          } else if (bet.events && Array.isArray(bet.events)) {
             bet.events.forEach(e => {
               eventsHtml += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${e.match_title} — ${e.outcome} @ ${formatStars(e.coefficient)}</div>`;
             });
           }
+          
           const totalCoeff = bet.effective_coefficient || bet.total_coefficient || 1;
           const typeText = bet.type === 'express' ? 'Экспресс' : 'Одинар';
           const statusColor = bet.status === 'won' ? 'var(--green)' : bet.status === 'lost' ? 'var(--red)' : bet.status === 'void' ? 'var(--orange)' : 'var(--accent)';
@@ -1219,12 +1314,12 @@
                 <span style="color: ${statusColor}; font-weight: 800;">${statusText}</span>
               </div>
               ${eventsHtml}
-              <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);">
                 <div class="history-odds">${formatStars(totalCoeff)}</div>
                 <div style="font-weight: 800;">${formatStars(bet.amount)} ★</div>
               </div>
             </div>`;
-          if (isActive) { container.innerHTML += html; } else { historyContainer.innerHTML += html; }
+          if (isActive) container.innerHTML += html; else historyContainer.innerHTML += html;
         });
         if (container.innerHTML === '') container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Нет активных позиций</div>';
         if (historyContainer.innerHTML === '') historyContainer.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">История пуста</div>';
@@ -1239,10 +1334,10 @@
       const frozen = currentUser.frozen_balance || 0;
       const fEl = document.getElementById('profile-frozen');
       if (frozen > 0) { 
-        fEl.innerHTML = `<span style="color: var(--orange); display: inline-flex; align-items: center; gap: 4px;">${SVG_ICONS.hourglass.replace('icon-lg','icon-sm')} На выводе: ${formatStars(frozen)} ★</span>`; 
+        fEl.innerHTML = `<span style="color: var(--orange); display: inline-flex; align-items: center; gap: 4px;">${SVG_ICONS.hourglassSm} На выводе: ${formatStars(frozen)} ★</span>`; 
         fEl.style.display = 'block'; 
       }
-      else { fEl.style.display = 'none'; }
+      else fEl.style.display = 'none';
       const wins = currentUser.wins || 0;
       const total = currentUser.total_bets || 0;
       document.getElementById("stat-winrate").innerText = `${Math.round((wins / (total || 1)) * 100)}%`;
@@ -1263,7 +1358,7 @@
       let curY = 50, pathD = "M 0,50";
       for (let i = 1; i <= steps; i++) {
           let x = stepX * i;
-          if (i === steps) { curY = targetY; }
+          if (i === steps) curY = targetY;
           else { let delta = (targetY - 50) / steps; let noise = (Math.random() - 0.5) * 20; curY = curY + delta + noise; }
           pathD += ` L ${x},${curY.toFixed(1)}`;
       }
@@ -1272,6 +1367,7 @@
       if (profit > 0) { profitEl.className = "chart-val positive"; chartPath.setAttribute("stroke", "#10b981"); chartFill.setAttribute("fill", "rgba(16, 185, 129, 0.2)"); }
       else if (profit < 0) { profitEl.className = "chart-val negative"; chartPath.setAttribute("stroke", "#ef4444"); chartFill.setAttribute("fill", "rgba(239, 68, 68, 0.2)"); }
       else { profitEl.className = "chart-val neutral"; chartPath.setAttribute("stroke", "#8a819b"); chartFill.setAttribute("fill", "rgba(138, 129, 155, 0.2)"); }
+      updatePendingBonusBanner();
     }
 
     function switchTab(el, tabId) {
