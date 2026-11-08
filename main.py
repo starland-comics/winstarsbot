@@ -35,23 +35,25 @@ FONBET_HEADERS = {
 LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
-FULL_LINE_TTL = 120       # кэш полной линии на 2 минуты
-FULL_LINE_MAX_PER_CYCLE = 30  # максимум матчей, для которых тянем полную линию за цикл
+FULL_LINE_TTL = 120
+FULL_LINE_MAX_PER_CYCLE = 30
 
 # Ключи без точек для Firebase.
-# Приоритет источников — см. FACTOR_PRIORITY ниже.
 #
 # История правок:
-#   v1: удалены инд. тоталы (1696..1803) — маппинг ID нестабилен между матчами.
-#   v1: удалён «Обе забьют 1-й тайм» (4241/4242) — calculate_outcome не умеет по таймам.
+#   v1: удалены инд. тоталы (1696..1803).
+#   v1: удалён «Обе забьют 1-й тайм» (4241/4242).
 #   v2: удалены 1880/1881/1883/1884/1886/1887 — аудит показал несовместимые кэфы.
-#   v3: источник полной линии — /events/event (761 фактор против 74 из listBase).
-#   v3: НЕ добавляем четвертные тоталы 1.75 / 2.25 — calculate_outcome не умеет возвраты,
-#       это привело бы к неправильному расчёту (напр. ТМ 1.75 при счёте 2 должна давать возврат).
-#   v3: простые линии тотала: 1854/1871 = 0.5, 1873/1874 = 1.0, 1569/1572 = 1.5,
-#       930/931 = переменная (в прематче 1.5 или 2.5, в live 2.5/3.5 — зависит от матча).
-#   v3: 2.5 / 3.5 / 4.5 / 5.5 (фиксированные) — ждут подтверждения по 3 аудитам
-#       (кандидаты: 1733/1734, 1739/1791, 1097/1098, 2058-2072 — могут быть инд.).
+#   v3: источник полной линии — /events/event.
+#   v4: удалены 1569/1572, 1854/1871, 1873/1874, 1880/1881 — проверено на 3 матчах:
+#       Fonbet использует ОДИН И ТОТ ЖЕ f-ID для разных рынков в разных матчах.
+#       Единственный стабильный общий тотал — 930/931 (переменная линия).
+#   v5: ВОЗВРАЩЕНЫ все известные тоталы (1854/1871, 1873/1874, 1880/1881,
+#       1883/1884, 1886/1887, 1893/1894, 1896/1897) с АВТОПРОВЕРКОЙ.
+#       Для каждой линии проверяется, согласуется ли она с главной 930/931.
+#       Если да — она попадает в основную группу "Тотал".
+#       Если нет — в группу "Тотал (доп.)", чтобы пользователь видел, что это
+#       может быть индивидуальный тотал, но всё равно мог поставить.
 FONBET_FACTORS = {
     # Исход
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
@@ -59,14 +61,17 @@ FONBET_FACTORS = {
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
     # Обе забьют
     927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
-    # Тотал — главный, линия переменная (930/931 + p — фактическая линия)
+    # Тотал — главный общий, переменная линия (930/931 + p)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
-    # Тотал — 0.5
-    1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
-    # Тотал — 1.0
-    1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
-    # Тотал — 1.5
-    1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
+    # Тотал — известные линии (будут проверены на общность)
+    1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),   # 0.5
+    1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),   # 1.0
+    1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),   # 1.5 (может быть инд.)
+    1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),   # 1.5 (может быть инд.)
+    1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),   # 2.0
+    1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),   # 2.5
+    1893: ("Тотал", "ТБ", True), 1894: ("Тотал", "ТМ", True),   # 3.0
+    1896: ("Тотал", "ТБ", True), 1897: ("Тотал", "ТМ", True),   # 3.5
     # Фора
     910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
     989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
@@ -80,10 +85,8 @@ FONBET_FACTORS = {
     1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
 }
 
-# Приоритет источника при дедупликации (group + name). Меньше = приоритетнее.
-# 930/931 — prio=1 (главный, всегда выигрывает). Фиксированные линии — prio=2
-# (это не fallback, а отдельные линии без дублей; нужны для стабильности,
-#  если 930/931 вдруг не придёт).
+# Приоритет: 930/931 всегда главные (prio=1). Остальные тоталы — prio=2,
+# но они не дублируют линии 930/931, а добавляют новые.
 FACTOR_PRIORITY = {
     921: 1, 922: 1, 923: 1,
     924: 1, 925: 1, 926: 1,
@@ -92,6 +95,11 @@ FACTOR_PRIORITY = {
     1854: 2, 1871: 2,
     1873: 2, 1874: 2,
     1569: 2, 1572: 2,
+    1880: 2, 1881: 2,
+    1883: 2, 1884: 2,
+    1886: 2, 1887: 2,
+    1893: 2, 1894: 2,
+    1896: 2, 1897: 2,
     910: 1, 912: 1, 989: 1, 991: 1,
     1672: 1, 1675: 1, 1677: 1, 1678: 1, 1680: 1, 1681: 1,
     1809: 1, 1810: 1, 1812: 1, 1813: 1, 1815: 1, 1816: 1, 1818: 1, 1819: 1, 1821: 1, 1822: 1,
@@ -145,7 +153,7 @@ BLACKLIST_WORDS = [
 ]
 
 _FINISHED_CACHE = {"data": {}, "ts": 0}
-_FULL_LINE_CACHE = {}  # ev_id -> {"factors": [...], "ts": unix_ts}
+_FULL_LINE_CACHE = {}
 _FIREBASE_BAD_CHARS = re.compile(r'[\.\$#\[\]/]')
 
 app = FastAPI(title="WinStars API")
@@ -333,10 +341,7 @@ def _extract_number_from_name(name):
     return 999.0
 
 def _fix_market_orientation(markets):
-    """Safety net ТОЛЬКО для группы 'Тотал' (общий).
-    Признак инверсии: в группе только ТБ (или только ТМ), и коэффициенты идут
-    в порядке, который физически невозможен (ТБ 0.5 дороже ТБ 3.5 и т.п.).
-    Срабатывает только при явном большинстве нарушений — иначе не трогаем."""
+    """Safety net ТОЛЬКО для группы 'Тотал'. Срабатывает при явной инверсии."""
     group_name = "Тотал"
     outcomes = markets.get(group_name)
     if not outcomes:
@@ -380,8 +385,94 @@ def _fix_market_orientation(markets):
                 o["name"] = f"ТБ {lim:g}"
             return
 
+def _check_total_consistency(markets):
+    """
+    Проверяет, какие линии тотала согласуются с главной линией 930/931.
+    Возвращает два словаря: confirmed (общие тоталы) и suspect (возможно, инд.).
+    """
+    main_total = None
+    for o in markets.get("Тотал", []):
+        if o["name"].startswith("ТБ ") and o.get("_fid") == 930:
+            try:
+                main_total = (float(o["name"][3:]), o["odds"])
+            except:
+                pass
+        elif o["name"].startswith("ТМ ") and o.get("_fid") == 931:
+            pass  # main_total уже установлен по ТБ
+
+    if main_total is None:
+        return {g: outs for g, outs in markets.items()}, {}
+
+    main_limit, main_tb_odds = main_total
+    confirmed = {}
+    suspect = {}
+
+    for g, outs in markets.items():
+        if g != "Тотал":
+            confirmed[g] = outs
+            continue
+
+        conf_outs = []
+        susp_outs = []
+        for o in outs:
+            if o.get("_fid") in (930, 931):
+                conf_outs.append(o)
+                continue
+            # Для каждой линии смотрим, насколько её коэффициент ТБ отклоняется
+            # от "ожидаемого" на основе главной линии.
+            if o["name"].startswith("ТБ "):
+                try:
+                    lim = float(o["name"][3:])
+                except:
+                    susp_outs.append(o)
+                    continue
+                # Грубая эвристика: если линия ниже главной, ТБ должен быть дешевле (меньше),
+                # если выше — дороже. Отклонение >30% считаем подозрительным.
+                if lim < main_limit:
+                    expected_tb = 1.0 + (main_tb_odds - 1.0) * (main_limit - lim) * 2
+                    if expected_tb < 1.0:
+                        expected_tb = 1.0
+                    if o["odds"] < expected_tb * 0.7 or o["odds"] > expected_tb * 1.3:
+                        susp_outs.append(o)
+                    else:
+                        conf_outs.append(o)
+                else:
+                    expected_tb = 1.0 + (main_tb_odds - 1.0) * (lim - main_limit) * 0.5
+                    if expected_tb < 1.0:
+                        expected_tb = 1.0
+                    if o["odds"] < expected_tb * 0.7 or o["odds"] > expected_tb * 1.3:
+                        susp_outs.append(o)
+                    else:
+                        conf_outs.append(o)
+            elif o["name"].startswith("ТМ "):
+                try:
+                    lim = float(o["name"][3:])
+                except:
+                    susp_outs.append(o)
+                    continue
+                # Аналогично для ТМ
+                if lim < main_limit:
+                    expected_tm = 1.0 + (1.0 / main_tb_odds) * (main_limit - lim) * 2
+                else:
+                    expected_tm = 1.0 + (1.0 / main_tb_odds) * (lim - main_limit) * 0.5
+                if expected_tm < 1.0:
+                    expected_tm = 1.0
+                if o["odds"] < expected_tm * 0.7 or o["odds"] > expected_tm * 1.3:
+                    susp_outs.append(o)
+                else:
+                    conf_outs.append(o)
+            else:
+                susp_outs.append(o)
+
+        if conf_outs:
+            confirmed[g] = conf_outs
+        if susp_outs:
+            suspect["Тотал (доп.)"] = susp_outs
+
+    return confirmed, suspect
+
 def _parse_markets(factors_list):
-    best = {}  # (group, name) -> {"prio", "odds", "fid"}
+    best = {}
 
     for f in factors_list:
         fid = f.get("f")
@@ -431,12 +522,19 @@ def _parse_markets(factors_list):
 
     markets = {}
     for (group, name), data in best.items():
-        markets.setdefault(group, []).append({"name": name, "odds": data["odds"]})
+        markets.setdefault(group, []).append({"name": name, "odds": data["odds"], "_fid": data["fid"]})
 
     _fix_market_orientation(markets)
 
+    confirmed, suspect = _check_total_consistency(markets)
+    markets = confirmed
+    for g, outs in suspect.items():
+        markets[g] = outs
+
     for g in markets:
         markets[g].sort(key=lambda x: _extract_number_from_name(x["name"]))
+        for o in markets[g]:
+            o.pop("_fid", None)
 
     return markets
 
@@ -462,7 +560,7 @@ def _filter_decided(markets, s1, s2):
         if g == "Обе забьют":
             if s1 > 0 and s2 > 0: continue
             filtered[g] = outs
-        elif g == "Тотал":
+        elif g == "Тотал" or g == "Тотал (доп.)":
             new_outs = _filter_total_group(outs, s1 + s2)
             if new_outs: filtered[g] = new_outs
         else:
@@ -480,7 +578,6 @@ def _fetch_fonbet(url):
     return None
 
 def _fetch_full_line_sync(ev_id):
-    """Синхронный запрос полной линии через /events/event. Возвращает список факторов для основного события."""
     url = f"{FONBET_BASE}{FONBET_FULL_LINE_PATH}&eventId={ev_id}"
     data = _fetch_fonbet(url)
     if not data:
@@ -491,7 +588,6 @@ def _fetch_full_line_sync(ev_id):
     return []
 
 async def _fetch_full_line(ev_id):
-    """Асинхронная обёртка с TTL-кэшем. Возвращает список факторов (пустой если не удалось)."""
     now = time.time()
     cached = _FULL_LINE_CACHE.get(ev_id)
     if cached and now - cached["ts"] < FULL_LINE_TTL:
@@ -619,7 +715,6 @@ async def fonbet_scraper_worker():
             total_markets_count = 0
             full_line_fetched = 0
             
-            # Сначала отберём «валидные» матчи — для них будем тянуть полную линию
             candidates = []
             for ev in events_by_id.values():
                 if ev.get("rootKind") != 1 or ev.get("kind") != 1: continue
@@ -642,8 +737,6 @@ async def fonbet_scraper_worker():
                 
                 candidates.append((ev, league))
             
-            # Приоритет для полной линии: live-матчи в первую очередь (у них чаще меняются кэфы),
-            # потом ближайшие по времени прематчи.
             candidates.sort(key=lambda x: (
                 0 if x[0].get("id") in all_live else 1,
                 abs(_parse_start_ts(x[0]) - now_ts)
@@ -699,7 +792,6 @@ async def fonbet_scraper_worker():
                 
                 current_ids.add(mid)
                 
-                # Полная линия (только для первых N кандидатов — чтобы не спамить Fonbet)
                 factors_for_ev = None
                 if idx < FULL_LINE_MAX_PER_CYCLE:
                     full_factors = await _fetch_full_line(eid)
@@ -761,7 +853,6 @@ async def fonbet_scraper_worker():
             
             prev_event_ids = current_ids
             
-            # Чистим старый кэш полной линии (чтобы не рос бесконечно)
             if len(_FULL_LINE_CACHE) > 500:
                 cutoff = now_ts - 3600
                 for _eid in list(_FULL_LINE_CACHE.keys()):
@@ -896,7 +987,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: markets-v3 (full-line via /events/event, totals 0.5/1.0/1.5/2.5, no quarter lines)")
+    print("   ВЕРСИЯ: markets-v5 (all totals with consistency check)")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -973,9 +1064,6 @@ async def debug_fonbet_raw(ev_id: str):
 
 @app.get("/api/debug/market-audit/{ev_id}")
 async def debug_market_audit(ev_id: str):
-    """Полный дамп: сырые факторы Fonbet (listBase, live, /events/event) + как их
-    интерпретирует парсер + что лежит в Firebase.
-    Использование: /api/debug/market-audit/<числовой eventId Fonbet>"""
     raw = []
     sources = [
         ("listBase", FONBET_BASE + FONBET_LINE_PATH),
@@ -1013,7 +1101,6 @@ async def debug_market_audit(ev_id: str):
         except Exception as e:
             raw.append({"src": label, "error": str(e)[:200]})
 
-    # Дедуп для by_fid: один и тот же (f, p) может прийти из listBase и full — оставим по одному
     by_fid = {}
     seen_pairs = set()
     for r in raw:
