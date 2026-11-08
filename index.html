@@ -9,13 +9,29 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <style>
-    :root { --bg-dark: #09070f; --bg-card: #130f1e; --bg-card-hover: #1b162b; --border: rgba(157, 78, 221, 0.15); --accent: #9d4edd; --text-main: #f3f0f8; --text-muted: #8a819b; --green: #10b981; --red: #ef4444; --orange: #f59e0b; --nav-height: 64px; --header-height: 60px; --radius: 16px; }
+    :root { 
+      --bg-dark: #09070f; 
+      --bg-card: #130f1e; 
+      --bg-card-hover: #1b162b; 
+      --border: rgba(157, 78, 221, 0.15); 
+      --accent: #9d4edd; 
+      --text-main: #f3f0f8; 
+      --text-muted: #8a819b; 
+      --green: #10b981; 
+      --red: #ef4444; 
+      --orange: #f59e0b; 
+      --nav-height: 64px; 
+      --header-height: 60px; 
+      --radius: 16px; 
+    }
+    
     .team-logo-img { width: 42px; height: 42px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 4px; }
     .team-logo { width: 42px; height: 42px; background: linear-gradient(135deg, rgba(157, 78, 221, 0.6), rgba(123, 44, 191, 0.6)); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.1); }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-dark); color: var(--text-main); overflow: hidden; height: 100vh; width: 100vw; }
     .bg-noise { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.03; pointer-events: none; z-index: 999; }
     
+    /* Header */
     header { height: var(--header-height); background: rgba(19, 15, 30, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
     .brand { font-weight: 800; font-size: 1.1rem; letter-spacing: 0.5px; background: linear-gradient(135deg, #fff 30%, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .header-actions { display: flex; align-items: center; gap: 10px; }
@@ -23,6 +39,7 @@
     .avatar-btn { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--accent); overflow: hidden; cursor: pointer; }
     .avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
     
+    /* Main */
     main { position: absolute; top: var(--header-height); bottom: var(--nav-height); left: 0; right: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 80px; }
     .tab-content { display: none; opacity: 0; }
     .tab-content.active { display: block; opacity: 1; }
@@ -35,27 +52,59 @@
     .league-filter-btn { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border); padding: 0 16px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; color: var(--text-main); cursor: pointer; width: 45%; }
     .league-filter-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
     
+    /* Modals */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 500; display: none; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(5px); }
+    .modal-overlay.open { display: block; opacity: 1; }
+    .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 90vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
+    .modal-overlay.open .modal-content { bottom: 0; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: 800; font-size: 1.1rem; }
+    .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer; }
+
+    /* League List */
     .league-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 60vh; padding-bottom: 20px; }
     .league-item { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 0.9rem; font-weight: 600; color: var(--text-main); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
     .league-item:active { transform: scale(0.98); }
     .league-item.active { border-color: var(--accent); background: rgba(157, 78, 221, 0.15); }
     .league-top { background: var(--accent); color: #fff; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; font-weight: 800; letter-spacing: 0.5px; }
 
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 500; display: none; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(4px); }
-    .modal-overlay.open { display: block; opacity: 1; }
-    .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 90vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
-    .modal-overlay.open .modal-content { bottom: 0; }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: 800; font-size: 1.1rem; }
-    .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer; }
-    
-    .market-group { margin-bottom: 20px; }
-    .market-title { font-size: 0.9rem; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; text-transform: uppercase; }
-    .market-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .market-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: 0.2s; }
-    .market-btn.selected { border-color: var(--accent); background: rgba(157, 78, 221, 0.2); }
-    .market-btn-name { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
-    .market-btn-val { font-size: 0.95rem; font-weight: 800; color: #fff; }
+    /* Match Markets Filters */
+    .market-filters {
+        display: flex;
+        overflow-x: auto;
+        gap: 8px;
+        padding-bottom: 12px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+        scrollbar-width: none;
+    }
+    .market-filters::-webkit-scrollbar { display: none; }
+    .filter-pill {
+        padding: 8px 16px;
+        background: var(--bg-card-hover);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: 0.2s;
+        font-weight: 600;
+    }
+    .filter-pill.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+    }
 
+    .market-group { margin-bottom: 20px; }
+    .market-title { font-size: 0.9rem; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase; }
+    .market-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .market-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: 0.2s; }
+    .market-btn.selected { border-color: var(--accent); background: rgba(157, 78, 221, 0.2); }
+    .market-btn-name { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+    .market-btn-val { font-size: 1rem; font-weight: 800; color: #fff; }
+
+    /* Bet Slip Bar */
     .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(135deg, var(--accent), #7b2cbf); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
     .bet-slip-bar.active { display: flex; }
     .bet-slip-info { display: flex; flex-direction: column; }
@@ -63,6 +112,7 @@
     .bet-slip-odds { font-size: 1.1rem; font-weight: 800; }
     .bet-slip-continue { font-weight: 700; font-size: 0.95rem; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; }
 
+    /* Bet Slip Modal */
     .slip-items { flex: 1; overflow-y: auto; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
     .slip-item { background: var(--bg-card-hover); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
     .slip-item-info { display: flex; flex-direction: column; gap: 4px; }
@@ -73,13 +123,43 @@
     .slip-input-row .input-group { margin-bottom: 0; flex: 1; }
     .slip-potential { font-weight: 800; color: var(--green); margin-bottom: 16px; text-align: center; font-size: 1.1rem; }
 
-    #result-modal .modal-content { align-items: center; text-align: center; padding: 32px 20px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); }
-    .result-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-bottom: 16px; }
-    .result-icon.success { background: rgba(16, 185, 129, 0.2); color: var(--green); }
-    .result-icon.error { background: rgba(239, 68, 68, 0.2); color: var(--red); }
-    .result-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 8px; }
-    .result-desc { font-size: 0.95rem; color: var(--text-muted); margin-bottom: 24px; }
+    /* Result Receipt Modal */
+    #result-modal .modal-content { 
+        align-items: stretch; 
+        text-align: left; 
+        padding: 24px; 
+        border-radius: 24px; 
+        bottom: 50%; 
+        transform: translateY(50%); 
+        width: 90%; 
+        left: 5%; 
+        right: 5%; 
+        border: 1px solid var(--border); 
+    }
+    .receipt-header { text-align: center; margin-bottom: 20px; }
+    .receipt-icon {
+        width: 56px; height: 56px; 
+        background: rgba(16, 185, 129, 0.2); color: var(--green);
+        border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 1.8rem; margin-bottom: 12px;
+    }
+    .receipt-title { font-size: 1.2rem; font-weight: 800; color: var(--green); margin-bottom: 4px; }
+    .receipt-subtitle { font-size: 0.8rem; color: var(--text-muted); }
+    .receipt-brand-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .receipt-brand { font-weight: 800; font-size: 1.1rem; color: var(--text-main); }
+    .receipt-status-badge { background: rgba(16, 185, 129, 0.1); color: var(--green); padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
+    .receipt-info { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 16px; }
+    .receipt-events { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; }
+    .receipt-event-item { background: var(--bg-card-hover); border-radius: 12px; padding: 12px; border: 1px solid var(--border); }
+    .receipt-event-match { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+    .receipt-event-outcome { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.9rem; }
+    .receipt-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: var(--bg-card-hover); padding: 12px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px; }
+    .receipt-stat { display: flex; flex-direction: column; gap: 4px; }
+    .receipt-stat-label { font-size: 0.7rem; color: var(--text-muted); }
+    .receipt-stat-value { font-size: 1rem; font-weight: 800; }
 
+    /* Match Cards */
     .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; cursor: pointer; }
     .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
     .live-tag { color: var(--red); font-weight: 700; display: flex; align-items: center; gap: 4px; }
@@ -89,28 +169,27 @@
     .team { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
     .team-name { font-size: 0.85rem; font-weight: 600; }
     .score { font-size: 1.4rem; font-weight: 800; letter-spacing: 2px; color: var(--accent); }
-    
     .odds-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .odd-btn { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: 0.2s; }
     .odd-btn.selected { border-color: var(--accent); background: rgba(157, 78, 221, 0.2); }
     .odd-name { font-size: 0.7rem; color: var(--text-muted); }
     .odd-val { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
 
+    /* Tabs & Inputs */
     .pill-tabs { display: flex; background: var(--bg-card); padding: 4px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px; }
     .pill-tab { flex: 1; text-align: center; padding: 8px; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); border-radius: 8px; cursor: pointer; }
     .pill-tab.active { background: var(--accent); color: #fff; }
-    
     .chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
     .chart-val { font-size: 1.8rem; font-weight: 800; margin: 4px 0 12px 0; }
     .chart-val.negative { color: var(--red); } .chart-val.positive { color: var(--green); } .chart-val.neutral { color: #8a819b; }
     .svg-chart { width: 100%; height: 120px; overflow: visible; }
-    
     .input-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
     .input-group input { background: transparent; border: none; outline: none; color: #fff; font-family: inherit; font-size: 0.95rem; width: 100%; }
-    .btn-submit { background: linear-gradient(135deg, var(--accent), #7b2cbf); border: none; border-radius: 12px; padding: 12px; width: 100%; color: #fff; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
+    .btn-submit { background: linear-gradient(135deg, var(--accent), #7b2cbf); border: none; border-radius: 12px; padding: 14px; width: 100%; color: #fff; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.2s; }
     .btn-submit:active { transform: scale(0.98); }
-    .btn-submit:disabled { cursor: not-allowed; }
-    
+    .btn-submit:disabled { cursor: not-allowed; opacity: 0.6; }
+
+    /* Chat, Profile & Nav */
     .chat-container { display: flex; flex-direction: column; height: 100%; }
     .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; }
     .chat-msg { display: flex; gap: 10px; align-items: flex-start; }
@@ -119,7 +198,6 @@
     .chat-user { font-size: 0.75rem; color: var(--accent); font-weight: 700; margin-bottom: 2px; }
     .chat-text { font-size: 0.85rem; line-height: 1.3; }
     .chat-input-area { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; }
-    
     .user-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
     .user-avatar-lg { width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--accent); object-fit: cover; }
     .user-info h3 { font-size: 1.05rem; font-weight: 700; } .user-info p { font-size: 0.8rem; color: var(--text-muted); }
@@ -127,16 +205,13 @@
     .stat-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
     .stat-val { font-size: 1.1rem; font-weight: 800; color: var(--accent); }
     .stat-lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
-    
     nav { height: var(--nav-height); background: rgba(19, 15, 30, 0.9); backdrop-filter: blur(16px); border-top: 1px solid var(--border); position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(5, 1fr); z-index: 100; }
     .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-muted); cursor: pointer; }
     .nav-item.active { color: var(--accent); } .nav-item span { font-size: 0.68rem; font-weight: 600; }
     .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    
     .menu-drawer { position: fixed; top: 0; right: -100%; width: 260px; height: 100%; background: var(--bg-card); border-left: 1px solid var(--border); z-index: 200; padding: 24px 16px; transition: right 0.3s; }
     .menu-drawer.open { right: 0; } .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 199; display: none; } .drawer-overlay.open { display: block; }
     .drawer-menu-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
-    
     .history-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
     .history-header { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
     .history-title { font-weight: 700; font-size: 0.9rem; }
@@ -233,12 +308,17 @@
     </div>
   </div>
 
+  <!-- МОДАЛКА МАТЧА С ФИЛЬТРАМИ -->
   <div class="modal-overlay" id="match-details-modal" onclick="closeMatchDetails(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
         <div id="match-details-title" style="font-size:1rem;">Матч</div>
         <button class="modal-close" onclick="closeMatchDetails()">✕</button>
       </div>
+      
+      <!-- Горизонтальные фильтры -->
+      <div class="market-filters" id="market-filters-container"></div>
+      
       <div id="match-markets-container" style="overflow-y:auto; flex:1; padding-bottom:20px;"></div>
     </div>
   </div>
@@ -260,15 +340,42 @@
         </div>
       </div>
       <div class="slip-potential" id="slip-potential">Возможная выплата: 0 ★</div>
-      <button class="btn-submit" onclick="confirmBet()">Подтвердить прогноз</button>
+      <button class="btn-submit" id="btn-confirm-bet" onclick="confirmBet()">Подтвердить прогноз</button>
     </div>
   </div>
 
+  <!-- НОВОЕ ОКНО РЕЗУЛЬТАТА (ЧЕК) -->
   <div class="modal-overlay" id="result-modal">
     <div class="modal-content">
-      <div class="result-icon" id="result-icon"></div>
-      <div class="result-title" id="result-title"></div>
-      <div class="result-desc" id="result-desc"></div>
+      <div class="receipt-header">
+        <div class="receipt-icon">✓</div>
+        <div class="receipt-title">Ставка принята!</div>
+      </div>
+      
+      <div class="receipt-brand-row">
+        <div class="receipt-brand">WINSTARS</div>
+        <div class="receipt-status-badge">Принята</div>
+      </div>
+      
+      <div class="receipt-info" id="receipt-info">Экспресс · 1 соб. · Сегодня</div>
+      
+      <div class="receipt-events" id="receipt-events"></div>
+      
+      <div class="receipt-stats">
+        <div class="receipt-stat">
+          <div class="receipt-stat-label">Ставка</div>
+          <div class="receipt-stat-value" id="receipt-stake-val">0 ★</div>
+        </div>
+        <div class="receipt-stat">
+          <div class="receipt-stat-label">Коэф</div>
+          <div class="receipt-stat-value" id="receipt-odds-val">0.0</div>
+        </div>
+        <div class="receipt-stat">
+          <div class="receipt-stat-label">Выплата</div>
+          <div class="receipt-stat-value" style="color: var(--green);" id="receipt-payout-val">0 ★</div>
+        </div>
+      </div>
+      
       <button class="btn-submit" onclick="document.getElementById('result-modal').classList.remove('open')">Закрыть</button>
     </div>
   </div>
@@ -300,6 +407,10 @@
     let betSlip = []; 
     let currentMatchDetails = null;
     
+    // Для фильтрации рынков
+    let currentMarketsCache = {};
+    let currentActiveFilter = 'all';
+
     window.matchTimers = {};
 
     function formatStars(val) {
@@ -401,7 +512,6 @@
       if (!match.status.startsWith('LIVE')) return match.status;
       
       let originalStatus = match.status.replace('LIVE', '').trim().replace('·', '').trim();
-      
       if (originalStatus === 'HT' || originalStatus === '2H' || originalStatus === '1H' || originalStatus === 'FT') return originalStatus;
       
       let baseMinute = null;
@@ -448,11 +558,12 @@
       let filtered = allMatchesRaw.filter(m => {
         const isLive = m.status.includes('LIVE');
         const isStarted = m.start_time && m.start_time < now;
+        const hasScore = m.score && m.score !== 'VS';
         
         if (m.start_time && m.start_time < now - 10800) return false;
 
         if (currentMode === 'live') {
-            if (!isLive && !isStarted) return false;
+            if (!isLive && !(isStarted && hasScore)) return false;
         } else {
             if (isLive || isStarted) return false;
         }
@@ -527,6 +638,8 @@
       });
     }
 
+    // ===== МОДАЛКА МАТЧА И ФИЛЬТРЫ =====
+
     async function openMatchDetails(matchId) {
       const match = allMatchesRaw.find(m => m.id === matchId);
       if (!match) return;
@@ -535,7 +648,11 @@
       document.getElementById('match-details-title').innerText = `${match.home} - ${match.away}`;
       
       const container = document.getElementById('match-markets-container');
+      const filtersContainer = document.getElementById('market-filters-container');
+      
       container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Загрузка рынков...</div>';
+      filtersContainer.innerHTML = '';
+      
       document.getElementById('match-details-modal').classList.add('open');
 
       try {
@@ -551,33 +668,84 @@
           ];
         }
 
-        renderMarkets(match, markets);
+        currentMarketsCache = markets;
+        buildFiltersAndRender(markets);
       } catch (err) {
         console.error("Ошибка загрузки рынков:", err);
-        let fallbackMarkets = {};
-        if (match.odds && match.odds['1']) {
-          fallbackMarkets['Исход'] = [
-            { name: 'П1', odds: match.odds['1'] },
-            { name: 'Х', odds: match.odds['X'] },
-            { name: 'П2', odds: match.odds['2'] }
-          ];
-        }
-        renderMarkets(match, fallbackMarkets);
+        container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Ошибка загрузки</div>';
       }
     }
 
-    function renderMarkets(match, markets) {
+    function buildFiltersAndRender(markets) {
+      const filtersContainer = document.getElementById('market-filters-container');
+      
+      // Определяем категории на основе присутствующих групп
+      const availableCategories = new Set(['all']);
+      for (const g of Object.keys(markets)) {
+          const low = g.toLowerCase();
+          if (low.includes('исход') || low.includes('шанс')) availableCategories.add('outcome');
+          if (low.includes('тотал')) availableCategories.add('totals');
+          if (low.includes('фора')) availableCategories.add('handicaps');
+          if (low.includes('забьют')) availableCategories.add('btts');
+      }
+
+      const filterNames = {
+          'all': 'Все',
+          'outcome': 'Исход',
+          'totals': 'Тоталы',
+          'handicaps': 'Форы',
+          'btts': 'Обе забьют'
+      };
+
+      filtersContainer.innerHTML = '';
+      for (const cat of ['all', 'outcome', 'totals', 'handicaps', 'btts']) {
+          if (!availableCategories.has(cat)) continue;
+          const isActive = currentActiveFilter === cat ? 'active' : '';
+          filtersContainer.innerHTML += `<div class="filter-pill ${isActive}" onclick="setMarketFilter('${cat}')">${filterNames[cat]}</div>`;
+      }
+
+      renderFilteredMarkets();
+    }
+
+    function setMarketFilter(cat) {
+      currentActiveFilter = cat;
+      document.querySelectorAll('.filter-pill').forEach(el => el.classList.remove('active'));
+      // Найдём нажатую кнопку (по тексту, т.к. onclick передаёт только cat)
+      const filterNames = { 'all': 'Все', 'outcome': 'Исход', 'totals': 'Тоталы', 'handicaps': 'Форы', 'btts': 'Обе забьют' };
+      document.querySelectorAll('.filter-pill').forEach(el => {
+          if (el.innerText === filterNames[cat]) el.classList.add('active');
+      });
+      
+      renderFilteredMarkets();
+    }
+
+    function getMarketCategory(groupName) {
+      const g = groupName.toLowerCase();
+      if (g.includes('исход') || g.includes('шанс')) return 'outcome';
+      if (g.includes('тотал')) return 'totals';
+      if (g.includes('фора')) return 'handicaps';
+      if (g.includes('забьют')) return 'btts';
+      return 'other';
+    }
+
+    function renderFilteredMarkets() {
       const container = document.getElementById('match-markets-container');
       container.innerHTML = '';
 
-      if (Object.keys(markets).length === 0) {
-        container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Дополнительные рынки отсутствуют</div>';
-        return;
-      }
+      if (!currentMatchDetails) return;
+      const match = currentMatchDetails;
 
-      for (const [groupName, outcomes] of Object.entries(markets)) {
+      let hasAny = false;
+
+      for (const [groupName, outcomes] of Object.entries(currentMarketsCache)) {
         if (!outcomes || outcomes.length === 0) continue;
         
+        if (currentActiveFilter !== 'all') {
+            const cat = getMarketCategory(groupName);
+            if (cat !== currentActiveFilter) continue;
+        }
+
+        hasAny = true;
         let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
         
         outcomes.forEach(out => {
@@ -594,6 +762,10 @@
         groupHtml += `</div></div>`;
         container.innerHTML += groupHtml;
       }
+
+      if (!hasAny) {
+          container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Нет доступных ставок в этой категории</div>';
+      }
     }
 
     function closeMatchDetails(e) {
@@ -602,14 +774,21 @@
       }
     }
 
+    // ===== КУПОН И СТАВКИ =====
+
     function toggleBet(matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName) {
       if (coeff === 0) return;
       
-      const existingIndex = betSlip.findIndex(b => b.matchId === matchId && b.outcomeKey === outcomeKey);
+      const existingIndex = betSlip.findIndex(b => b.matchId === matchId);
       if (existingIndex !== -1) {
-        betSlip.splice(existingIndex, 1);
+        if (betSlip[existingIndex].outcomeKey === outcomeKey) {
+            // Если кликнули на тот же исход - убираем
+            betSlip.splice(existingIndex, 1);
+        } else {
+            // Если кликнули на другой исход в том же матче - заменяем
+            betSlip[existingIndex] = { matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName };
+        }
       } else {
-        betSlip = betSlip.filter(b => b.matchId !== matchId);
         betSlip.push({ matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName });
       }
       
@@ -617,14 +796,7 @@
       renderMatches();
       
       if (document.getElementById('match-details-modal').classList.contains('open')) {
-        document.querySelectorAll('.market-btn').forEach(btn => {
-          const nameEl = btn.querySelector('.market-btn-name');
-          if (nameEl) {
-            const outName = nameEl.innerText;
-            const isSel = betSlip.some(b => b.matchId === matchId && b.outcomeKey === outName);
-            btn.classList.toggle('selected', isSel);
-          }
-        });
+        renderFilteredMarkets(); // Обновляем визуал кнопок
       }
     }
 
@@ -668,13 +840,9 @@
       document.getElementById('slip-stake').value = '';
       updatePotentialWin();
       
-      // Сброс кнопки при открытии
-      const confirmBtn = document.querySelector('#bet-slip-modal .btn-submit');
-      if (confirmBtn) {
-        confirmBtn.disabled = false;
-        confirmBtn.style.opacity = '1';
-        confirmBtn.innerText = 'Подтвердить прогноз';
-      }
+      const confirmBtn = document.getElementById('btn-confirm-bet');
+      confirmBtn.disabled = false;
+      confirmBtn.innerText = 'Подтвердить прогноз';
       
       document.getElementById('bet-slip-modal').classList.add('open');
     }
@@ -705,68 +873,45 @@
       document.getElementById('slip-potential').innerText = `Возможная выплата: ${formatStars(potential)} ★`;
     }
 
-    function showBetResult(success, title, desc) {
-      const modal = document.getElementById('result-modal');
-      const icon = document.getElementById('result-icon');
-      const titleEl = document.getElementById('result-title');
-      const descEl = document.getElementById('result-desc');
-      
-      if (success) {
-        icon.className = 'result-icon success';
-        icon.innerHTML = '✓';
-        titleEl.innerText = title || 'Успех!';
-        titleEl.style.color = 'var(--green)';
-      } else {
-        icon.className = 'result-icon error';
-        icon.innerHTML = '✕';
-        titleEl.innerText = title || 'Ошибка';
-        titleEl.style.color = 'var(--red)';
-      }
-      descEl.innerText = desc;
-      modal.classList.add('open');
-    }
+    // ===== ПОДТВЕРЖДЕНИЕ СТАВКИ И ЧЕК =====
 
     async function confirmBet() {
-      const confirmBtn = document.querySelector('#bet-slip-modal .btn-submit');
+      const confirmBtn = document.getElementById('btn-confirm-bet');
       if (confirmBtn.disabled) return;
-      confirmBtn.disabled = true;
-      confirmBtn.style.opacity = '0.5';
-      confirmBtn.innerText = 'Обработка...';
-
+      
       const stakeInput = document.getElementById('slip-stake').value;
       const stake = parseFloat(stakeInput);
       
       if (isNaN(stake) || stake < 10) {
-        confirmBtn.disabled = false;
-        confirmBtn.style.opacity = '1';
-        confirmBtn.innerText = 'Подтвердить прогноз';
-        return showBetResult(false, 'Ошибка', 'Минимальная ставка — 10 звезд.');
+        return showErrorAlert('Минимальная ставка — 10 звезд.');
       }
-      if (!currentUser) {
-        confirmBtn.disabled = false;
-        confirmBtn.style.opacity = '1';
-        confirmBtn.innerText = 'Подтвердить прогноз';
-        return;
-      }
+      if (!currentUser) return;
       
+      confirmBtn.disabled = true;
+      confirmBtn.innerText = 'Обработка...';
+
       const betType = betSlip.length === 1 ? 'single' : 'express';
+      let totalOdds = 1;
+      betSlip.forEach(b => totalOdds *= b.coeff);
+      
+      const requestPayload = { 
+        user_id: currentUser.user_id, 
+        bets: betSlip.map(b => ({
+          match_id: b.matchId,
+          match_title: b.matchTitle,
+          outcome: b.outcome,
+          outcome_key: b.outcomeKey,
+          group_name: b.groupName,
+          coefficient: b.coeff
+        })),
+        amount: stake,
+        type: betType
+      };
       
       try {
         const res = await fetch(`${API_BASE_URL}/api/bets/place`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            user_id: currentUser.user_id, 
-            bets: betSlip.map(b => ({
-              match_id: b.matchId,
-              match_title: b.matchTitle,
-              outcome: b.outcome,
-              outcome_key: b.outcomeKey,
-              group_name: b.groupName,
-              coefficient: b.coeff
-            })),
-            amount: stake,
-            type: betType
-          })
+          body: JSON.stringify(requestPayload)
         });
         const data = await res.json();
         
@@ -776,27 +921,82 @@
           updateUI(); 
           loadUserBets(); 
           closeBetSlipModal();
+          
+          // Показываем красивый чек
+          showReceiptModal(stake, totalOdds, stake * totalOdds, betType);
+          
           betSlip = []; 
           updateBetSlipUI();
           renderMatches();
-          showBetResult(true, 'Ставка принята!', `Сумма: ${formatStars(stake)} ★. Баланс: ${formatStars(currentUser.balance)} ★`);
         } else { 
-          showBetResult(false, 'Ошибка', data.detail || "Не удалось сделать ставку");
-          setTimeout(() => {
-            confirmBtn.disabled = false;
-            confirmBtn.style.opacity = '1';
-            confirmBtn.innerText = 'Подтвердить прогноз';
-          }, 1500);
+          showErrorAlert(data.detail || "Не удалось сделать ставку");
+          confirmBtn.disabled = false;
+          confirmBtn.innerText = 'Подтвердить прогноз';
         }
       } catch (err) { 
-        showBetResult(false, 'Ошибка', 'Ошибка соединения');
-        setTimeout(() => {
-          confirmBtn.disabled = false;
-          confirmBtn.style.opacity = '1';
-          confirmBtn.innerText = 'Подтвердить прогноз';
-        }, 1500);
+        showErrorAlert('Ошибка соединения');
+        confirmBtn.disabled = false;
+        confirmBtn.innerText = 'Подтвердить прогноз';
       }
     }
+
+    function showErrorAlert(msg) {
+        // Просто используем result-modal для ошибки (упрощённо)
+        const modal = document.getElementById('result-modal');
+        // Меняем контент на ошибку
+        modal.querySelector('.receipt-icon').style.color = 'var(--red)';
+        modal.querySelector('.receipt-icon').style.background = 'rgba(239, 68, 68, 0.2)';
+        modal.querySelector('.receipt-icon').innerText = '✕';
+        modal.querySelector('.receipt-title').style.color = 'var(--red)';
+        modal.querySelector('.receipt-title').innerText = 'Ошибка';
+        modal.querySelector('.receipt-brand-row').style.display = 'none';
+        modal.querySelector('.receipt-info').innerText = msg;
+        modal.querySelector('.receipt-events').innerHTML = '';
+        modal.querySelector('.receipt-stats').style.display = 'none';
+        modal.classList.add('open');
+        
+        // Восстанавливаем через 3 сек
+        setTimeout(() => {
+            modal.querySelector('.receipt-icon').style.color = 'var(--green)';
+            modal.querySelector('.receipt-icon').style.background = 'rgba(16, 185, 129, 0.2)';
+            modal.querySelector('.receipt-icon').innerText = '✓';
+            modal.querySelector('.receipt-title').style.color = 'var(--green)';
+            modal.querySelector('.receipt-title').innerText = 'Ставка принята!';
+            modal.querySelector('.receipt-brand-row').style.display = 'flex';
+            modal.querySelector('.receipt-stats').style.display = 'grid';
+        }, 3000);
+    }
+
+    function showReceiptModal(stake, odds, payout, betType) {
+      document.getElementById('receipt-stake-val').innerText = `${formatStars(stake)} ★`;
+      document.getElementById('receipt-odds-val').innerText = `${formatStars(odds)}`;
+      document.getElementById('receipt-payout-val').innerText = `${formatStars(payout)} ★`;
+      
+      const now = new Date();
+      const dateStr = `${String(now.getDate()).padStart(2,'0')}.${String(now.getMonth()+1).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      
+      const typeStr = betType === 'single' ? 'Одинар' : `Экспресс`;
+      document.getElementById('receipt-info').innerText = `${typeStr} · ${betSlip.length} соб. · ${dateStr}`;
+      
+      const evContainer = document.getElementById('receipt-events');
+      evContainer.innerHTML = '';
+      
+      betSlip.forEach(b => {
+          evContainer.innerHTML += `
+            <div class="receipt-event-item">
+                <div class="receipt-event-match">${b.matchTitle}</div>
+                <div class="receipt-event-outcome">
+                    <span>${b.outcome} <span style="font-size:0.7rem;color:var(--text-muted);">(${b.groupName})</span></span>
+                    <span style="color: var(--accent); font-weight:800;">${formatStars(b.coeff)}</span>
+                </div>
+            </div>
+          `;
+      });
+      
+      document.getElementById('result-modal').classList.add('open');
+    }
+
+    // ===== ОСТАЛЬНОЕ (ЧАТ, ПРОМО И Т.Д.) =====
 
     async function handleTelegramInvoice() {
       const amount = parseInt(document.getElementById('deposit-amount').value);
