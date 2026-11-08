@@ -31,6 +31,20 @@ BOT_USERNAME = "WinStarsPlaybot"
 WITHDRAW_MIN = 1000
 WITHDRAW_COMMISSION = 0.05
 
+TERMS_TEXT = (
+    "<b>ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ WINSTARS</b>\n\n"
+    "1. WinStars — сервис прогнозов на спортивные события через Telegram.\n\n"
+    "2. Доступен только лицам старше 18 лет.\n\n"
+    "3. Прогнозы добровольные. Пользователь несёт полную финансовую ответственность за свои решения и возможные потери.\n\n"
+    "4. Расчёт прогнозов производится по публичным данным Fonbet на момент размещения прогноза.\n\n"
+    "5. Вывод доступен при условиях: 5 рефералов, подписка на канал @winstarschannel, минимум 1000★. Комиссия 5%. Срок обработки до 5 рабочих дней.\n\n"
+    "6. Запрещено создание мультиаккаунтов, использование ботов, мошенничество. При обнаружении — блокировка без возврата средств.\n\n"
+    "7. Промокоды, бонусы и акции предоставляются на усмотрение сервиса и могут быть отменены без объяснения причин.\n\n"
+    "8. Сервис не является букмекерской конторой. Прогнозы не подлежат исполнению при технических сбоях или форс-мажоре.\n\n"
+    "9. Правила могут быть изменены без предварительного уведомления.\n\n"
+    "10. Используя сервис, вы подтверждаете, что согласны с условиями и вам исполнилось 18 лет."
+)
+
 FONBET_BASE = "https://line-lb51.bk6bba-resources.com"
 FONBET_LINE_PATH = "/events/listBase?scopeMarket=1600&lang=ru"
 FONBET_LIVE_PATH = "/events/list?scopeMarket=1600&lang=ru&live=true"
@@ -45,6 +59,7 @@ FONBET_HEADERS = {
 
 LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
+NOTIFY_POLL_SEC = 60
 FINISHED_TTL = 20
 FULL_LINE_TTL = 120
 FULL_LINE_MAX_PER_CYCLE = 30
@@ -76,9 +91,7 @@ FONBET_FACTORS = {
 }
 
 FACTOR_PRIORITY = {
-    921: 1, 922: 1, 923: 1,
-    924: 1, 925: 1, 926: 1,
-    927: 1, 928: 1,
+    921: 1, 922: 1, 923: 1, 924: 1, 925: 1, 926: 1, 927: 1, 928: 1,
     930: 1, 931: 1,
     1854: 2, 1871: 2, 1873: 2, 1874: 2,
     1569: 2, 1572: 2, 1880: 2, 1881: 2,
@@ -197,6 +210,20 @@ async def firebase_delete(path: str):
     try: await http_client.delete(f"{FIREBASE_DB_URL}/{path}.json")
     except: pass
 
+async def send_user_notification(user_id, text, button_text=None, button_url=None):
+    """Отправляет уведомление юзеру с опциональной кнопкой WebApp."""
+    try:
+        kb = None
+        if button_text and button_url:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=button_text, web_app=WebAppInfo(url=button_url))
+            ]])
+        await bot.send_message(int(user_id), text, reply_markup=kb, parse_mode="HTML")
+        return True
+    except Exception as e:
+        print(f"   notify fail {user_id}: {e}")
+        return False
+
 async def is_subscribed(user_id: int) -> bool:
     if user_id == ADMIN_TELEGRAM_ID:
         return True
@@ -208,7 +235,7 @@ async def is_subscribed(user_id: int) -> bool:
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         result = member.status in ("member", "administrator", "creator")
     except Exception as e:
-        print(f"⚠️ Sub check fail for {user_id}: {e}")
+        print(f"Sub check fail {user_id}: {e}")
         result = False
     _SUB_CHECK_CACHE[user_id] = (now, result)
     return result
@@ -227,7 +254,7 @@ def _find_bad_key(obj, path=""):
     return None
 
 async def _save_matches_fallback(matches_dict):
-    print("   ⚠️ Saving per-match (fallback)...")
+    print("   Saving per-match (fallback)...")
     existing = await firebase_get("matches") or {}
     if isinstance(existing, dict):
         to_delete = set(existing.keys()) - set(matches_dict.keys())
@@ -237,27 +264,27 @@ async def _save_matches_fallback(matches_dict):
     for mid, mdata in matches_dict.items():
         bad = _find_bad_key(mdata, "")
         if bad:
-            print(f"   ❌ {mid}: {bad} — пропускаю")
+            print(f"   SKIP {mid}: {bad}")
             continue
         try:
             r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
             if r.status_code != 200:
-                print(f"   ⚠️ save {mid}: HTTP {r.status_code}")
+                print(f"   save {mid}: HTTP {r.status_code}")
         except Exception as e:
-            print(f"   ⚠️ save {mid}: {e}")
+            print(f"   save {mid}: {e}")
 
 async def _save_matches(matches_dict):
     if not matches_dict: return
     bad = _find_bad_key(matches_dict, "")
     if bad:
-        print(f"   ❌ [SAVE] Невалидный ключ: {bad}")
+        print(f"   [SAVE] bad key: {bad}")
         await _save_matches_fallback(matches_dict)
         return
     try:
         payload = json.dumps(matches_dict, allow_nan=False, ensure_ascii=False)
         size = len(payload)
     except ValueError as e:
-        print(f"   ⚠️ JSON serialization error: {e}")
+        print(f"   JSON error: {e}")
         return
     if size < 900_000:
         try:
@@ -283,7 +310,7 @@ async def _record_finished(mid, s1, s2, source, retries=3):
             if r.status_code == 200:
                 return True
         except Exception as e:
-            print(f"   ⚠️ record_finished {mid} attempt {attempt+1}: {e}")
+            print(f"   record_finished {mid} attempt {attempt+1}: {e}")
         await asyncio.sleep(1)
     return False
 
@@ -338,6 +365,25 @@ def _extract_score(li):
         try: minute = int(timer_str.split(":")[0])
         except: pass
     return s1, s2, minute
+
+def _extract_score_breakdown(li):
+    """Возвращает массив [{period, s1, s2}, ...] из liveEventInfos.scores."""
+    if not li: return []
+    scores = li.get("scores")
+    if not isinstance(scores, list): return []
+    result = []
+    for idx, block in enumerate(scores):
+        if isinstance(block, list) and block:
+            for item in block:
+                if isinstance(item, dict):
+                    c1 = item.get("c1"); c2 = item.get("c2")
+                    if c1 is not None and c2 is not None:
+                        try:
+                            period = "first" if idx == 0 else ("second" if idx == 1 else f"period_{idx}")
+                            result.append({"period": period, "s1": int(c1), "s2": int(c2)})
+                        except: pass
+                        break
+    return result
 
 def _normalize_p(p_val):
     try:
@@ -576,7 +622,7 @@ def _build_sport_hierarchy(all_sports):
     return entry_by_id, parent_by_id, top_by_id
 
 async def fonbet_scraper_worker():
-    print(f"⚡ fonbet_scraper_worker запущен (опрос {LIVE_POLL_SEC} сек)...")
+    print(f"fonbet_scraper_worker started (poll {LIVE_POLL_SEC}s)...")
     cycle = 0
     prev_event_ids = set()
     while True:
@@ -685,7 +731,7 @@ async def fonbet_scraper_worker():
                                     "score": old_m.get("score", "VS"), "start_time": st,
                                     "odds": old_m.get("odds", {"1": None, "X": None, "2": None}),
                                     "markets": cached_markets,
-                                    "was_live": True,
+                                    "score_breakdown": old_m.get("score_breakdown", []),
                                 }
                                 current_ids.add(mid)
                                 cached_frozen += 1
@@ -713,10 +759,12 @@ async def fonbet_scraper_worker():
                         elif o["name"] == "Х": px = o["odds"]
                         elif o["name"] == "П2": p2 = o["odds"]
                 score = "VS"
+                score_breakdown = []
                 if is_live:
                     if s1 is not None and s2 is not None: score = f"{s1} : {s2}"
                     status_str = f"LIVE {timer}'" if timer is not None else "LIVE"
                     live_cnt += 1
+                    score_breakdown = _extract_score_breakdown(all_live.get(eid))
                 else:
                     status_str = time.strftime("%d.%m %H:%M", time.localtime(st))
                 matches_dict[mid] = {
@@ -726,7 +774,7 @@ async def fonbet_scraper_worker():
                     "start_time": st,
                     "odds": {"1": p1, "X": px, "2": p2},
                     "markets": markets_data,
-                    "was_live": is_live,
+                    "score_breakdown": score_breakdown,
                 }
             disappeared = prev_event_ids - current_ids
             if disappeared:
@@ -745,13 +793,10 @@ async def fonbet_scraper_worker():
                     ok = await _record_finished(mid, s1_old, s2_old, "fonbet_last")
                     if not ok:
                         _PENDING_FINISHED[mid] = {"score1": s1_old, "score2": s2_old, "source": "fonbet_last"}
-                        print(f"   ⏸ {mid} в очередь на повтор записи finished")
-            # Ретрай отложенных записей
             for mid in list(_PENDING_FINISHED.keys()):
                 d = _PENDING_FINISHED[mid]
                 if await _record_finished(mid, d["score1"], d["score2"], d["source"]):
                     _PENDING_FINISHED.pop(mid, None)
-                    print(f"   ✅ {mid} перезаписан в finished")
             prev_event_ids = current_ids
             if len(_FULL_LINE_CACHE) > 500:
                 cutoff = now_ts - 3600
@@ -764,13 +809,10 @@ async def fonbet_scraper_worker():
                     size_mb = approx_size / 1024 / 1024
                 except: size_mb = 0
                 await _save_matches(matches_dict)
-                extra = ""
-                if skipped_stuck or skipped_started_no_data or cached_frozen:
-                    extra = f" (зависших: {skipped_stuck}, без live: {skipped_started_no_data}, заморожено: {cached_frozen})"
-                print(f"🔄 [FONBET] {len(matches_dict)} матчей (LIVE: {live_cnt}) | {total_markets_count} рынков | full-line: {full_line_fetched} | {size_mb:.1f}MB{extra} за {time.time()-t0:.1f}s")
+                print(f"[FONBET] {len(matches_dict)} matches (LIVE: {live_cnt}) | {total_markets_count} mkts | full-line: {full_line_fetched} | {size_mb:.1f}MB {time.time()-t0:.1f}s")
         except Exception as e:
             import traceback
-            print(f"⚠️ fonbet_scraper: {e}")
+            print(f"fonbet_scraper: {e}")
             traceback.print_exc()
         cycle += 1
         if cycle % 15 == 0: gc.collect()
@@ -811,11 +853,10 @@ def calculate_outcome(outcome_str, s1, s2, group_name=""):
         if res > 0: return True
         if res < 0: return False
         return None
-    print(f"   ⚠️ Неизвестный тип ставки: {outcome_str}")
     return False
 
 async def settle_bets_worker():
-    print("🛠 settle_bets_worker запущен...")
+    print("settle_bets_worker started...")
     cycle = 0
     while True:
         try:
@@ -838,7 +879,9 @@ async def settle_bets_worker():
                         if not all_finished or not results: continue
                         user_id = bet.get("user_id")
                         amount = bet.get("amount", 0)
-                        # Void матч — возврат
+                        bet_type = bet.get("type", "single")
+                        
+                        # Проверка на void матч
                         if any(r.get("void") for r in results):
                             user = await firebase_get(f"users/{user_id}")
                             if isinstance(user, dict):
@@ -849,28 +892,52 @@ async def settle_bets_worker():
                             await firebase_patch(f"bets/{bet_id}", {"status": "void"})
                             if user_id: await firebase_patch(f"users/{user_id}/bets/{bet_id}", {"status": "void"})
                             await firebase_delete(f"active_bets/{bet_id}")
+                            try:
+                                await send_user_notification(user_id,
+                                    f"<b>Возврат ставки</b>\n\nСумма <b>{amount} ★</b> возвращена на баланс.",
+                                    "Мои прогнозы", WEBAPP_URL)
+                            except: pass
                             continue
-                        # Победный расчёт с учётом void-ног
+                        
+                        # Расчёт по каждой ноге
                         is_lost = False
                         is_all_void = True
                         eff_coeff = 1.0
+                        leg_results = []
                         for i, event in enumerate(events):
                             res = results[i]
                             s1 = res.get("score1"); s2 = res.get("score2")
-                            if s1 is None or s2 is None:
-                                is_lost = True; break
                             oc = event.get("outcome_key") or event.get("outcome", "")
                             gn = event.get("group_name", "")
-                            if gn == "Тотал (доп.)":
-                                continue
-                            ws = calculate_outcome(oc, s1, s2, gn)
-                            if ws is False:
-                                is_lost = True; break
-                            elif ws is None:
-                                continue
-                            else:
+                            match_title = event.get("match_title", "")
+                            outcome_label = event.get("outcome", "")
+                            coeff = float(event.get("coefficient", 1.0))
+                            
+                            leg_status = "void"
+                            if s1 is not None and s2 is not None:
+                                if gn == "Тотал (доп.)":
+                                    leg_status = "void"
+                                else:
+                                    ws = calculate_outcome(oc, s1, s2, gn)
+                                    if ws is True: leg_status = "won"
+                                    elif ws is False: leg_status = "lost"
+                                    else: leg_status = "void"
+                            
+                            leg_results.append({
+                                "match_title": match_title,
+                                "outcome": outcome_label,
+                                "group_name": gn,
+                                "coefficient": coeff,
+                                "status": leg_status,
+                                "score1": s1, "score2": s2,
+                            })
+                            
+                            if leg_status == "lost":
+                                is_lost = True
+                            elif leg_status == "won":
                                 is_all_void = False
-                                eff_coeff *= float(event.get("coefficient", 1.0))
+                                eff_coeff *= coeff
+                        
                         if is_lost:
                             status = "lost"
                         elif is_all_void:
@@ -891,63 +958,132 @@ async def settle_bets_worker():
                                     "profit": user.get("profit", 0) + (win_amount - amount),
                                     "wins": user.get("wins", 0) + 1,
                                 })
+                        
                         await firebase_patch(f"bets/{bet_id}", {
                             "status": status,
                             "effective_coefficient": round(eff_coeff, 2),
+                            "leg_results": leg_results,
                         })
                         if user_id:
                             await firebase_patch(f"users/{user_id}/bets/{bet_id}", {
                                 "status": status,
                                 "effective_coefficient": round(eff_coeff, 2),
+                                "leg_results": leg_results,
                             })
                         await firebase_delete(f"active_bets/{bet_id}")
+                        
+                        # Push-уведомление
+                        try:
+                            if status == "won":
+                                win_amount = round(amount * eff_coeff, 2)
+                                await send_user_notification(user_id,
+                                    f"<b>Ставка выиграла!</b>\n\n"
+                                    f"Тип: {bet_type}\n"
+                                    f"Выплата: <b>+{win_amount} ★</b>\n\n"
+                                    f"Средства зачислены на баланс.",
+                                    "Забрать приз", WEBAPP_URL)
+                            elif status == "lost":
+                                await send_user_notification(user_id,
+                                    f"<b>Ставка не сыграла</b>\n\n"
+                                    f"В этот раз не повезло. Попробуйте ещё раз!",
+                                    "Попробовать ещё", WEBAPP_URL)
+                            elif status == "void":
+                                await send_user_notification(user_id,
+                                    f"<b>Возврат ставки</b>\n\n"
+                                    f"Сумма <b>{amount} ★</b> возвращена на баланс.",
+                                    "Мои прогнозы", WEBAPP_URL)
+                        except Exception as ne:
+                            print(f"   notify bet fail: {ne}")
                     except Exception as e:
-                        print(f"⚠️ Ставка {bet_id}: {e}")
+                        print(f"bet {bet_id} error: {e}")
         except Exception as e:
-            print(f"⚠️ settle_bets: {e}")
+            print(f"settle_bets: {e}")
         cycle += 1
         if cycle % 15 == 0: gc.collect()
         await asyncio.sleep(SETTLE_POLL_SEC)
 
+async def notify_start_worker():
+    """Уведомляет игроков за ~10 мин до начала матчей из их ставок."""
+    print("notify_start_worker started...")
+    while True:
+        try:
+            active_bets = await firebase_get("active_bets") or {}
+            if not isinstance(active_bets, dict) or not active_bets:
+                await asyncio.sleep(NOTIFY_POLL_SEC); continue
+            matches = await firebase_get("matches") or {}
+            now = int(time.time())
+            for bet_id, bet in list(active_bets.items()):
+                if not isinstance(bet, dict): continue
+                user_id = bet.get("user_id")
+                events = bet.get("events", [])
+                if not isinstance(events, list): continue
+                notified = bet.get("start_notified_matches") or {}
+                if not isinstance(notified, dict): notified = {}
+                to_notify = []
+                for event in events:
+                    mid = event.get("match_id")
+                    if not mid or notified.get(mid): continue
+                    match = matches.get(mid) if isinstance(matches, dict) else None
+                    if not isinstance(match, dict): continue
+                    st = match.get("start_time", 0)
+                    if 0 <= st - now <= 600:
+                        to_notify.append((mid, match))
+                if to_notify:
+                    text = "<b>Матч скоро начнётся</b>\n\n"
+                    for mid, m in to_notify[:3]:
+                        t = time.strftime("%H:%M", time.localtime(m.get("start_time", 0)))
+                        text += f"• {m.get('title', '')} — {t}\n"
+                    if len(to_notify) > 3:
+                        text += f"и ещё {len(to_notify) - 3}...\n"
+                    text += "\nПроверьте свои прогнозы."
+                    await send_user_notification(user_id, text, "Мои прогнозы", WEBAPP_URL)
+                    new_notified = dict(notified)
+                    for mid, _ in to_notify:
+                        new_notified[mid] = True
+                    await firebase_patch(f"active_bets/{bet_id}", {"start_notified_matches": new_notified})
+        except Exception as e:
+            print(f"notify_start: {e}")
+        await asyncio.sleep(NOTIFY_POLL_SEC)
+
 async def _notify_admin_withdrawal(req_id, data):
     text = (
-        f"🔔 <b>Новая заявка на вывод</b>\n\n"
-        f"👤 Игрок: {data.get('first_name','')} (@{data.get('username','')})\n"
-        f"🆔 ID: <code>{data.get('user_id')}</code>\n"
-        f"💰 Сумма: <b>{data.get('amount')} ★</b>\n"
-        f"💸 К зачислению: <b>{data.get('amount_after_commission')} ★</b> (комиссия 5%)\n"
-        f"👥 Друзей: {data.get('referral_count', 0)}\n"
-        f"📅 {time.strftime('%d.%m.%Y %H:%M', time.localtime(data.get('created_at', 0)))}\n\n"
+        f"<b>Новая заявка на вывод</b>\n\n"
+        f"Игрок: {data.get('first_name','')} (@{data.get('username','')})\n"
+        f"ID: <code>{data.get('user_id')}</code>\n"
+        f"Сумма: <b>{data.get('amount')} ★</b>\n"
+        f"К зачислению: <b>{data.get('amount_after_commission')} ★</b> (комиссия 5%)\n"
+        f"Друзей: {data.get('referral_count', 0)}\n"
+        f"Дата: {time.strftime('%d.%m.%Y %H:%M', time.localtime(data.get('created_at', 0)))}\n\n"
         f"<b>Telegram ID для перевода:</b> <code>{data.get('user_id')}</code>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Одобрить", callback_data=f"wd_approve:{req_id}"),
-        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"wd_reject:{req_id}"),
+        InlineKeyboardButton(text="Одобрить", callback_data=f"wd_approve:{req_id}"),
+        InlineKeyboardButton(text="Отклонить", callback_data=f"wd_reject:{req_id}"),
     ]])
     try:
         await bot.send_message(ADMIN_TELEGRAM_ID, text, reply_markup=kb, parse_mode="HTML")
     except Exception as e:
-        print(f"⚠️ Не смог уведомить админа: {e}")
+        print(f"notify admin fail: {e}")
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: markets-v6 (all totals + withdrawal + referrals + sub-check + settlement fixes)")
+    print("WinStars API starting...")
+    print("   VERSION: v7 (push-notifications, leg-results, promo-codes-v2, terms, score-breakdown)")
     try:
         chat = await bot.get_chat(CHANNEL_ID)
-        print(f"✅ Канал доступен: {chat.title} (@{chat.username})")
+        print(f"   Channel OK: {chat.title} (@{chat.username})")
     except Exception as e:
-        print(f"⚠️ ВНИМАНИЕ: нет доступа к каналу {CHANNEL_ID}: {e}")
-        print(f"   Добавьте бота в админы канала {CHANNEL_USERNAME}")
+        print(f"   CHANNEL ERROR {CHANNEL_ID}: {e}")
+        print(f"   Add bot to admins of {CHANNEL_USERNAME}")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
-    print("✅ Все фоновые воркеры запущены")
+    asyncio.create_task(notify_start_worker())
+    print("All workers started")
 
 # ==================== BOT HANDLERS ====================
 
 async def _register_user_if_new(user_id, from_user, referrer_id=None):
-    """Создаёт пользователя в Firebase, если его нет. Возвращает True если создан."""
     existing = await firebase_get(f"users/{str(user_id)}")
     if isinstance(existing, dict):
         return False
@@ -964,15 +1100,13 @@ async def _register_user_if_new(user_id, from_user, referrer_id=None):
         "username": from_user.username or "user",
         "first_name": from_user.first_name or "Игрок",
         "photo_url": from_user.photo_url or f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}",
-        "balance": 0,
-        "frozen_balance": 0,
-        "total_bets": 0,
-        "wins": 0,
-        "profit": 0,
-        "referral_code": str(user_id),
-        "referred_by": actual_referrer,
-        "referral_count": 0,
-        "subscribed": True,
+        "balance": 0, "frozen_balance": 0,
+        "total_bets": 0, "wins": 0, "profit": 0,
+        "referral_code": str(user_id), "referred_by": actual_referrer,
+        "referral_count": 0, "subscribed": True,
+        "agreed_terms": False, "agreed_at": None,
+        "pending_bonus": None,
+        "created_at": int(time.time()),
     })
     if actual_referrer:
         referrer = await firebase_get(f"users/{actual_referrer}")
@@ -996,20 +1130,26 @@ async def cmd_start(message: types.Message):
         await firebase_put(f"pending_referrals/{user_id}", {"referrer_id": referrer_id})
     if not subscribed:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME}")],
-            [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_sub")],
+            [InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME}")],
+            [InlineKeyboardButton(text="Проверить подписку", callback_data="check_sub")],
         ])
         await message.answer(
-            f"👋 Добро пожаловать в <b>WinStars</b>!\n\n"
-            f"Для использования бота подпишитесь на наш канал <a href=\"https://t.me/{CHANNEL_USERNAME}\">@{CHANNEL_USERNAME}</a>.",
+            f"Добро пожаловать в <b>WinStars</b>!\n\n"
+            f"Для использования подпишитесь на канал @{CHANNEL_USERNAME}.",
             reply_markup=kb, parse_mode="HTML"
         )
         return
     await _register_user_if_new(user_id, message.from_user, referrer_id)
+    user = await firebase_get(f"users/{str(user_id)}")
+    if isinstance(user, dict) and not user.get("agreed_terms"):
+        await message.answer(TERMS_TEXT, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Принимаю условия", callback_data="agree_terms")
+        ]]), parse_mode="HTML")
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="⚽ Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
+        InlineKeyboardButton(text="Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
     ]])
-    await message.answer("👋 Добро пожаловать в <b>WinStars</b>!", reply_markup=kb, parse_mode="HTML")
+    await message.answer("Добро пожаловать в <b>WinStars</b>!", reply_markup=kb, parse_mode="HTML")
 
 @dp.callback_query(F.data == "check_sub")
 async def on_check_sub(callback: types.CallbackQuery):
@@ -1017,65 +1157,155 @@ async def on_check_sub(callback: types.CallbackQuery):
     _SUB_CHECK_CACHE.pop(user_id, None)
     subscribed = await is_subscribed(user_id)
     if not subscribed:
-        await callback.answer("Подписка не обнаружена. Подпишитесь и попробуйте снова.", show_alert=True)
+        await callback.answer("Подписка не обнаружена", show_alert=True)
         return
     await _register_user_if_new(user_id, callback.from_user)
+    user = await firebase_get(f"users/{str(user_id)}")
+    if isinstance(user, dict) and not user.get("agreed_terms"):
+        try:
+            await callback.message.edit_text(TERMS_TEXT, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="Принимаю условия", callback_data="agree_terms")
+            ]]), parse_mode="HTML")
+        except: pass
+        await callback.answer()
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="⚽ Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
+        InlineKeyboardButton(text="Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
     ]])
     try:
-        await callback.message.edit_text(
-            "✅ Спасибо за подписку!\n\nДобро пожаловать в <b>WinStars</b>!",
-            reply_markup=kb, parse_mode="HTML"
-        )
+        await callback.message.edit_text("Спасибо за подписку!\n\nДобро пожаловать в <b>WinStars</b>!", reply_markup=kb, parse_mode="HTML")
     except: pass
     await callback.answer("Подписка подтверждена")
 
+@dp.callback_query(F.data == "agree_terms")
+async def on_agree_terms(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    await firebase_patch(f"users/{str(user_id)}", {"agreed_terms": True, "agreed_at": int(time.time())})
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
+    ]])
+    try:
+        await callback.message.edit_text("Спасибо! Теперь можно пользоваться сервисом.", reply_markup=kb)
+    except: pass
+    await callback.answer("Согласие принято")
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message):
-    if message.from_user.id != ADMIN_TELEGRAM_ID:
-        return
+    if message.from_user.id != ADMIN_TELEGRAM_ID: return
     reqs = await firebase_get("withdrawal_requests") or {}
     if not isinstance(reqs, dict):
-        await message.answer("Заявок нет")
-        return
+        await message.answer("Нет заявок"); return
     pending = [(rid, r) for rid, r in reqs.items() if isinstance(r, dict) and r.get("status") == "pending"]
     pending.sort(key=lambda x: x[1].get("created_at", 0), reverse=True)
     if not pending:
-        await message.answer("Нет активных заявок на вывод")
-        return
-    lines = ["📋 <b>Активные заявки на вывод:</b>\n"]
+        await message.answer("Нет активных заявок"); return
+    lines = ["<b>Активные заявки:</b>\n"]
     for rid, r in pending[:20]:
         lines.append(
             f"#{rid}\n"
-            f"👤 {r.get('first_name')} (@{r.get('username')}) | ID: <code>{r.get('user_id')}</code>\n"
-            f"💰 {r.get('amount')} ★ (к зачислению {r.get('amount_after_commission')} ★)\n"
-            f"📅 {time.strftime('%d.%m.%Y %H:%M', time.localtime(r.get('created_at', 0)))}\n"
+            f"{r.get('first_name')} (@{r.get('username')}) | ID: <code>{r.get('user_id')}</code>\n"
+            f"{r.get('amount')} ★ (к зачислению {r.get('amount_after_commission')} ★)\n"
+            f"{time.strftime('%d.%m.%Y %H:%M', time.localtime(r.get('created_at', 0)))}\n"
         )
     rows = [[
-        InlineKeyboardButton(text=f"✅ #{rid}", callback_data=f"wd_approve:{rid}"),
-        InlineKeyboardButton(text=f"❌ #{rid}", callback_data=f"wd_reject:{rid}"),
+        InlineKeyboardButton(text=f"OK #{rid}", callback_data=f"wd_approve:{rid}"),
+        InlineKeyboardButton(text=f"NO #{rid}", callback_data=f"wd_reject:{rid}"),
     ] for rid, _ in pending[:10]]
     await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="HTML")
+
+@dp.message(Command("promo_create"))
+async def cmd_promo_create(message: types.Message):
+    if message.from_user.id != ADMIN_TELEGRAM_ID: return
+    parts = message.text.split()
+    if len(parts) < 6:
+        await message.answer(
+            "<b>Создание промокода</b>\n\n"
+            "<code>/promo_create CODE fixed 50 100 30</code>\n"
+            "CODE=код, 50 звезд, 100 использований, 30 дней\n\n"
+            "<code>/promo_create CODE bonus 10 100 30 50</code>\n"
+            "CODE=код, +10% к депозиту, 100 использований, 30 дней, мин.депозит 50\n\n"
+            "Опциональный флаг <code>new</code> в конце — только новым игрокам.",
+            parse_mode="HTML"
+        )
+        return
+    code = parts[1].upper()
+    ptype = parts[2]
+    if ptype not in ("fixed", "bonus"):
+        await message.answer("Тип должен быть fixed или bonus"); return
+    try:
+        val = int(parts[3]); max_uses = int(parts[4]); days = int(parts[5])
+    except ValueError:
+        await message.answer("Ошибка в числах"); return
+    extras = parts[6:] if len(parts) > 6 else []
+    min_dep = 0; new_only = False
+    for e in extras:
+        if e == "new": new_only = True
+        elif e.isdigit(): min_dep = int(e)
+    expires_at = int(time.time()) + days * 86400
+    data = {
+        "code": code,
+        "type": "fixed_stars" if ptype == "fixed" else "deposit_percent",
+        "max_uses": max_uses, "used_count": 0,
+        "expires_at": expires_at, "new_users_only": new_only,
+        "created_at": int(time.time()),
+    }
+    if ptype == "fixed":
+        data["reward_stars"] = val
+    else:
+        data["deposit_percent"] = val
+        data["min_deposit"] = min_dep
+    await firebase_put(f"promo_codes/{code}", data)
+    await message.answer(
+        f"Промокод <code>{code}</code> создан\n"
+        f"Тип: {ptype}\n"
+        f"Значение: {val}{'★' if ptype=='fixed' else '%'}\n"
+        f"Лимит: {max_uses}\n"
+        f"Срок: {days} дней\n"
+        f"Только новым: {'да' if new_only else 'нет'}",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("promo_list"))
+async def cmd_promo_list(message: types.Message):
+    if message.from_user.id != ADMIN_TELEGRAM_ID: return
+    promos = await firebase_get("promo_codes") or {}
+    if not isinstance(promos, dict) or not promos:
+        await message.answer("Промокодов нет"); return
+    lines = ["<b>Промокоды:</b>\n"]
+    now = int(time.time())
+    for code, p in list(promos.items())[:30]:
+        if not isinstance(p, dict): continue
+        ptype = p.get("type", "fixed_stars")
+        val = p.get("reward_stars") if ptype == "fixed_stars" else p.get("deposit_percent")
+        used = p.get("used_count", 0)
+        max_u = p.get("max_uses", 0) or "∞"
+        exp = p.get("expires_at", 0)
+        status = "истёк" if exp and exp < now else "активен"
+        lines.append(f"<code>{code}</code> — {val}{'★' if ptype=='fixed_stars' else '%'} | {used}/{max_u} | {status}")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+@dp.message(Command("promo_delete"))
+async def cmd_promo_delete(message: types.Message):
+    if message.from_user.id != ADMIN_TELEGRAM_ID: return
+    parts = message.text.split()
+    if len(parts) < 2: return
+    code = parts[1].upper()
+    await firebase_delete(f"promo_codes/{code}")
+    await message.answer(f"Промокод {code} удалён")
 
 @dp.callback_query(F.data.startswith("wd_approve:"))
 async def on_wd_approve(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_TELEGRAM_ID:
-        await callback.answer("Только для админа", show_alert=True)
-        return
+        await callback.answer("Только для админа", show_alert=True); return
     req_id = callback.data.split(":", 1)[1]
     req = await firebase_get(f"withdrawal_requests/{req_id}")
     if not isinstance(req, dict):
-        await callback.answer("Заявка не найдена", show_alert=True)
-        return
+        await callback.answer("Не найдено", show_alert=True); return
     if req.get("status") != "pending":
-        await callback.answer(f"Заявка уже {req.get('status')}", show_alert=True)
-        return
+        await callback.answer(f"Уже {req.get('status')}", show_alert=True); return
     user_id = req.get("user_id"); amount = req.get("amount", 0)
     await firebase_patch(f"withdrawal_requests/{req_id}", {
-        "status": "approved",
-        "reviewed_at": int(time.time()),
-        "reviewed_by": callback.from_user.id,
+        "status": "approved", "reviewed_at": int(time.time()), "reviewed_by": callback.from_user.id,
     })
     user = await firebase_get(f"users/{user_id}")
     if isinstance(user, dict):
@@ -1087,16 +1317,16 @@ async def on_wd_approve(callback: types.CallbackQuery):
             if isinstance(tx, dict) and tx.get("request_id") == req_id:
                 await firebase_patch(f"transactions/{user_id}/{tx_id}", {"status": "approved"})
     try:
-        await bot.send_message(int(user_id),
-            f"✅ <b>Ваша заявка на вывод одобрена!</b>\n\n"
+        await send_user_notification(int(user_id),
+            f"<b>Ваша заявка на вывод одобрена!</b>\n\n"
             f"Сумма: <b>{amount} ★</b>\n"
             f"К зачислению: <b>{req.get('amount_after_commission')} ★</b>\n\n"
             f"Звёзды будут отправлены вам в личные сообщения в течение нескольких минут.",
-            parse_mode="HTML")
+            "Открыть WinStars", WEBAPP_URL)
     except: pass
     try:
         await callback.message.edit_text(
-            f"✅ <b>ОДОБРЕНО</b> (заявка #{req_id})\n\n"
+            f"<b>ОДОБРЕНО</b> (заявка #{req_id})\n\n"
             f"Переведите <b>{req.get('amount_after_commission')} ★</b> игроку "
             f"@{req.get('username')} (ID: <code>{user_id}</code>)",
             parse_mode="HTML")
@@ -1106,44 +1336,37 @@ async def on_wd_approve(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("wd_reject:"))
 async def on_wd_reject_start(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.id != ADMIN_TELEGRAM_ID:
-        await callback.answer("Только для админа", show_alert=True)
-        return
+        await callback.answer("Только для админа", show_alert=True); return
     req_id = callback.data.split(":", 1)[1]
     req = await firebase_get(f"withdrawal_requests/{req_id}")
     if not isinstance(req, dict):
-        await callback.answer("Заявка не найдена", show_alert=True)
-        return
+        await callback.answer("Не найдено", show_alert=True); return
     if req.get("status") != "pending":
-        await callback.answer(f"Заявка уже {req.get('status')}", show_alert=True)
-        return
+        await callback.answer(f"Уже {req.get('status')}", show_alert=True); return
     await state.update_data(req_id=req_id, user_id=req.get("user_id"), amount=req.get("amount", 0))
     await state.set_state(WithdrawReject.waiting_reason)
-    await bot.send_message(ADMIN_TELEGRAM_ID, f"✍️ Введите причину отказа для заявки #{req_id} (или /cancel):")
+    await bot.send_message(ADMIN_TELEGRAM_ID, f"Введите причину отказа для #{req_id} (или /cancel):")
     await callback.answer()
 
 @dp.message(Command("cancel"), WithdrawReject.waiting_reason)
 async def cmd_cancel_reject(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Отменено. Заявка осталась в статусе «Ожидание».")
+    await message.answer("Отменено. Заявка осталась в ожидании.")
 
 @dp.message(WithdrawReject.waiting_reason)
 async def on_wd_reject_reason(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_TELEGRAM_ID:
-        return
-    if not message.text or message.text.startswith("/"):
-        return
+    if message.from_user.id != ADMIN_TELEGRAM_ID: return
+    if not message.text or message.text.startswith("/"): return
     reason = message.text.strip()
     if len(reason) < 3:
-        await message.answer("Причина слишком короткая. Введите текст ещё раз.")
+        await message.answer("Причина слишком короткая. Введите ещё раз.")
         return
     data = await state.get_data()
     await state.clear()
     req_id = data["req_id"]; user_id = data["user_id"]; amount = data["amount"]
     await firebase_patch(f"withdrawal_requests/{req_id}", {
-        "status": "rejected",
-        "reviewed_at": int(time.time()),
-        "reviewed_by": message.from_user.id,
-        "reject_reason": reason,
+        "status": "rejected", "reviewed_at": int(time.time()),
+        "reviewed_by": message.from_user.id, "reject_reason": reason,
     })
     user = await firebase_get(f"users/{user_id}")
     if isinstance(user, dict):
@@ -1158,14 +1381,14 @@ async def on_wd_reject_reason(message: types.Message, state: FSMContext):
                     "status": "rejected", "reject_reason": reason,
                 })
     try:
-        await bot.send_message(int(user_id),
-            f"❌ <b>Ваша заявка на вывод отклонена</b>\n\n"
+        await send_user_notification(int(user_id),
+            f"<b>Заявка на вывод отклонена</b>\n\n"
             f"Сумма: <b>{amount} ★</b>\n"
             f"Причина: <i>{reason}</i>\n\n"
-            f"Все звёзды возвращены на ваш баланс.",
-            parse_mode="HTML")
+            f"Все звёзды возвращены на баланс.",
+            "Открыть WinStars", WEBAPP_URL)
     except: pass
-    await message.answer(f"✅ Заявка #{req_id} отклонена. Причина записана. Звёзды возвращены игроку.")
+    await message.answer(f"Заявка #{req_id} отклонена. Звёзды возвращены.")
 
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
@@ -1181,14 +1404,37 @@ async def process_successful_payment(message: types.Message):
         if isinstance(user, dict):
             cur = user.get("balance", 0)
             if not isinstance(cur, (int, float)): cur = 0
-            await firebase_patch(f"users/{user_id}", {"balance": cur + amount})
+            bonus_amount = 0
+            pending = user.get("pending_bonus")
+            pending_label = None
+            if isinstance(pending, dict):
+                min_dep = pending.get("min_deposit", 0) or 0
+                if amount >= min_dep:
+                    percent = pending.get("percent", 0)
+                    bonus_amount = int(amount * percent / 100)
+                    pending_label = f"Бонус {percent}% по промокоду {pending.get('code', '')}"
+            final_amount = amount + bonus_amount
+            await firebase_patch(f"users/{user_id}", {
+                "balance": cur + final_amount,
+                "pending_bonus": None,
+            })
             try:
                 await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
                     "type": "deposit", "amount": amount, "status": "success",
                     "created_at": int(time.time()), "request_id": None, "reject_reason": None,
+                    "label": None,
                 })
+                if bonus_amount > 0:
+                    await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
+                        "type": "bonus", "amount": bonus_amount, "status": "success",
+                        "created_at": int(time.time()), "request_id": None, "reject_reason": None,
+                        "label": pending_label,
+                    })
             except: pass
-            await message.answer(f"✅ Баланс пополнен на {amount} ★!")
+            if bonus_amount > 0:
+                await message.answer(f"Баланс пополнен на {amount} ★ + бонус {bonus_amount} ★!")
+            else:
+                await message.answer(f"Баланс пополнен на {amount} ★!")
 
 # ==================== REST API ====================
 
@@ -1208,6 +1454,8 @@ async def api_withdraw_status(user_id: int):
     balance = user.get("balance", 0) if isinstance(user, dict) else 0
     frozen = user.get("frozen_balance", 0) if isinstance(user, dict) else 0
     ref_count = user.get("referral_count", 0) if isinstance(user, dict) else 0
+    pending_bonus = user.get("pending_bonus") if isinstance(user, dict) else None
+    agreed_terms = user.get("agreed_terms", True) if isinstance(user, dict) else True
     active_request = None
     all_reqs = await firebase_get("withdrawal_requests") or {}
     if isinstance(all_reqs, dict):
@@ -1221,41 +1469,34 @@ async def api_withdraw_status(user_id: int):
         "referral_link": f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}",
         "min_withdraw": WITHDRAW_MIN, "commission": WITHDRAW_COMMISSION,
         "active_request": active_request,
+        "pending_bonus": pending_bonus,
+        "agreed_terms": agreed_terms,
     }
 
 @app.post("/api/withdraw/request")
 async def api_withdraw_request(request: Request):
     req = await request.json()
     user_id = str(req.get("user_id") or "")
-    if not user_id:
-        raise HTTPException(400, "user_id обязателен")
-    try:
-        amount = int(req.get("amount", 0))
-    except:
-        raise HTTPException(400, "Некорректная сумма")
-    if amount < WITHDRAW_MIN:
-        raise HTTPException(400, f"Минимум {WITHDRAW_MIN} ★")
-    try:
-        uid_int = int(user_id)
-    except:
-        raise HTTPException(400, "Некорректный user_id")
-    if not await is_subscribed(uid_int):
-        raise HTTPException(403, "Требуется подписка на канал")
+    if not user_id: raise HTTPException(400, "user_id required")
+    try: amount = int(req.get("amount", 0))
+    except: raise HTTPException(400, "Invalid amount")
+    if amount < WITHDRAW_MIN: raise HTTPException(400, f"Minimum {WITHDRAW_MIN}")
+    try: uid_int = int(user_id)
+    except: raise HTTPException(400, "Bad user_id")
+    if not await is_subscribed(uid_int): raise HTTPException(403, "Subscribe to channel")
     user = await firebase_get(f"users/{user_id}")
-    if not isinstance(user, dict):
-        raise HTTPException(404, "Профиль не найден")
+    if not isinstance(user, dict): raise HTTPException(404, "Profile not found")
     balance = user.get("balance", 0)
     if not isinstance(balance, (int, float)): balance = 0
-    if amount > balance:
-        raise HTTPException(400, "Недостаточно звёзд")
+    if amount > balance: raise HTTPException(400, "Insufficient stars")
     ref_count = user.get("referral_count", 0)
     if uid_int != ADMIN_TELEGRAM_ID and ref_count < 5:
-        raise HTTPException(400, f"Нужно привести 5 друзей (у вас {ref_count})")
+        raise HTTPException(400, f"Need 5 friends (have {ref_count})")
     all_reqs = await firebase_get("withdrawal_requests") or {}
     if isinstance(all_reqs, dict):
         for rid, r in all_reqs.items():
             if isinstance(r, dict) and r.get("user_id") == user_id and r.get("status") == "pending":
-                raise HTTPException(400, "У вас уже есть активная заявка")
+                raise HTTPException(400, "Already have active request")
     amount_after = round(amount * (1 - WITHDRAW_COMMISSION), 2)
     new_balance = round(balance - amount, 2)
     frozen_old = user.get("frozen_balance", 0)
@@ -1265,42 +1506,33 @@ async def api_withdraw_request(request: Request):
     })
     now = int(time.time())
     req_data = {
-        "user_id": user_id,
-        "username": user.get("username", "user"),
-        "first_name": user.get("first_name", "Игрок"),
-        "amount": amount,
-        "amount_after_commission": amount_after,
-        "referral_count": ref_count,
-        "status": "pending",
-        "created_at": now,
-        "reviewed_at": None,
-        "reject_reason": None,
-        "reviewed_by": None,
+        "user_id": user_id, "username": user.get("username", "user"),
+        "first_name": user.get("first_name", "Player"),
+        "amount": amount, "amount_after_commission": amount_after,
+        "referral_count": ref_count, "status": "pending",
+        "created_at": now, "reviewed_at": None, "reject_reason": None, "reviewed_by": None,
     }
     r = await http_client.post(f"{FIREBASE_DB_URL}/withdrawal_requests.json", json=req_data)
     req_id = r.json().get("name") if r.status_code == 200 else None
     if not req_id:
         await firebase_patch(f"users/{user_id}", {"balance": balance, "frozen_balance": frozen_old})
-        raise HTTPException(500, "Ошибка создания заявки")
+        raise HTTPException(500, "Error creating request")
     try:
         await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
             "type": "withdrawal", "amount": amount,
             "amount_after_commission": amount_after,
             "status": "pending", "created_at": now,
-            "request_id": req_id, "reject_reason": None,
+            "request_id": req_id, "reject_reason": None, "label": None,
         })
     except: pass
     await _notify_admin_withdrawal(req_id, req_data)
-    return {
-        "status": "ok", "request_id": req_id, "amount": amount,
-        "amount_after_commission": amount_after, "new_balance": new_balance,
-    }
+    return {"status": "ok", "request_id": req_id, "amount": amount,
+            "amount_after_commission": amount_after, "new_balance": new_balance}
 
 @app.get("/api/user/transactions")
 async def api_user_transactions(user_id: int):
     txs = await firebase_get(f"transactions/{user_id}") or {}
-    if not isinstance(txs, dict):
-        return {"transactions": []}
+    if not isinstance(txs, dict): return {"transactions": []}
     items = [{"id": tid, **tx} for tid, tx in txs.items() if isinstance(tx, dict)]
     items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
     return {"transactions": items}
@@ -1312,8 +1544,7 @@ async def debug_fonbet(ev_id: str):
         r = cffi_requests.get(f"{FONBET_BASE}/events/listBase?scopeMarket=1600&lang=ru",
                               headers=FONBET_HEADERS, impersonate="chrome120", timeout=30)
         if r.status_code != 200:
-            result["endpoints"]["listBase"] = {"status": r.status_code}
-            return result
+            result["endpoints"]["listBase"] = {"status": r.status_code}; return result
         data = r.json()
         events = data.get("events", []); custom = data.get("customFactors", [])
         target_ev = next((ev for ev in events if str(ev.get("id")) == ev_id), None)
@@ -1333,36 +1564,13 @@ async def debug_fonbet(ev_id: str):
         fb_match = await firebase_get(f"matches/fonbet_{ev_id}")
         if isinstance(fb_match, dict):
             fb_markets = fb_match.get("markets", {})
-            result["firebase"] = {
-                "exists": True, "status": fb_match.get("status"),
-                "markets_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {},
-            }
+            result["firebase"] = {"exists": True, "status": fb_match.get("status"),
+                "markets_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {}}
         else:
             result["firebase"] = {"exists": False}
     except Exception as e:
         result["firebase"] = {"error": str(e)[:200]}
     return result
-
-@app.get("/api/debug/fonbet/{ev_id}/raw")
-async def debug_fonbet_raw(ev_id: str):
-    results = {}
-    for label, url in [("listBase", FONBET_BASE + FONBET_LINE_PATH), ("live", FONBET_BASE + FONBET_LIVE_PATH)]:
-        try:
-            r = cffi_requests.get(url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=30)
-            if r.status_code != 200:
-                results[label] = {"status": r.status_code}; continue
-            data = r.json(); found = []
-            for cf in data.get("customFactors", []):
-                if str(cf.get("e")) == ev_id:
-                    for f in cf.get("factors", []):
-                        found.append({"f": f.get("f"), "p": f.get("p"), "v": f.get("v")})
-            for f in data.get("factors", []):
-                if str(f.get("e")) == ev_id:
-                    found.append({"f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "src": "factors"})
-            results[label] = {"count": len(found), "factors": found}
-        except Exception as e:
-            results[label] = {"error": str(e)[:200]}
-    return results
 
 @app.get("/api/debug/market-audit/{ev_id}")
 async def debug_market_audit(ev_id: str):
@@ -1387,12 +1595,12 @@ async def debug_market_audit(ev_id: str):
                         raw.append({"src": label + "/custom", "f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "mapped": FONBET_FACTORS.get(f.get("f"))})
         except Exception as e:
             raw.append({"src": label, "error": str(e)[:200]})
-    by_fid = {}; seen_pairs = set()
+    by_fid = {}; seen = set()
     for r in raw:
         if "f" not in r or r.get("f") is None: continue
         key = (r["f"], r.get("p"))
-        if key in seen_pairs: continue
-        seen_pairs.add(key)
+        if key in seen: continue
+        seen.add(key)
         by_fid.setdefault(r["f"], []).append({"p": r.get("p"), "v": r.get("v"), "src": r.get("src")})
     computed = _parse_markets([{"f": r["f"], "p": r.get("p"), "v": r.get("v")} for r in raw if "f" in r and r.get("f") is not None])
     fb = await firebase_get(f"matches/fonbet_{ev_id}") or {}
@@ -1400,14 +1608,10 @@ async def debug_market_audit(ev_id: str):
         "ev_id": ev_id,
         "raw_factor_count": len([r for r in raw if "f" in r]),
         "unmapped_fids": sorted({r["f"] for r in raw if "f" in r and r.get("mapped") is None}),
-        "by_fid": by_fid,
-        "computed_markets": computed,
-        "firebase_snapshot": {
-            "exists": bool(fb),
-            "status": fb.get("status") if isinstance(fb, dict) else None,
+        "by_fid": by_fid, "computed_markets": computed,
+        "firebase_snapshot": {"exists": bool(fb), "status": fb.get("status") if isinstance(fb, dict) else None,
             "score": fb.get("score") if isinstance(fb, dict) else None,
-            "markets": fb.get("markets") if isinstance(fb, dict) else None,
-        },
+            "markets": fb.get("markets") if isinstance(fb, dict) else None},
     }
 
 @app.get("/api/proxy-image")
@@ -1420,7 +1624,7 @@ async def proxy_image(url: str):
 
 @app.get("/api/user/sync")
 async def sync_user(initData: str = Query("")):
-    user_data = {"id": 12345678, "first_name": "Игрок", "username": "user"}
+    user_data = {"id": 12345678, "first_name": "Player", "username": "user"}
     if initData:
         try:
             parsed_qs = urllib.parse.parse_qs(initData, keep_blank_values=True)
@@ -1437,7 +1641,7 @@ async def sync_user(initData: str = Query("")):
         old_balance = existing_user.get("balance", 0) if isinstance(existing_user, dict) else 0
         default_user = {
             "user_id": user_id, "username": user_data.get("username", "user"),
-            "first_name": user_data.get("first_name", "Игрок"),
+            "first_name": user_data.get("first_name", "Player"),
             "photo_url": user_data.get("photo_url", f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}"),
             "balance": old_balance if isinstance(old_balance, (int, float)) else 0,
             "frozen_balance": 0,
@@ -1446,6 +1650,9 @@ async def sync_user(initData: str = Query("")):
             "profit": existing_user.get("profit", 0) if isinstance(existing_user, dict) else 0,
             "referral_code": user_id, "referred_by": None,
             "referral_count": 0, "subscribed": subscribed,
+            "agreed_terms": False, "agreed_at": None,
+            "pending_bonus": None,
+            "created_at": int(time.time()),
         }
         await firebase_put(f"users/{user_id}", default_user)
         return {"status": "ok", "user": default_user, "subscribed": subscribed}
@@ -1484,30 +1691,27 @@ async def place_bet(request: Request):
     req = await request.json()
     user_id = req.get("user_id"); amount = req.get("amount")
     bets = req.get("bets", []); bet_type = req.get("type", "single")
-    if amount is None or amount < 10: raise HTTPException(400, "Минимум 10 звёзд")
-    if not bets: raise HTTPException(400, "Нет исходов")
-    try:
-        uid_int = int(user_id)
-    except:
-        raise HTTPException(400, "Некорректный user_id")
-    if not await is_subscribed(uid_int):
-        raise HTTPException(403, "Требуется подписка на канал")
+    if amount is None or amount < 10: raise HTTPException(400, "Min 10 stars")
+    if not bets: raise HTTPException(400, "No outcomes")
+    try: uid_int = int(user_id)
+    except: raise HTTPException(400, "Bad user_id")
+    if not await is_subscribed(uid_int): raise HTTPException(403, "Subscribe to channel")
     user = await firebase_get(f"users/{user_id}")
-    if not isinstance(user, dict): raise HTTPException(404, "Профиль не найден")
+    if not isinstance(user, dict): raise HTTPException(404, "Profile not found")
+    if not user.get("agreed_terms"):
+        raise HTTPException(403, "Terms not accepted")
     user_balance = user.get("balance", 0)
     if not isinstance(user_balance, (int, float)): user_balance = 0
-    if user_balance < amount: raise HTTPException(400, "Недостаточно звёзд")
-    new_fingerprint = hashlib.md5(f"{user_id}|{amount}|{json.dumps(bets, sort_keys=True)}".encode()).hexdigest()
+    if user_balance < amount: raise HTTPException(400, "Insufficient stars")
+    new_fp = hashlib.md5(f"{user_id}|{amount}|{json.dumps(bets, sort_keys=True)}".encode()).hexdigest()
     active_all = await firebase_get("active_bets") or {}
     if isinstance(active_all, dict):
-        current_ts = time.time()
+        ts = time.time()
         for _bid, _b in active_all.items():
             if not isinstance(_b, dict): continue
-            _b_ts = _b.get("timestamp", 0)
-            if current_ts - _b_ts > 10: continue
+            if ts - _b.get("timestamp", 0) > 10: continue
             old_fp = hashlib.md5(f"{_b.get('user_id')}|{_b.get('amount')}|{json.dumps(_b.get('events', []), sort_keys=True)}".encode()).hexdigest()
-            if old_fp == new_fingerprint:
-                raise HTTPException(429, "Дубликат ставки. Подождите 10 секунд.")
+            if old_fp == new_fp: raise HTTPException(429, "Duplicate. Wait 10s.")
     total_coeff = 1.0
     for b in bets: total_coeff *= float(b.get("coefficient", 1.0))
     total_coeff = round(total_coeff, 2)
@@ -1516,7 +1720,7 @@ async def place_bet(request: Request):
         "user_id": str(user_id), "type": bet_type, "events": bets,
         "amount": amount, "total_coefficient": total_coeff,
         "potential_win": round(amount * total_coeff, 2),
-        "status": "active", "timestamp": int(time.time())
+        "status": "active", "timestamp": int(time.time()),
     }
     bet_ref = await http_client.post(f"{FIREBASE_DB_URL}/bets.json", json=bet_data)
     bet_id = bet_ref.json().get("name") if bet_ref.status_code == 200 else None
@@ -1527,7 +1731,7 @@ async def place_bet(request: Request):
             "total_coefficient": total_coeff, "timestamp": time.time(),
         })
     await firebase_patch(f"users/{user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
-    return {"status": "ok", "new_balance": new_balance, "message": "Прогноз принят!"}
+    return {"status": "ok", "new_balance": new_balance, "message": "Accepted"}
 
 @app.post("/api/cashier/invoice")
 async def create_invoice(request: Request):
@@ -1535,23 +1739,67 @@ async def create_invoice(request: Request):
     user_id = req.get("user_id"); amount = req.get("amount")
     payload = f"topup_{user_id}_{amount}"
     try:
-        link = await bot.create_invoice_link(title="WinStars", description=f"Пополнение {amount} ★", payload=payload, currency="XTR", prices=[LabeledPrice(label="Звёзды", amount=amount)])
+        link = await bot.create_invoice_link(title="WinStars", description=f"Пополнение {amount} ★",
+            payload=payload, currency="XTR", prices=[LabeledPrice(label="Звёзды", amount=amount)])
         return {"status": "ok", "invoice_link": link}
     except Exception as e: raise HTTPException(500, str(e))
 
 @app.post("/api/cashier/promo")
 async def activate_promo(request: Request):
     req = await request.json()
-    code = req.get("code").upper(); user_id = req.get("user_id")
+    code = (req.get("code") or "").upper().strip()
+    user_id = str(req.get("user_id") or "")
+    if not code or not user_id: raise HTTPException(400, "Bad request")
     promo = await firebase_get(f"promo_codes/{code}")
-    if not promo: raise HTTPException(400, "Промокод не найден")
+    if not isinstance(promo, dict): raise HTTPException(400, "Promo not found")
+    now = int(time.time())
+    exp = promo.get("expires_at", 0)
+    if exp and exp < now: raise HTTPException(400, "Promo expired")
+    max_uses = promo.get("max_uses", 0)
+    used_count = promo.get("used_count", 0)
+    if max_uses and used_count >= max_uses: raise HTTPException(400, "Promo limit reached")
+    used_by = promo.get("used_by") or {}
+    if user_id in used_by: raise HTTPException(400, "Already used")
     user = await firebase_get(f"users/{user_id}")
-    if not isinstance(user, dict): raise HTTPException(400, "Ошибка профиля")
-    cur = user.get("balance", 0)
-    if not isinstance(cur, (int, float)): cur = 0
-    new_balance = round(cur + promo.get("reward_stars", 50), 2)
-    await firebase_patch(f"users/{user_id}", {"balance": new_balance})
-    return {"status": "ok", "message": f"Начислено {promo.get('reward_stars', 50)} ★", "new_balance": new_balance}
+    if not isinstance(user, dict): raise HTTPException(400, "Profile not found")
+    if promo.get("new_users_only"):
+        if user.get("total_bets", 0) > 0:
+            raise HTTPException(400, "Promo for new users only")
+    ptype = promo.get("type", "fixed_stars")
+    if ptype == "fixed_stars":
+        stars = promo.get("reward_stars", 50)
+        cur = user.get("balance", 0)
+        if not isinstance(cur, (int, float)): cur = 0
+        new_bal = round(cur + stars, 2)
+        await firebase_patch(f"users/{user_id}", {"balance": new_bal})
+        await firebase_patch(f"promo_codes/{code}", {
+            "used_count": used_count + 1,
+            f"used_by/{user_id}": True,
+        })
+        try:
+            await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
+                "type": "promo", "amount": stars, "status": "success",
+                "created_at": now, "request_id": None, "reject_reason": None,
+                "label": f"Промокод {code}",
+            })
+        except: pass
+        return {"status": "ok", "message": f"Начислено {stars} ★",
+                "new_balance": new_bal, "type": "fixed_stars", "amount": stars}
+    elif ptype == "deposit_percent":
+        percent = promo.get("deposit_percent", 10)
+        min_dep = promo.get("min_deposit", 0) or 0
+        await firebase_patch(f"users/{user_id}", {
+            "pending_bonus": {"code": code, "percent": percent,
+                "min_deposit": min_dep, "applied_at": now}
+        })
+        await firebase_patch(f"promo_codes/{code}", {
+            "used_count": used_count + 1,
+            f"used_by/{user_id}": True,
+        })
+        return {"status": "ok",
+                "message": f"+{percent}% к следующему пополнению (мин. {min_dep}★)",
+                "type": "deposit_percent", "percent": percent, "min_deposit": min_dep}
+    raise HTTPException(400, "Unknown promo type")
 
 @app.get("/api/chat/history")
 async def get_chat_history():
