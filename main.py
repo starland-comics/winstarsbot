@@ -166,41 +166,48 @@ async def firebase_delete(path: str):
     try: await http_client.delete(f"{FIREBASE_DB_URL}/{path}.json")
     except: pass
 
-async def _save_matches(matches_dict):
-    """Сохраняет matches: один PUT если <900KB, иначе по одному матчу."""
-    if not matches_dict:
-        return
-    
-    try:
-        size = len(json.dumps(matches_dict, ensure_ascii=False))
-    except:
-        size = 0
-    
-    if size < 900_000:
-        # Один PUT — быстрее и проще
+async def _save_matches_fallback(matches_dict):
+    print("   ⚠️ Saving per-match (fallback)...")
+    existing = await firebase_get("matches") or {}
+    if isinstance(existing, dict):
+        to_delete = set(existing.keys()) - set(matches_dict.keys())
+        for k in to_delete:
+            try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
+            except: pass
+            
+    for mid, mdata in matches_dict.items():
         try:
-            r = await http_client.put(f"{FIREBASE_DB_URL}/matches.json", json=matches_dict, timeout=45.0)
+            r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
             if r.status_code != 200:
-                print(f"   ⚠️ save_matches PUT: HTTP {r.status_code} | {r.text[:200]}")
+                print(f"   ⚠️ save {mid}: HTTP {r.status_code} | {r.text[:100]}")
         except Exception as e:
-            print(f"   ⚠️ save_matches PUT: {e}")
+            print(f"   ⚠️ save {mid}: {e}")
+
+async def _save_matches(matches_dict):
+    if not matches_dict: return
+    try:
+        payload = json.dumps(matches_dict, allow_nan=False, ensure_ascii=False)
+        size = len(payload)
+    except ValueError as e:
+        print(f"   ⚠️ JSON serialization error: {e} (возможно NaN в кэфах)")
+        return
+
+    if size < 900_000:
+        try:
+            r = await http_client.put(
+                f"{FIREBASE_DB_URL}/matches.json",
+                content=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=45.0
+            )
+            if r.status_code != 200:
+                print(f"   ⚠️ bulk PUT failed: {r.status_code} {r.text[:200]} -> fallback")
+                await _save_matches_fallback(matches_dict)
+        except Exception as e:
+            print(f"   ⚠️ bulk PUT exception: {e} -> fallback")
+            await _save_matches_fallback(matches_dict)
     else:
-        # Слишком большой — по одному через PUT на ключ + удаление устаревших
-        print(f"   ⚠️ matches большой ({size//1024} KB) — сохраняю по одному")
-        existing = await firebase_get("matches") or {}
-        if isinstance(existing, dict):
-            to_delete = set(existing.keys()) - set(matches_dict.keys())
-            for k in to_delete:
-                try: await http_client.delete(f"{FIREBASE_DB_URL}/matches/{k}.json")
-                except: pass
-        
-        for mid, mdata in matches_dict.items():
-            try:
-                r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
-                if r.status_code != 200:
-                    print(f"   ⚠️ save {mid}: HTTP {r.status_code} | {r.text[:100]}")
-            except Exception as e:
-                print(f"   ⚠️ save {mid}: {e}")
+        await _save_matches_fallback(matches_dict)
 
 async def get_finished_cached():
     now = time.time()
@@ -255,7 +262,6 @@ def _extract_score(li):
     return s1, s2, minute
 
 def _normalize_p(p_val):
-    """Fonbet присылает p как 250 (это 2.5), -150 (это -1.5), 50 (это 0.5)."""
     if abs(p_val) >= 100:
         return p_val / 100.0
     elif abs(p_val) >= 10:
@@ -263,7 +269,6 @@ def _normalize_p(p_val):
     return float(p_val)
 
 def _parse_markets(factors_list):
-    """Парсит рынки с нормализацией p."""
     seen = set()
     markets = {}
     for f in factors_list:
@@ -661,7 +666,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: Fonbet PUT-save, p-normalize, 60 f-IDs")
+    print("   ВЕРСИЯ: Fonbet bulk PUT + fallback, p-normalize, 60 f-IDs")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -694,7 +699,6 @@ async def debug_fonbet(ev_id: str):
             "status": r.status_code,
             "event_found": target_ev is not None,
             "factors_count": len(factors_for_ev),
-            "factors_sample": factors_for_ev[:5],
             "markets_summary": {g: len(outs) for g, outs in markets.items()},
             "markets_full": markets,
         }
