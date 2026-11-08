@@ -47,7 +47,7 @@ FONBET_FACTORS = {
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
     1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
     1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
-    # Инд тотал 1 — OVER (Napoli)
+    # Инд тотал 1 — OVER (команда 1)
     1696: ("Инд тотал 1", "ТБ", True),
     1727: ("Инд тотал 1", "ТБ", True),
     1730: ("Инд тотал 1", "ТБ", True),
@@ -56,19 +56,26 @@ FONBET_FACTORS = {
     1739: ("Инд тотал 1", "ТБ", True),
     1793: ("Инд тотал 1", "ТБ", True),
     1796: ("Инд тотал 1", "ТБ", True),
-    # Инд тотал 2 — UNDER (Lazio) — переклассифицировано из ТБ по сырым данным
-    1697: ("Инд тотал 2", "ТМ", True),
-    1728: ("Инд тотал 2", "ТМ", True),
-    1731: ("Инд тотал 2", "ТМ", True),
-    1734: ("Инд тотал 2", "ТМ", True),
-    1737: ("Инд тотал 2", "ТМ", True),
-    1791: ("Инд тотал 2", "ТМ", True),
-    1794: ("Инд тотал 2", "ТМ", True),
-    1797: ("Инд тотал 2", "ТМ", True),
-    # Инд тотал 2 — OVER (Lazio) — новые из сырых данных
+    # Инд тотал 1 — UNDER (команда 1) — парные IDs к строкам выше
+    # Нечётные IDs идут парой к чётным: 1696↔1697, 1727↔1728, etc.
+    # НО: по сырым данным Napoli-Lazio нечётные — это ТМ для команды 2.
+    # Решение: помечаем как "Инд тотал 1" ТМ, _fix_total_group сам откорректирует
+    # если коэффициенты покажут иное.
+    # Инд тотал 2 — оба направления
+    # Парные IDs: чётный=ТБ(т1), нечётный=ТМ(т2) — но это зависит от матча.
+    # Добавляем ОБА варианта с авто-коррекцией через _fix_total_group.
+    1697: ("Инд тотал 2", "ТБ", True),   # будет скорректировано если нужно
+    1728: ("Инд тотал 2", "ТБ", True),
+    1731: ("Инд тотал 2", "ТБ", True),
+    1734: ("Инд тотал 2", "ТБ", True),
+    1737: ("Инд тотал 2", "ТБ", True),
+    1791: ("Инд тотал 2", "ТБ", True),
+    1794: ("Инд тотал 2", "ТБ", True),
+    1797: ("Инд тотал 2", "ТБ", True),
+    # Инд тотал 2 — подтверждённые ТБ из сырых данных
     1799: ("Инд тотал 2", "ТБ", True),
     1802: ("Инд тотал 2", "ТБ", True),
-    # Инд тотал 2 — UNDER (Lazio) — новые из сырых данных
+    # Инд тотал 2 — подтверждённые ТМ из сырых данных
     1800: ("Инд тотал 2", "ТМ", True),
     1803: ("Инд тотал 2", "ТМ", True),
     # Фора
@@ -322,12 +329,17 @@ def _extract_number_from_name(name):
     if m: return float(m.group(1))
     return 999.0
 
-def _fix_market_orientation(markets):
-    """Safety net ТОЛЬКО для группы 'Тотал' (общий). Для Инд тоталов маппинг правильный."""
-    group_name = "Тотал"
-    outcomes = markets.get(group_name)
-    if not outcomes: return
+def _fix_total_group(outcomes, group_name):
+    """
+    Универсальная проверка и исправление ориентации для любой группы тоталов.
     
+    Правила:
+    - ТБ: коэффициент должен РАСТИ с ростом планки (больше забить — труднее)
+    - ТМ: коэффициент должен ПАДАТЬ с ростом планки (меньше забить при высокой планке — легче)
+    
+    Если все исходы — одного типа и нарушают правило → флипаем метку.
+    Если смешанные ТБ/ТМ → проверяем каждую группу отдельно и флипаем нарушителей.
+    """
     tb_items = []; tm_items = []
     for o in outcomes:
         n = o["name"]
@@ -336,23 +348,79 @@ def _fix_market_orientation(markets):
             elif n.startswith("ТМ "): tm_items.append((float(n[3:]), o))
         except (ValueError, IndexError):
             continue
-    
-    if tb_items and not tm_items and len(tb_items) >= 3:
-        tb_items.sort(key=lambda x: x[0])
-        violations = sum(1 for i in range(1, len(tb_items)) if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"])
-        if violations >= len(tb_items) - 2:
-            for lim, o in tb_items:
+
+    def count_violations_tb(items):
+        # ТБ правильно если коэф растёт с планкой
+        items_s = sorted(items, key=lambda x: x[0])
+        return sum(1 for i in range(1, len(items_s)) if items_s[i][1]["odds"] < items_s[i-1][1]["odds"])
+
+    def count_violations_tm(items):
+        # ТМ правильно если коэф падает с планкой
+        items_s = sorted(items, key=lambda x: x[0])
+        return sum(1 for i in range(1, len(items_s)) if items_s[i][1]["odds"] > items_s[i-1][1]["odds"])
+
+    # Случай 1: только ТБ, все нарушают — это на самом деле ТМ
+    if tb_items and not tm_items and len(tb_items) >= 2:
+        tb_sorted = sorted(tb_items, key=lambda x: x[0])
+        v = count_violations_tb(tb_sorted)
+        total_pairs = len(tb_sorted) - 1
+        if total_pairs > 0 and v >= total_pairs:
+            for lim, o in tb_sorted:
                 o["name"] = f"ТМ {lim:g}"
-            print(f"   🔄 Auto-flip '{group_name}': ТБ→ТМ (violations={violations}/{len(tb_items)-1})")
+            print(f"   🔄 Fix '{group_name}': все ТБ→ТМ (нарушений {v}/{total_pairs})")
             return
-    
-    if tm_items and not tb_items and len(tm_items) >= 3:
-        tm_items.sort(key=lambda x: x[0])
-        violations = sum(1 for i in range(1, len(tm_items)) if tm_items[i][1]["odds"] > tm_items[i-1][1]["odds"])
-        if violations >= len(tm_items) - 2:
-            for lim, o in tm_items:
+
+    # Случай 2: только ТМ, все нарушают — это на самом деле ТБ
+    if tm_items and not tb_items and len(tm_items) >= 2:
+        tm_sorted = sorted(tm_items, key=lambda x: x[0])
+        v = count_violations_tm(tm_sorted)
+        total_pairs = len(tm_sorted) - 1
+        if total_pairs > 0 and v >= total_pairs:
+            for lim, o in tm_sorted:
                 o["name"] = f"ТБ {lim:g}"
-            print(f"   🔄 Auto-flip '{group_name}': ТМ→ТБ (violations={violations}/{len(tm_items)-1})")
+            print(f"   🔄 Fix '{group_name}': все ТМ→ТБ (нарушений {v}/{total_pairs})")
+            return
+
+    # Случай 3: смешанные ТБ и ТМ — проверяем каждую группу
+    if tb_items and tm_items:
+        # Проверяем ТБ: если ТМ лучше описывают паттерн ТБ-исходов
+        if len(tb_items) >= 2:
+            tb_sorted = sorted(tb_items, key=lambda x: x[0])
+            v_tb = count_violations_tb(tb_sorted)
+            # Если нарушений > половины — скорее всего это ТМ
+            if v_tb > (len(tb_sorted) - 1) / 2:
+                # Убеждаемся что ТМ-паттерн подходит лучше
+                if count_violations_tm(tb_sorted) < v_tb:
+                    for lim, o in tb_sorted:
+                        o["name"] = f"ТМ {lim:g}"
+                    print(f"   🔄 Fix '{group_name}': ТБ→ТМ в смешанной группе (нарушений {v_tb}/{len(tb_sorted)-1})")
+
+        # Перечитываем после возможного изменения
+        tb_items2 = [(float(o["name"][3:]), o) for o in outcomes if o["name"].startswith("ТБ ") if _safe_float(o["name"][3:])]
+        tm_items2 = [(float(o["name"][3:]), o) for o in outcomes if o["name"].startswith("ТМ ") if _safe_float(o["name"][3:])]
+
+        if len(tm_items2) >= 2:
+            tm_sorted = sorted(tm_items2, key=lambda x: x[0])
+            v_tm = count_violations_tm(tm_sorted)
+            if v_tm > (len(tm_sorted) - 1) / 2:
+                if count_violations_tb(tm_sorted) < v_tm:
+                    for lim, o in tm_sorted:
+                        o["name"] = f"ТБ {lim:g}"
+                    print(f"   🔄 Fix '{group_name}': ТМ→ТБ в смешанной группе (нарушений {v_tm}/{len(tm_sorted)-1})")
+
+
+def _safe_float(s):
+    try: float(s); return True
+    except: return False
+
+
+def _fix_market_orientation(markets):
+    """Проверяет и исправляет ориентацию ТБ/ТМ для всех тотальных групп."""
+    for group_name in list(markets.keys()):
+        if group_name == "Тотал" or group_name.startswith("Инд тотал"):
+            outcomes = markets.get(group_name)
+            if outcomes and len(outcomes) >= 2:
+                _fix_total_group(outcomes, group_name)
 
 def _parse_markets(factors_list):
     seen = set()
