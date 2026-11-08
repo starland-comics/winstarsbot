@@ -211,7 +211,6 @@ async def firebase_delete(path: str):
     except: pass
 
 async def send_user_notification(user_id, text, button_text=None, button_url=None):
-    """Отправляет уведомление юзеру с опциональной кнопкой WebApp."""
     try:
         kb = None
         if button_text and button_url:
@@ -254,7 +253,6 @@ def _find_bad_key(obj, path=""):
     return None
 
 async def _save_matches_fallback(matches_dict):
-    print("   Saving per-match (fallback)...")
     existing = await firebase_get("matches") or {}
     if isinstance(existing, dict):
         to_delete = set(existing.keys()) - set(matches_dict.keys())
@@ -263,29 +261,21 @@ async def _save_matches_fallback(matches_dict):
             except: pass
     for mid, mdata in matches_dict.items():
         bad = _find_bad_key(mdata, "")
-        if bad:
-            print(f"   SKIP {mid}: {bad}")
-            continue
+        if bad: continue
         try:
-            r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
-            if r.status_code != 200:
-                print(f"   save {mid}: HTTP {r.status_code}")
-        except Exception as e:
-            print(f"   save {mid}: {e}")
+            await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=mdata, timeout=15.0)
+        except: pass
 
 async def _save_matches(matches_dict):
     if not matches_dict: return
     bad = _find_bad_key(matches_dict, "")
     if bad:
-        print(f"   [SAVE] bad key: {bad}")
         await _save_matches_fallback(matches_dict)
         return
     try:
         payload = json.dumps(matches_dict, allow_nan=False, ensure_ascii=False)
         size = len(payload)
-    except ValueError as e:
-        print(f"   JSON error: {e}")
-        return
+    except ValueError: return
     if size < 900_000:
         try:
             r = await http_client.put(
@@ -307,10 +297,8 @@ async def _record_finished(mid, s1, s2, source, retries=3):
                 json={"score1": s1, "score2": s2, "source": source},
                 timeout=10.0,
             )
-            if r.status_code == 200:
-                return True
-        except Exception as e:
-            print(f"   record_finished {mid} attempt {attempt+1}: {e}")
+            if r.status_code == 200: return True
+        except Exception: pass
         await asyncio.sleep(1)
     return False
 
@@ -367,7 +355,6 @@ def _extract_score(li):
     return s1, s2, minute
 
 def _extract_score_breakdown(li):
-    """Возвращает массив [{period, s1, s2}, ...] из liveEventInfos.scores."""
     if not li: return []
     scores = li.get("scores")
     if not isinstance(scores, list): return []
@@ -386,14 +373,10 @@ def _extract_score_breakdown(li):
     return result
 
 def _normalize_p(p_val):
-    try:
-        num = float(p_val)
-    except (TypeError, ValueError):
-        return 0.0
-    if num != int(num):
-        return num
-    if abs(num) >= 10:
-        return num / 100.0
+    try: num = float(p_val)
+    except (TypeError, ValueError): return 0.0
+    if num != int(num): return num
+    if abs(num) >= 10: return num / 100.0
     return num
 
 def _extract_number_from_name(name):
@@ -410,8 +393,7 @@ def _fix_market_orientation(markets):
         try:
             if n.startswith("ТБ "): tb_items.append((float(n[3:]), o))
             elif n.startswith("ТМ "): tm_items.append((float(n[3:]), o))
-        except (ValueError, IndexError):
-            continue
+        except (ValueError, IndexError): continue
     if tb_items and not tm_items and len(tb_items) >= 3:
         tb_items.sort(key=lambda x: x[0])
         violations = sum(1 for i in range(1, len(tb_items)) if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"])
@@ -429,14 +411,12 @@ def _check_total_consistency(markets):
     main_total = None
     for o in markets.get("Тотал", []):
         if o["name"].startswith("ТБ ") and o.get("_fid") == 930:
-            try:
-                main_total = (float(o["name"][3:]), o["odds"])
+            try: main_total = (float(o["name"][3:]), o["odds"])
             except: pass
     if main_total is None:
         return {g: outs for g, outs in markets.items()}, {}
     main_limit, main_tb_odds = main_total
-    confirmed = {}
-    suspect = {}
+    confirmed = {}; suspect = {}
     for g, outs in markets.items():
         if g != "Тотал":
             confirmed[g] = outs; continue
@@ -447,29 +427,20 @@ def _check_total_consistency(markets):
             if o["name"].startswith("ТБ "):
                 try: lim = float(o["name"][3:])
                 except: susp_outs.append(o); continue
-                if lim < main_limit:
-                    exp = 1.0 + (main_tb_odds - 1.0) * (main_limit - lim) * 2
-                else:
-                    exp = 1.0 + (main_tb_odds - 1.0) * (lim - main_limit) * 0.5
+                if lim < main_limit: exp = 1.0 + (main_tb_odds - 1.0) * (main_limit - lim) * 2
+                else: exp = 1.0 + (main_tb_odds - 1.0) * (lim - main_limit) * 0.5
                 if exp < 1.0: exp = 1.0
-                if o["odds"] < exp * 0.7 or o["odds"] > exp * 1.3:
-                    susp_outs.append(o)
-                else:
-                    conf_outs.append(o)
+                if o["odds"] < exp * 0.7 or o["odds"] > exp * 1.3: susp_outs.append(o)
+                else: conf_outs.append(o)
             elif o["name"].startswith("ТМ "):
                 try: lim = float(o["name"][3:])
                 except: susp_outs.append(o); continue
-                if lim < main_limit:
-                    exp = 1.0 + (1.0 / main_tb_odds) * (main_limit - lim) * 2
-                else:
-                    exp = 1.0 + (1.0 / main_tb_odds) * (lim - main_limit) * 0.5
+                if lim < main_limit: exp = 1.0 + (1.0 / main_tb_odds) * (main_limit - lim) * 2
+                else: exp = 1.0 + (1.0 / main_tb_odds) * (lim - main_limit) * 0.5
                 if exp < 1.0: exp = 1.0
-                if o["odds"] < exp * 0.7 or o["odds"] > exp * 1.3:
-                    susp_outs.append(o)
-                else:
-                    conf_outs.append(o)
-            else:
-                susp_outs.append(o)
+                if o["odds"] < exp * 0.7 or o["odds"] > exp * 1.3: susp_outs.append(o)
+                else: conf_outs.append(o)
+            else: susp_outs.append(o)
         if conf_outs: confirmed[g] = conf_outs
         if susp_outs: suspect["Тотал (доп.)"] = susp_outs
     return confirmed, suspect
@@ -493,8 +464,7 @@ def _parse_markets(factors_list):
             except: continue
             p_val = _normalize_p(p_raw)
             if p_val == 0 and group == "Тотал": continue
-            if group == "Тотал":
-                name = f"{base} {abs(p_val):g}"
+            if group == "Тотал": name = f"{base} {abs(p_val):g}"
             else:
                 if p_val == int(p_val): p_str = str(int(p_val))
                 else: p_str = f"{p_val:g}"
@@ -511,8 +481,7 @@ def _parse_markets(factors_list):
     _fix_market_orientation(markets)
     confirmed, suspect = _check_total_consistency(markets)
     markets = confirmed
-    for g, outs in suspect.items():
-        markets[g] = outs
+    for g, outs in suspect.items(): markets[g] = outs
     for g in markets:
         markets[g].sort(key=lambda x: _extract_number_from_name(x["name"]))
         for o in markets[g]: o.pop("_fid", None)
@@ -543,8 +512,7 @@ def _filter_decided(markets, s1, s2):
         elif g in ("Тотал", "Тотал (доп.)"):
             new_outs = _filter_total_group(outs, s1 + s2)
             if new_outs: filtered[g] = new_outs
-        else:
-            filtered[g] = outs
+        else: filtered[g] = outs
     return filtered
 
 def _fetch_fonbet(url):
@@ -562,15 +530,13 @@ def _fetch_full_line_sync(ev_id):
     data = _fetch_fonbet(url)
     if not data: return []
     for cf in data.get("customFactors", []):
-        if cf.get("e") == ev_id:
-            return cf.get("factors", [])
+        if cf.get("e") == ev_id: return cf.get("factors", [])
     return []
 
 async def _fetch_full_line(ev_id):
     now = time.time()
     cached = _FULL_LINE_CACHE.get(ev_id)
-    if cached and now - cached["ts"] < FULL_LINE_TTL:
-        return cached["factors"]
+    if cached and now - cached["ts"] < FULL_LINE_TTL: return cached["factors"]
     factors = await asyncio.to_thread(_fetch_full_line_sync, ev_id)
     if factors:
         _FULL_LINE_CACHE[ev_id] = {"factors": factors, "ts": now}
@@ -785,14 +751,14 @@ async def fonbet_scraper_worker():
                     old_m = cached_old.get(mid)
                     if not isinstance(old_m, dict): continue
                     score_str = old_m.get("score", "")
-                    s1_old, s2_old = 0, 0
                     if ":" in score_str:
                         try:
                             s1_old, s2_old = [int(x.strip()) for x in score_str.split(":")]
+                            ok = await _record_finished(mid, s1_old, s2_old, "fonbet_last")
+                            if not ok:
+                                _PENDING_FINISHED[mid] = {"score1": s1_old, "score2": s2_old, "source": "fonbet_last"}
                         except: pass
-                    ok = await _record_finished(mid, s1_old, s2_old, "fonbet_last")
-                    if not ok:
-                        _PENDING_FINISHED[mid] = {"score1": s1_old, "score2": s2_old, "source": "fonbet_last"}
+                    # Если счёта не было (VS), значит матч даже не начался. НЕ пишем 0:0! Просто игнорируем.
             for mid in list(_PENDING_FINISHED.keys()):
                 d = _PENDING_FINISHED[mid]
                 if await _record_finished(mid, d["score1"], d["score2"], d["source"]):
@@ -809,10 +775,9 @@ async def fonbet_scraper_worker():
                     size_mb = approx_size / 1024 / 1024
                 except: size_mb = 0
                 await _save_matches(matches_dict)
-                print(f"[FONBET] {len(matches_dict)} matches (LIVE: {live_cnt}) | {total_markets_count} mkts | full-line: {full_line_fetched} | {size_mb:.1f}MB {time.time()-t0:.1f}s")
+                print(f"[FONBET] {len(matches_dict)} matches (LIVE: {live_cnt}) | {total_markets_count} mkts | {time.time()-t0:.1f}s")
         except Exception as e:
             import traceback
-            print(f"fonbet_scraper: {e}")
             traceback.print_exc()
         cycle += 1
         if cycle % 15 == 0: gc.collect()
@@ -881,7 +846,6 @@ async def settle_bets_worker():
                         amount = bet.get("amount", 0)
                         bet_type = bet.get("type", "single")
                         
-                        # Проверка на void матч
                         if any(r.get("void") for r in results):
                             user = await firebase_get(f"users/{user_id}")
                             if isinstance(user, dict):
@@ -899,7 +863,6 @@ async def settle_bets_worker():
                             except: pass
                             continue
                         
-                        # Расчёт по каждой ноге
                         is_lost = False
                         is_all_void = True
                         eff_coeff = 1.0
@@ -932,14 +895,19 @@ async def settle_bets_worker():
                                 "score1": s1, "score2": s2,
                             })
                             
-                            if leg_status == "lost":
-                                is_lost = True
+                            if leg_status == "lost": is_lost = True
                             elif leg_status == "won":
                                 is_all_void = False
                                 eff_coeff *= coeff
                         
                         if is_lost:
                             status = "lost"
+                            # Вычитаем проигрыш из профита!
+                            user = await firebase_get(f"users/{user_id}")
+                            if isinstance(user, dict):
+                                await firebase_patch(f"users/{user_id}", {
+                                    "profit": user.get("profit", 0) - amount
+                                })
                         elif is_all_void:
                             status = "void"
                             user = await firebase_get(f"users/{user_id}")
@@ -972,38 +940,28 @@ async def settle_bets_worker():
                             })
                         await firebase_delete(f"active_bets/{bet_id}")
                         
-                        # Push-уведомление
                         try:
                             if status == "won":
                                 win_amount = round(amount * eff_coeff, 2)
                                 await send_user_notification(user_id,
-                                    f"<b>Ставка выиграла!</b>\n\n"
-                                    f"Тип: {bet_type}\n"
-                                    f"Выплата: <b>+{win_amount} ★</b>\n\n"
-                                    f"Средства зачислены на баланс.",
+                                    f"<b>Ставка выиграла!</b>\n\nВыплата: <b>+{win_amount} ★</b>",
                                     "Забрать приз", WEBAPP_URL)
                             elif status == "lost":
                                 await send_user_notification(user_id,
-                                    f"<b>Ставка не сыграла</b>\n\n"
-                                    f"В этот раз не повезло. Попробуйте ещё раз!",
-                                    "Попробовать ещё", WEBAPP_URL)
+                                    f"<b>Ставка не сыграла</b>\n\nПопробуйте ещё раз!",
+                                    "Попробовать снова", WEBAPP_URL)
                             elif status == "void":
                                 await send_user_notification(user_id,
-                                    f"<b>Возврат ставки</b>\n\n"
-                                    f"Сумма <b>{amount} ★</b> возвращена на баланс.",
+                                    f"<b>Возврат ставки</b>\n\nСумма <b>{amount} ★</b> возвращена.",
                                     "Мои прогнозы", WEBAPP_URL)
-                        except Exception as ne:
-                            print(f"   notify bet fail: {ne}")
-                    except Exception as e:
-                        print(f"bet {bet_id} error: {e}")
-        except Exception as e:
-            print(f"settle_bets: {e}")
+                        except Exception as ne: print(f"notify bet fail: {ne}")
+                    except Exception as e: print(f"bet {bet_id} error: {e}")
+        except Exception as e: print(f"settle_bets: {e}")
         cycle += 1
         if cycle % 15 == 0: gc.collect()
         await asyncio.sleep(SETTLE_POLL_SEC)
 
 async def notify_start_worker():
-    """Уведомляет игроков за ~10 мин до начала матчей из их ставок."""
     print("notify_start_worker started...")
     while True:
         try:
@@ -1033,16 +991,12 @@ async def notify_start_worker():
                     for mid, m in to_notify[:3]:
                         t = time.strftime("%H:%M", time.localtime(m.get("start_time", 0)))
                         text += f"• {m.get('title', '')} — {t}\n"
-                    if len(to_notify) > 3:
-                        text += f"и ещё {len(to_notify) - 3}...\n"
                     text += "\nПроверьте свои прогнозы."
                     await send_user_notification(user_id, text, "Мои прогнозы", WEBAPP_URL)
                     new_notified = dict(notified)
-                    for mid, _ in to_notify:
-                        new_notified[mid] = True
+                    for mid, _ in to_notify: new_notified[mid] = True
                     await firebase_patch(f"active_bets/{bet_id}", {"start_notified_matches": new_notified})
-        except Exception as e:
-            print(f"notify_start: {e}")
+        except Exception as e: print(f"notify_start: {e}")
         await asyncio.sleep(NOTIFY_POLL_SEC)
 
 async def _notify_admin_withdrawal(req_id, data):
@@ -1052,29 +1006,17 @@ async def _notify_admin_withdrawal(req_id, data):
         f"ID: <code>{data.get('user_id')}</code>\n"
         f"Сумма: <b>{data.get('amount')} ★</b>\n"
         f"К зачислению: <b>{data.get('amount_after_commission')} ★</b> (комиссия 5%)\n"
-        f"Друзей: {data.get('referral_count', 0)}\n"
-        f"Дата: {time.strftime('%d.%m.%Y %H:%M', time.localtime(data.get('created_at', 0)))}\n\n"
-        f"<b>Telegram ID для перевода:</b> <code>{data.get('user_id')}</code>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Одобрить", callback_data=f"wd_approve:{req_id}"),
         InlineKeyboardButton(text="Отклонить", callback_data=f"wd_reject:{req_id}"),
     ]])
-    try:
-        await bot.send_message(ADMIN_TELEGRAM_ID, text, reply_markup=kb, parse_mode="HTML")
-    except Exception as e:
-        print(f"notify admin fail: {e}")
+    try: await bot.send_message(ADMIN_TELEGRAM_ID, text, reply_markup=kb, parse_mode="HTML")
+    except: pass
 
 @app.on_event("startup")
 async def startup_event():
-    print("WinStars API starting...")
-    print("   VERSION: v7 (push-notifications, leg-results, promo-codes-v2, terms, score-breakdown)")
-    try:
-        chat = await bot.get_chat(CHANNEL_ID)
-        print(f"   Channel OK: {chat.title} (@{chat.username})")
-    except Exception as e:
-        print(f"   CHANNEL ERROR {CHANNEL_ID}: {e}")
-        print(f"   Add bot to admins of {CHANNEL_USERNAME}")
+    print("WinStars API starting... VERSION: v8 (fix 0:0 bug, negative profit, promo modal)")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -1085,28 +1027,21 @@ async def startup_event():
 
 async def _register_user_if_new(user_id, from_user, referrer_id=None):
     existing = await firebase_get(f"users/{str(user_id)}")
-    if isinstance(existing, dict):
-        return False
+    if isinstance(existing, dict): return False
     pending_ref = await firebase_get(f"pending_referrals/{user_id}")
     actual_referrer = None
-    if referrer_id and referrer_id != str(user_id):
-        actual_referrer = referrer_id
+    if referrer_id and referrer_id != str(user_id): actual_referrer = referrer_id
     elif isinstance(pending_ref, dict):
         rid = pending_ref.get("referrer_id")
-        if rid and rid != str(user_id):
-            actual_referrer = rid
+        if rid and rid != str(user_id): actual_referrer = rid
     await firebase_put(f"users/{str(user_id)}", {
-        "user_id": str(user_id),
-        "username": from_user.username or "user",
+        "user_id": str(user_id), "username": from_user.username or "user",
         "first_name": from_user.first_name or "Игрок",
         "photo_url": from_user.photo_url or f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}",
-        "balance": 0, "frozen_balance": 0,
-        "total_bets": 0, "wins": 0, "profit": 0,
+        "balance": 0, "frozen_balance": 0, "total_bets": 0, "wins": 0, "profit": 0,
         "referral_code": str(user_id), "referred_by": actual_referrer,
-        "referral_count": 0, "subscribed": True,
-        "agreed_terms": False, "agreed_at": None,
-        "pending_bonus": None,
-        "created_at": int(time.time()),
+        "referral_count": 0, "subscribed": True, "agreed_terms": False, "agreed_at": None,
+        "pending_bonus": None, "created_at": int(time.time()),
     })
     if actual_referrer:
         referrer = await firebase_get(f"users/{actual_referrer}")
@@ -1122,8 +1057,7 @@ async def cmd_start(message: types.Message):
     _SUB_CHECK_CACHE.pop(user_id, None)
     args = message.text.split()
     referrer_id = None
-    if len(args) > 1 and args[1].startswith("ref_"):
-        referrer_id = args[1][4:]
+    if len(args) > 1 and args[1].startswith("ref_"): referrer_id = args[1][4:]
     subscribed = await is_subscribed(user_id)
     existing = await firebase_get(f"users/{str(user_id)}")
     if not existing and referrer_id and referrer_id != str(user_id):
@@ -1133,11 +1067,7 @@ async def cmd_start(message: types.Message):
             [InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME}")],
             [InlineKeyboardButton(text="Проверить подписку", callback_data="check_sub")],
         ])
-        await message.answer(
-            f"Добро пожаловать в <b>WinStars</b>!\n\n"
-            f"Для использования подпишитесь на канал @{CHANNEL_USERNAME}.",
-            reply_markup=kb, parse_mode="HTML"
-        )
+        await message.answer(f"Добро пожаловать!\n\nПодпишитесь на @{CHANNEL_USERNAME}.", reply_markup=kb, parse_mode="HTML")
         return
     await _register_user_if_new(user_id, message.from_user, referrer_id)
     user = await firebase_get(f"users/{str(user_id)}")
@@ -1157,8 +1087,7 @@ async def on_check_sub(callback: types.CallbackQuery):
     _SUB_CHECK_CACHE.pop(user_id, None)
     subscribed = await is_subscribed(user_id)
     if not subscribed:
-        await callback.answer("Подписка не обнаружена", show_alert=True)
-        return
+        await callback.answer("Подписка не обнаружена", show_alert=True); return
     await _register_user_if_new(user_id, callback.from_user)
     user = await firebase_get(f"users/{str(user_id)}")
     if isinstance(user, dict) and not user.get("agreed_terms"):
@@ -1167,13 +1096,11 @@ async def on_check_sub(callback: types.CallbackQuery):
                 InlineKeyboardButton(text="Принимаю условия", callback_data="agree_terms")
             ]]), parse_mode="HTML")
         except: pass
-        await callback.answer()
-        return
+        await callback.answer(); return
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
     ]])
-    try:
-        await callback.message.edit_text("Спасибо за подписку!\n\nДобро пожаловать в <b>WinStars</b>!", reply_markup=kb, parse_mode="HTML")
+    try: await callback.message.edit_text("Спасибо за подписку!", reply_markup=kb, parse_mode="HTML")
     except: pass
     await callback.answer("Подписка подтверждена")
 
@@ -1184,8 +1111,7 @@ async def on_agree_terms(callback: types.CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Открыть WinStars", web_app=WebAppInfo(url=WEBAPP_URL))
     ]])
-    try:
-        await callback.message.edit_text("Спасибо! Теперь можно пользоваться сервисом.", reply_markup=kb)
+    try: await callback.message.edit_text("Спасибо! Теперь можно пользоваться сервисом.", reply_markup=kb)
     except: pass
     await callback.answer("Согласие принято")
 
@@ -1193,24 +1119,15 @@ async def on_agree_terms(callback: types.CallbackQuery):
 async def cmd_admin(message: types.Message):
     if message.from_user.id != ADMIN_TELEGRAM_ID: return
     reqs = await firebase_get("withdrawal_requests") or {}
-    if not isinstance(reqs, dict):
-        await message.answer("Нет заявок"); return
+    if not isinstance(reqs, dict): return
     pending = [(rid, r) for rid, r in reqs.items() if isinstance(r, dict) and r.get("status") == "pending"]
     pending.sort(key=lambda x: x[1].get("created_at", 0), reverse=True)
     if not pending:
         await message.answer("Нет активных заявок"); return
     lines = ["<b>Активные заявки:</b>\n"]
     for rid, r in pending[:20]:
-        lines.append(
-            f"#{rid}\n"
-            f"{r.get('first_name')} (@{r.get('username')}) | ID: <code>{r.get('user_id')}</code>\n"
-            f"{r.get('amount')} ★ (к зачислению {r.get('amount_after_commission')} ★)\n"
-            f"{time.strftime('%d.%m.%Y %H:%M', time.localtime(r.get('created_at', 0)))}\n"
-        )
-    rows = [[
-        InlineKeyboardButton(text=f"OK #{rid}", callback_data=f"wd_approve:{rid}"),
-        InlineKeyboardButton(text=f"NO #{rid}", callback_data=f"wd_reject:{rid}"),
-    ] for rid, _ in pending[:10]]
+        lines.append(f"#{rid}\n{r.get('first_name')} (@{r.get('username')}) | ID: <code>{r.get('user_id')}</code>\n{r.get('amount')} ★\n")
+    rows = [[InlineKeyboardButton(text=f"OK #{rid}", callback_data=f"wd_approve:{rid}"), InlineKeyboardButton(text=f"NO #{rid}", callback_data=f"wd_reject:{rid}")] for rid, _ in pending[:10]]
     await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="HTML")
 
 @dp.message(Command("promo_create"))
@@ -1218,69 +1135,37 @@ async def cmd_promo_create(message: types.Message):
     if message.from_user.id != ADMIN_TELEGRAM_ID: return
     parts = message.text.split()
     if len(parts) < 6:
-        await message.answer(
-            "<b>Создание промокода</b>\n\n"
-            "<code>/promo_create CODE fixed 50 100 30</code>\n"
-            "CODE=код, 50 звезд, 100 использований, 30 дней\n\n"
-            "<code>/promo_create CODE bonus 10 100 30 50</code>\n"
-            "CODE=код, +10% к депозиту, 100 использований, 30 дней, мин.депозит 50\n\n"
-            "Опциональный флаг <code>new</code> в конце — только новым игрокам.",
-            parse_mode="HTML"
-        )
+        await message.answer("/promo_create CODE fixed 50 100 30\n/promo_create CODE bonus 10 100 30 50\n(Опционально new в конце)", parse_mode="HTML")
         return
-    code = parts[1].upper()
-    ptype = parts[2]
-    if ptype not in ("fixed", "bonus"):
-        await message.answer("Тип должен быть fixed или bonus"); return
-    try:
-        val = int(parts[3]); max_uses = int(parts[4]); days = int(parts[5])
-    except ValueError:
-        await message.answer("Ошибка в числах"); return
+    code = parts[1].upper(); ptype = parts[2]
+    if ptype not in ("fixed", "bonus"): return
+    try: val = int(parts[3]); max_uses = int(parts[4]); days = int(parts[5])
+    except: return
     extras = parts[6:] if len(parts) > 6 else []
     min_dep = 0; new_only = False
     for e in extras:
         if e == "new": new_only = True
         elif e.isdigit(): min_dep = int(e)
     expires_at = int(time.time()) + days * 86400
-    data = {
-        "code": code,
-        "type": "fixed_stars" if ptype == "fixed" else "deposit_percent",
-        "max_uses": max_uses, "used_count": 0,
-        "expires_at": expires_at, "new_users_only": new_only,
-        "created_at": int(time.time()),
-    }
-    if ptype == "fixed":
-        data["reward_stars"] = val
+    data = {"code": code, "type": "fixed_stars" if ptype == "fixed" else "deposit_percent", "max_uses": max_uses, "used_count": 0, "expires_at": expires_at, "new_users_only": new_only, "created_at": int(time.time())}
+    if ptype == "fixed": data["reward_stars"] = val
     else:
         data["deposit_percent"] = val
         data["min_deposit"] = min_dep
     await firebase_put(f"promo_codes/{code}", data)
-    await message.answer(
-        f"Промокод <code>{code}</code> создан\n"
-        f"Тип: {ptype}\n"
-        f"Значение: {val}{'★' if ptype=='fixed' else '%'}\n"
-        f"Лимит: {max_uses}\n"
-        f"Срок: {days} дней\n"
-        f"Только новым: {'да' if new_only else 'нет'}",
-        parse_mode="HTML"
-    )
+    await message.answer(f"Промокод {code} создан.")
 
 @dp.message(Command("promo_list"))
 async def cmd_promo_list(message: types.Message):
     if message.from_user.id != ADMIN_TELEGRAM_ID: return
     promos = await firebase_get("promo_codes") or {}
-    if not isinstance(promos, dict) or not promos:
-        await message.answer("Промокодов нет"); return
+    if not isinstance(promos, dict) or not promos: return
     lines = ["<b>Промокоды:</b>\n"]
-    now = int(time.time())
     for code, p in list(promos.items())[:30]:
-        if not isinstance(p, dict): continue
         ptype = p.get("type", "fixed_stars")
         val = p.get("reward_stars") if ptype == "fixed_stars" else p.get("deposit_percent")
-        used = p.get("used_count", 0)
-        max_u = p.get("max_uses", 0) or "∞"
-        exp = p.get("expires_at", 0)
-        status = "истёк" if exp and exp < now else "активен"
+        used = p.get("used_count", 0); max_u = p.get("max_uses", 0) or "∞"
+        status = "истёк" if p.get("expires_at", 0) and p.get("expires_at", 0) < int(time.time()) else "активен"
         lines.append(f"<code>{code}</code> — {val}{'★' if ptype=='fixed_stars' else '%'} | {used}/{max_u} | {status}")
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -1289,60 +1174,36 @@ async def cmd_promo_delete(message: types.Message):
     if message.from_user.id != ADMIN_TELEGRAM_ID: return
     parts = message.text.split()
     if len(parts) < 2: return
-    code = parts[1].upper()
-    await firebase_delete(f"promo_codes/{code}")
-    await message.answer(f"Промокод {code} удалён")
+    await firebase_delete(f"promo_codes/{parts[1].upper()}")
+    await message.answer(f"Промокод {parts[1].upper()} удалён")
 
 @dp.callback_query(F.data.startswith("wd_approve:"))
 async def on_wd_approve(callback: types.CallbackQuery):
-    if callback.from_user.id != ADMIN_TELEGRAM_ID:
-        await callback.answer("Только для админа", show_alert=True); return
+    if callback.from_user.id != ADMIN_TELEGRAM_ID: return
     req_id = callback.data.split(":", 1)[1]
     req = await firebase_get(f"withdrawal_requests/{req_id}")
-    if not isinstance(req, dict):
-        await callback.answer("Не найдено", show_alert=True); return
-    if req.get("status") != "pending":
-        await callback.answer(f"Уже {req.get('status')}", show_alert=True); return
+    if not isinstance(req, dict) or req.get("status") != "pending": return
     user_id = req.get("user_id"); amount = req.get("amount", 0)
-    await firebase_patch(f"withdrawal_requests/{req_id}", {
-        "status": "approved", "reviewed_at": int(time.time()), "reviewed_by": callback.from_user.id,
-    })
+    await firebase_patch(f"withdrawal_requests/{req_id}", {"status": "approved", "reviewed_at": int(time.time()), "reviewed_by": callback.from_user.id})
     user = await firebase_get(f"users/{user_id}")
     if isinstance(user, dict):
-        frozen = max(0, user.get("frozen_balance", 0) - amount)
-        await firebase_patch(f"users/{user_id}", {"frozen_balance": frozen})
+        await firebase_patch(f"users/{user_id}", {"frozen_balance": max(0, user.get("frozen_balance", 0) - amount)})
     txs = await firebase_get(f"transactions/{user_id}") or {}
     if isinstance(txs, dict):
         for tx_id, tx in txs.items():
             if isinstance(tx, dict) and tx.get("request_id") == req_id:
                 await firebase_patch(f"transactions/{user_id}/{tx_id}", {"status": "approved"})
-    try:
-        await send_user_notification(int(user_id),
-            f"<b>Ваша заявка на вывод одобрена!</b>\n\n"
-            f"Сумма: <b>{amount} ★</b>\n"
-            f"К зачислению: <b>{req.get('amount_after_commission')} ★</b>\n\n"
-            f"Звёзды будут отправлены вам в личные сообщения в течение нескольких минут.",
-            "Открыть WinStars", WEBAPP_URL)
+    try: await send_user_notification(int(user_id), f"<b>Заявка на вывод одобрена!</b>", "Открыть WinStars", WEBAPP_URL)
     except: pass
-    try:
-        await callback.message.edit_text(
-            f"<b>ОДОБРЕНО</b> (заявка #{req_id})\n\n"
-            f"Переведите <b>{req.get('amount_after_commission')} ★</b> игроку "
-            f"@{req.get('username')} (ID: <code>{user_id}</code>)",
-            parse_mode="HTML")
-    except: pass
-    await callback.answer("Одобрено")
+    await callback.message.edit_text(f"ОДОБРЕНО #{req_id}. Переведите {req.get('amount_after_commission')} ★ игроку {user_id}")
+    await callback.answer()
 
 @dp.callback_query(F.data.startswith("wd_reject:"))
 async def on_wd_reject_start(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.id != ADMIN_TELEGRAM_ID:
-        await callback.answer("Только для админа", show_alert=True); return
+    if callback.from_user.id != ADMIN_TELEGRAM_ID: return
     req_id = callback.data.split(":", 1)[1]
     req = await firebase_get(f"withdrawal_requests/{req_id}")
-    if not isinstance(req, dict):
-        await callback.answer("Не найдено", show_alert=True); return
-    if req.get("status") != "pending":
-        await callback.answer(f"Уже {req.get('status')}", show_alert=True); return
+    if not isinstance(req, dict) or req.get("status") != "pending": return
     await state.update_data(req_id=req_id, user_id=req.get("user_id"), amount=req.get("amount", 0))
     await state.set_state(WithdrawReject.waiting_reason)
     await bot.send_message(ADMIN_TELEGRAM_ID, f"Введите причину отказа для #{req_id} (или /cancel):")
@@ -1350,45 +1211,27 @@ async def on_wd_reject_start(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(Command("cancel"), WithdrawReject.waiting_reason)
 async def cmd_cancel_reject(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Отменено. Заявка осталась в ожидании.")
+    await state.clear(); await message.answer("Отменено.")
 
 @dp.message(WithdrawReject.waiting_reason)
 async def on_wd_reject_reason(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_TELEGRAM_ID: return
-    if not message.text or message.text.startswith("/"): return
+    if message.from_user.id != ADMIN_TELEGRAM_ID or not message.text or message.text.startswith("/"): return
     reason = message.text.strip()
-    if len(reason) < 3:
-        await message.answer("Причина слишком короткая. Введите ещё раз.")
-        return
-    data = await state.get_data()
-    await state.clear()
+    if len(reason) < 3: return
+    data = await state.get_data(); await state.clear()
     req_id = data["req_id"]; user_id = data["user_id"]; amount = data["amount"]
-    await firebase_patch(f"withdrawal_requests/{req_id}", {
-        "status": "rejected", "reviewed_at": int(time.time()),
-        "reviewed_by": message.from_user.id, "reject_reason": reason,
-    })
+    await firebase_patch(f"withdrawal_requests/{req_id}", {"status": "rejected", "reviewed_at": int(time.time()), "reviewed_by": message.from_user.id, "reject_reason": reason})
     user = await firebase_get(f"users/{user_id}")
     if isinstance(user, dict):
-        bal = user.get("balance", 0) + amount
-        frozen = max(0, user.get("frozen_balance", 0) - amount)
-        await firebase_patch(f"users/{user_id}", {"balance": bal, "frozen_balance": frozen})
+        await firebase_patch(f"users/{user_id}", {"balance": user.get("balance", 0) + amount, "frozen_balance": max(0, user.get("frozen_balance", 0) - amount)})
     txs = await firebase_get(f"transactions/{user_id}") or {}
     if isinstance(txs, dict):
         for tx_id, tx in txs.items():
             if isinstance(tx, dict) and tx.get("request_id") == req_id:
-                await firebase_patch(f"transactions/{user_id}/{tx_id}", {
-                    "status": "rejected", "reject_reason": reason,
-                })
-    try:
-        await send_user_notification(int(user_id),
-            f"<b>Заявка на вывод отклонена</b>\n\n"
-            f"Сумма: <b>{amount} ★</b>\n"
-            f"Причина: <i>{reason}</i>\n\n"
-            f"Все звёзды возвращены на баланс.",
-            "Открыть WinStars", WEBAPP_URL)
+                await firebase_patch(f"transactions/{user_id}/{tx_id}", {"status": "rejected", "reject_reason": reason})
+    try: await send_user_notification(int(user_id), f"<b>Вывод отклонён</b>\nПричина: {reason}\nЗвёзды возвращены.", "Открыть WinStars", WEBAPP_URL)
     except: pass
-    await message.answer(f"Заявка #{req_id} отклонена. Звёзды возвращены.")
+    await message.answer(f"Заявка #{req_id} отклонена.")
 
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
@@ -1403,38 +1246,19 @@ async def process_successful_payment(message: types.Message):
         user = await firebase_get(f"users/{user_id}")
         if isinstance(user, dict):
             cur = user.get("balance", 0)
-            if not isinstance(cur, (int, float)): cur = 0
-            bonus_amount = 0
-            pending = user.get("pending_bonus")
-            pending_label = None
-            if isinstance(pending, dict):
-                min_dep = pending.get("min_deposit", 0) or 0
-                if amount >= min_dep:
-                    percent = pending.get("percent", 0)
-                    bonus_amount = int(amount * percent / 100)
-                    pending_label = f"Бонус {percent}% по промокоду {pending.get('code', '')}"
+            bonus_amount = 0; pending = user.get("pending_bonus"); pending_label = None
+            if isinstance(pending, dict) and amount >= (pending.get("min_deposit", 0) or 0):
+                bonus_amount = int(amount * pending.get("percent", 0) / 100)
+                pending_label = f"Бонус {pending.get('percent')}%"
             final_amount = amount + bonus_amount
-            await firebase_patch(f"users/{user_id}", {
-                "balance": cur + final_amount,
-                "pending_bonus": None,
-            })
+            await firebase_patch(f"users/{user_id}", {"balance": cur + final_amount, "pending_bonus": None})
             try:
-                await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
-                    "type": "deposit", "amount": amount, "status": "success",
-                    "created_at": int(time.time()), "request_id": None, "reject_reason": None,
-                    "label": None,
-                })
+                await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={"type": "deposit", "amount": amount, "status": "success", "created_at": int(time.time()), "request_id": None, "reject_reason": None, "label": None})
                 if bonus_amount > 0:
-                    await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
-                        "type": "bonus", "amount": bonus_amount, "status": "success",
-                        "created_at": int(time.time()), "request_id": None, "reject_reason": None,
-                        "label": pending_label,
-                    })
+                    await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={"type": "bonus", "amount": bonus_amount, "status": "success", "created_at": int(time.time()), "request_id": None, "reject_reason": None, "label": pending_label})
             except: pass
-            if bonus_amount > 0:
-                await message.answer(f"Баланс пополнен на {amount} ★ + бонус {bonus_amount} ★!")
-            else:
-                await message.answer(f"Баланс пополнен на {amount} ★!")
+            if bonus_amount > 0: await message.answer(f"Баланс пополнен на {amount} ★ + бонус {bonus_amount} ★!")
+            else: await message.answer(f"Баланс пополнен на {amount} ★!")
 
 # ==================== REST API ====================
 
@@ -1442,20 +1266,11 @@ async def process_successful_payment(message: types.Message):
 async def api_check_subscription(user_id: int):
     _SUB_CHECK_CACHE.pop(user_id, None)
     subscribed = await is_subscribed(user_id)
-    if subscribed:
-        u = await firebase_get(f"users/{user_id}")
-        if isinstance(u, dict) and not u.get("subscribed"):
-            await firebase_patch(f"users/{user_id}", {"subscribed": True})
     return {"subscribed": subscribed}
 
 @app.get("/api/withdraw/status")
 async def api_withdraw_status(user_id: int):
     user = await firebase_get(f"users/{user_id}") or {}
-    balance = user.get("balance", 0) if isinstance(user, dict) else 0
-    frozen = user.get("frozen_balance", 0) if isinstance(user, dict) else 0
-    ref_count = user.get("referral_count", 0) if isinstance(user, dict) else 0
-    pending_bonus = user.get("pending_bonus") if isinstance(user, dict) else None
-    agreed_terms = user.get("agreed_terms", True) if isinstance(user, dict) else True
     active_request = None
     all_reqs = await firebase_get("withdrawal_requests") or {}
     if isinstance(all_reqs, dict):
@@ -1464,20 +1279,17 @@ async def api_withdraw_status(user_id: int):
                 active_request = {"id": rid, "amount": r.get("amount"), "created_at": r.get("created_at")}
                 break
     return {
-        "balance": balance, "frozen_balance": frozen,
-        "referral_count": ref_count,
-        "referral_link": f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}",
+        "balance": user.get("balance", 0), "frozen_balance": user.get("frozen_balance", 0),
+        "referral_count": user.get("referral_count", 0), "referral_link": f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}",
         "min_withdraw": WITHDRAW_MIN, "commission": WITHDRAW_COMMISSION,
-        "active_request": active_request,
-        "pending_bonus": pending_bonus,
-        "agreed_terms": agreed_terms,
+        "active_request": active_request, "pending_bonus": user.get("pending_bonus"),
+        "agreed_terms": user.get("agreed_terms", True),
     }
 
 @app.post("/api/withdraw/request")
 async def api_withdraw_request(request: Request):
     req = await request.json()
     user_id = str(req.get("user_id") or "")
-    if not user_id: raise HTTPException(400, "user_id required")
     try: amount = int(req.get("amount", 0))
     except: raise HTTPException(400, "Invalid amount")
     if amount < WITHDRAW_MIN: raise HTTPException(400, f"Minimum {WITHDRAW_MIN}")
@@ -1486,48 +1298,27 @@ async def api_withdraw_request(request: Request):
     if not await is_subscribed(uid_int): raise HTTPException(403, "Subscribe to channel")
     user = await firebase_get(f"users/{user_id}")
     if not isinstance(user, dict): raise HTTPException(404, "Profile not found")
-    balance = user.get("balance", 0)
-    if not isinstance(balance, (int, float)): balance = 0
-    if amount > balance: raise HTTPException(400, "Insufficient stars")
-    ref_count = user.get("referral_count", 0)
-    if uid_int != ADMIN_TELEGRAM_ID and ref_count < 5:
-        raise HTTPException(400, f"Need 5 friends (have {ref_count})")
+    if amount > user.get("balance", 0): raise HTTPException(400, "Insufficient stars")
+    if uid_int != ADMIN_TELEGRAM_ID and user.get("referral_count", 0) < 5: raise HTTPException(400, "Need 5 friends")
     all_reqs = await firebase_get("withdrawal_requests") or {}
     if isinstance(all_reqs, dict):
         for rid, r in all_reqs.items():
-            if isinstance(r, dict) and r.get("user_id") == user_id and r.get("status") == "pending":
-                raise HTTPException(400, "Already have active request")
+            if isinstance(r, dict) and r.get("user_id") == user_id and r.get("status") == "pending": raise HTTPException(400, "Already active")
     amount_after = round(amount * (1 - WITHDRAW_COMMISSION), 2)
-    new_balance = round(balance - amount, 2)
+    new_balance = round(user.get("balance", 0) - amount, 2)
     frozen_old = user.get("frozen_balance", 0)
-    await firebase_patch(f"users/{user_id}", {
-        "balance": new_balance,
-        "frozen_balance": frozen_old + amount,
-    })
+    await firebase_patch(f"users/{user_id}", {"balance": new_balance, "frozen_balance": frozen_old + amount})
     now = int(time.time())
-    req_data = {
-        "user_id": user_id, "username": user.get("username", "user"),
-        "first_name": user.get("first_name", "Player"),
-        "amount": amount, "amount_after_commission": amount_after,
-        "referral_count": ref_count, "status": "pending",
-        "created_at": now, "reviewed_at": None, "reject_reason": None, "reviewed_by": None,
-    }
+    req_data = {"user_id": user_id, "username": user.get("username", "user"), "first_name": user.get("first_name", "Player"), "amount": amount, "amount_after_commission": amount_after, "referral_count": user.get("referral_count", 0), "status": "pending", "created_at": now, "reviewed_at": None, "reject_reason": None, "reviewed_by": None}
     r = await http_client.post(f"{FIREBASE_DB_URL}/withdrawal_requests.json", json=req_data)
     req_id = r.json().get("name") if r.status_code == 200 else None
     if not req_id:
-        await firebase_patch(f"users/{user_id}", {"balance": balance, "frozen_balance": frozen_old})
-        raise HTTPException(500, "Error creating request")
-    try:
-        await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
-            "type": "withdrawal", "amount": amount,
-            "amount_after_commission": amount_after,
-            "status": "pending", "created_at": now,
-            "request_id": req_id, "reject_reason": None, "label": None,
-        })
+        await firebase_patch(f"users/{user_id}", {"balance": user.get("balance", 0), "frozen_balance": frozen_old})
+        raise HTTPException(500, "Error")
+    try: await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={"type": "withdrawal", "amount": amount, "amount_after_commission": amount_after, "status": "pending", "created_at": now, "request_id": req_id, "reject_reason": None, "label": None})
     except: pass
     await _notify_admin_withdrawal(req_id, req_data)
-    return {"status": "ok", "request_id": req_id, "amount": amount,
-            "amount_after_commission": amount_after, "new_balance": new_balance}
+    return {"status": "ok", "request_id": req_id, "amount": amount, "amount_after_commission": amount_after, "new_balance": new_balance}
 
 @app.get("/api/user/transactions")
 async def api_user_transactions(user_id: int):
@@ -1537,64 +1328,20 @@ async def api_user_transactions(user_id: int):
     items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
     return {"transactions": items}
 
-@app.get("/api/debug/fonbet/{ev_id}")
-async def debug_fonbet(ev_id: str):
-    result = {"ev_id": ev_id, "endpoints": {}}
-    try:
-        r = cffi_requests.get(f"{FONBET_BASE}/events/listBase?scopeMarket=1600&lang=ru",
-                              headers=FONBET_HEADERS, impersonate="chrome120", timeout=30)
-        if r.status_code != 200:
-            result["endpoints"]["listBase"] = {"status": r.status_code}; return result
-        data = r.json()
-        events = data.get("events", []); custom = data.get("customFactors", [])
-        target_ev = next((ev for ev in events if str(ev.get("id")) == ev_id), None)
-        factors_for_ev = []
-        for cf in custom:
-            if str(cf.get("e")) == ev_id:
-                factors_for_ev.extend(cf.get("factors", []))
-        markets = _parse_markets(factors_for_ev)
-        result["endpoints"]["listBase"] = {
-            "status": r.status_code, "event_found": target_ev is not None,
-            "factors_count": len(factors_for_ev),
-            "markets_summary": {g: len(outs) for g, outs in markets.items()},
-        }
-    except Exception as e:
-        result["endpoints"]["listBase"] = {"error": str(e)[:300]}
-    try:
-        fb_match = await firebase_get(f"matches/fonbet_{ev_id}")
-        if isinstance(fb_match, dict):
-            fb_markets = fb_match.get("markets", {})
-            result["firebase"] = {"exists": True, "status": fb_match.get("status"),
-                "markets_summary": {g: len(outs) for g, outs in fb_markets.items()} if isinstance(fb_markets, dict) else {}}
-        else:
-            result["firebase"] = {"exists": False}
-    except Exception as e:
-        result["firebase"] = {"error": str(e)[:200]}
-    return result
-
 @app.get("/api/debug/market-audit/{ev_id}")
 async def debug_market_audit(ev_id: str):
     raw = []
-    sources = [
-        ("listBase", FONBET_BASE + FONBET_LINE_PATH),
-        ("live", FONBET_BASE + FONBET_LIVE_PATH),
-        ("full", f"{FONBET_BASE}{FONBET_FULL_LINE_PATH}&eventId={ev_id}"),
-    ]
-    for label, url in sources:
+    for label, url in [("listBase", FONBET_BASE + FONBET_LINE_PATH), ("live", FONBET_BASE + FONBET_LIVE_PATH), ("full", f"{FONBET_BASE}{FONBET_FULL_LINE_PATH}&eventId={ev_id}")]:
         try:
             r = cffi_requests.get(url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=30)
-            if r.status_code != 200:
-                raw.append({"src": label, "error": f"HTTP {r.status_code}"}); continue
+            if r.status_code != 200: continue
             data = r.json()
             for f in data.get("factors", []):
-                if str(f.get("e")) == ev_id:
-                    raw.append({"src": label, "f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "mapped": FONBET_FACTORS.get(f.get("f"))})
+                if str(f.get("e")) == ev_id: raw.append({"src": label, "f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "mapped": FONBET_FACTORS.get(f.get("f"))})
             for cf in data.get("customFactors", []):
                 if str(cf.get("e")) == ev_id:
-                    for f in cf.get("factors", []):
-                        raw.append({"src": label + "/custom", "f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "mapped": FONBET_FACTORS.get(f.get("f"))})
-        except Exception as e:
-            raw.append({"src": label, "error": str(e)[:200]})
+                    for f in cf.get("factors", []): raw.append({"src": label + "/custom", "f": f.get("f"), "p": f.get("p"), "v": f.get("v"), "mapped": FONBET_FACTORS.get(f.get("f"))})
+        except: pass
     by_fid = {}; seen = set()
     for r in raw:
         if "f" not in r or r.get("f") is None: continue
@@ -1604,15 +1351,7 @@ async def debug_market_audit(ev_id: str):
         by_fid.setdefault(r["f"], []).append({"p": r.get("p"), "v": r.get("v"), "src": r.get("src")})
     computed = _parse_markets([{"f": r["f"], "p": r.get("p"), "v": r.get("v")} for r in raw if "f" in r and r.get("f") is not None])
     fb = await firebase_get(f"matches/fonbet_{ev_id}") or {}
-    return {
-        "ev_id": ev_id,
-        "raw_factor_count": len([r for r in raw if "f" in r]),
-        "unmapped_fids": sorted({r["f"] for r in raw if "f" in r and r.get("mapped") is None}),
-        "by_fid": by_fid, "computed_markets": computed,
-        "firebase_snapshot": {"exists": bool(fb), "status": fb.get("status") if isinstance(fb, dict) else None,
-            "score": fb.get("score") if isinstance(fb, dict) else None,
-            "markets": fb.get("markets") if isinstance(fb, dict) else None},
-    }
+    return {"ev_id": ev_id, "unmapped_fids": sorted({r["f"] for r in raw if "f" in r and r.get("mapped") is None}), "by_fid": by_fid, "computed_markets": computed, "firebase_snapshot": {"exists": bool(fb), "markets": fb.get("markets") if isinstance(fb, dict) else None}}
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
@@ -1628,31 +1367,22 @@ async def sync_user(initData: str = Query("")):
     if initData:
         try:
             parsed_qs = urllib.parse.parse_qs(initData, keep_blank_values=True)
-            data_dict = {k: v[0] for k, v in parsed_qs.items() if k != "hash"}
-            user_data = json.loads(data_dict.get("user", "{}"))
+            user_data = json.loads({k: v[0] for k, v in parsed_qs.items() if k != "hash"}.get("user", "{}"))
         except: pass
     user_id = str(user_data.get("id", 12345678))
-    subscribed = True
-    if initData:
-        try: subscribed = await is_subscribed(int(user_id))
-        except: subscribed = False
+    subscribed = await is_subscribed(int(user_id)) if initData else True
     existing_user = await firebase_get(f"users/{user_id}")
     if not isinstance(existing_user, dict) or "balance" not in existing_user:
-        old_balance = existing_user.get("balance", 0) if isinstance(existing_user, dict) else 0
         default_user = {
             "user_id": user_id, "username": user_data.get("username", "user"),
             "first_name": user_data.get("first_name", "Player"),
             "photo_url": user_data.get("photo_url", f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}"),
-            "balance": old_balance if isinstance(old_balance, (int, float)) else 0,
-            "frozen_balance": 0,
-            "total_bets": existing_user.get("total_bets", 0) if isinstance(existing_user, dict) else 0,
+            "balance": existing_user.get("balance", 0) if isinstance(existing_user, dict) else 0,
+            "frozen_balance": 0, "total_bets": existing_user.get("total_bets", 0) if isinstance(existing_user, dict) else 0,
             "wins": existing_user.get("wins", 0) if isinstance(existing_user, dict) else 0,
             "profit": existing_user.get("profit", 0) if isinstance(existing_user, dict) else 0,
-            "referral_code": user_id, "referred_by": None,
-            "referral_count": 0, "subscribed": subscribed,
-            "agreed_terms": False, "agreed_at": None,
-            "pending_bonus": None,
-            "created_at": int(time.time()),
+            "referral_code": user_id, "referred_by": None, "referral_count": 0, "subscribed": subscribed,
+            "agreed_terms": False, "agreed_at": None, "pending_bonus": None, "created_at": int(time.time()),
         }
         await firebase_put(f"users/{user_id}", default_user)
         return {"status": "ok", "user": default_user, "subscribed": subscribed}
@@ -1671,13 +1401,10 @@ async def get_match_markets(match_id: str):
     match_db = await firebase_get(f"matches/{match_id}")
     markets_data = {}
     if isinstance(match_db, dict):
-        if isinstance(match_db.get("markets"), dict) and match_db["markets"]:
-            markets_data = match_db["markets"]
+        if isinstance(match_db.get("markets"), dict) and match_db["markets"]: markets_data = match_db["markets"]
         if not markets_data and match_db.get("odds"):
-            odds = match_db["odds"]
-            p1, px, p2 = odds.get("1"), odds.get("X"), odds.get("2")
-            if p1 and px and p2:
-                markets_data = {"Исход": [{"name": "П1", "odds": p1}, {"name": "Х", "odds": px}, {"name": "П2", "odds": p2}]}
+            odds = match_db["odds"]; p1, px, p2 = odds.get("1"), odds.get("X"), odds.get("2")
+            if p1 and px and p2: markets_data = {"Исход": [{"name": "П1", "odds": p1}, {"name": "Х", "odds": px}, {"name": "П2", "odds": p2}]}
     return {"markets": markets_data}
 
 @app.get("/api/user/bets")
@@ -1689,8 +1416,7 @@ async def get_user_bets(user_id: int):
 @app.post("/api/bets/place")
 async def place_bet(request: Request):
     req = await request.json()
-    user_id = req.get("user_id"); amount = req.get("amount")
-    bets = req.get("bets", []); bet_type = req.get("type", "single")
+    user_id = req.get("user_id"); amount = req.get("amount"); bets = req.get("bets", []); bet_type = req.get("type", "single")
     if amount is None or amount < 10: raise HTTPException(400, "Min 10 stars")
     if not bets: raise HTTPException(400, "No outcomes")
     try: uid_int = int(user_id)
@@ -1698,108 +1424,62 @@ async def place_bet(request: Request):
     if not await is_subscribed(uid_int): raise HTTPException(403, "Subscribe to channel")
     user = await firebase_get(f"users/{user_id}")
     if not isinstance(user, dict): raise HTTPException(404, "Profile not found")
-    if not user.get("agreed_terms"):
-        raise HTTPException(403, "Terms not accepted")
-    user_balance = user.get("balance", 0)
-    if not isinstance(user_balance, (int, float)): user_balance = 0
-    if user_balance < amount: raise HTTPException(400, "Insufficient stars")
+    if not user.get("agreed_terms"): raise HTTPException(403, "Terms not accepted")
+    if user.get("balance", 0) < amount: raise HTTPException(400, "Insufficient stars")
     new_fp = hashlib.md5(f"{user_id}|{amount}|{json.dumps(bets, sort_keys=True)}".encode()).hexdigest()
     active_all = await firebase_get("active_bets") or {}
     if isinstance(active_all, dict):
         ts = time.time()
         for _bid, _b in active_all.items():
-            if not isinstance(_b, dict): continue
-            if ts - _b.get("timestamp", 0) > 10: continue
-            old_fp = hashlib.md5(f"{_b.get('user_id')}|{_b.get('amount')}|{json.dumps(_b.get('events', []), sort_keys=True)}".encode()).hexdigest()
-            if old_fp == new_fp: raise HTTPException(429, "Duplicate. Wait 10s.")
+            if not isinstance(_b, dict) or ts - _b.get("timestamp", 0) > 10: continue
+            if hashlib.md5(f"{_b.get('user_id')}|{_b.get('amount')}|{json.dumps(_b.get('events', []), sort_keys=True)}".encode()).hexdigest() == new_fp:
+                raise HTTPException(429, "Duplicate")
     total_coeff = 1.0
     for b in bets: total_coeff *= float(b.get("coefficient", 1.0))
     total_coeff = round(total_coeff, 2)
-    new_balance = round(user_balance - amount, 2)
-    bet_data = {
-        "user_id": str(user_id), "type": bet_type, "events": bets,
-        "amount": amount, "total_coefficient": total_coeff,
-        "potential_win": round(amount * total_coeff, 2),
-        "status": "active", "timestamp": int(time.time()),
-    }
+    new_balance = round(user.get("balance", 0) - amount, 2)
+    bet_data = {"user_id": str(user_id), "type": bet_type, "events": bets, "amount": amount, "total_coefficient": total_coeff, "potential_win": round(amount * total_coeff, 2), "status": "active", "timestamp": int(time.time())}
     bet_ref = await http_client.post(f"{FIREBASE_DB_URL}/bets.json", json=bet_data)
     bet_id = bet_ref.json().get("name") if bet_ref.status_code == 200 else None
     if bet_id:
         await firebase_put(f"users/{user_id}/bets/{bet_id}", bet_data)
-        await firebase_put(f"active_bets/{bet_id}", {
-            "user_id": str(user_id), "events": bets, "amount": amount,
-            "total_coefficient": total_coeff, "timestamp": time.time(),
-        })
+        await firebase_put(f"active_bets/{bet_id}", {"user_id": str(user_id), "events": bets, "amount": amount, "total_coefficient": total_coeff, "timestamp": time.time()})
     await firebase_patch(f"users/{user_id}", {"balance": new_balance, "total_bets": user.get("total_bets", 0) + 1})
-    return {"status": "ok", "new_balance": new_balance, "message": "Accepted"}
+    return {"status": "ok", "new_balance": new_balance}
 
 @app.post("/api/cashier/invoice")
 async def create_invoice(request: Request):
     req = await request.json()
-    user_id = req.get("user_id"); amount = req.get("amount")
-    payload = f"topup_{user_id}_{amount}"
     try:
-        link = await bot.create_invoice_link(title="WinStars", description=f"Пополнение {amount} ★",
-            payload=payload, currency="XTR", prices=[LabeledPrice(label="Звёзды", amount=amount)])
+        link = await bot.create_invoice_link(title="WinStars", description=f"Пополнение {req.get('amount')} ★", payload=f"topup_{req.get('user_id')}_{req.get('amount')}", currency="XTR", prices=[LabeledPrice(label="Звёзды", amount=req.get("amount"))])
         return {"status": "ok", "invoice_link": link}
     except Exception as e: raise HTTPException(500, str(e))
 
 @app.post("/api/cashier/promo")
 async def activate_promo(request: Request):
     req = await request.json()
-    code = (req.get("code") or "").upper().strip()
-    user_id = str(req.get("user_id") or "")
-    if not code or not user_id: raise HTTPException(400, "Bad request")
+    code = (req.get("code") or "").upper().strip(); user_id = str(req.get("user_id") or "")
     promo = await firebase_get(f"promo_codes/{code}")
     if not isinstance(promo, dict): raise HTTPException(400, "Promo not found")
     now = int(time.time())
-    exp = promo.get("expires_at", 0)
-    if exp and exp < now: raise HTTPException(400, "Promo expired")
-    max_uses = promo.get("max_uses", 0)
-    used_count = promo.get("used_count", 0)
-    if max_uses and used_count >= max_uses: raise HTTPException(400, "Promo limit reached")
-    used_by = promo.get("used_by") or {}
-    if user_id in used_by: raise HTTPException(400, "Already used")
+    if (promo.get("expires_at", 0) and promo.get("expires_at", 0) < now) or (promo.get("max_uses", 0) and promo.get("used_count", 0) >= promo.get("max_uses", 0)) or (promo.get("used_by") and user_id in promo.get("used_by")):
+        raise HTTPException(400, "Promo expired or limit reached")
     user = await firebase_get(f"users/{user_id}")
     if not isinstance(user, dict): raise HTTPException(400, "Profile not found")
-    if promo.get("new_users_only"):
-        if user.get("total_bets", 0) > 0:
-            raise HTTPException(400, "Promo for new users only")
+    if promo.get("new_users_only") and user.get("total_bets", 0) > 0: raise HTTPException(400, "For new users only")
     ptype = promo.get("type", "fixed_stars")
     if ptype == "fixed_stars":
         stars = promo.get("reward_stars", 50)
-        cur = user.get("balance", 0)
-        if not isinstance(cur, (int, float)): cur = 0
-        new_bal = round(cur + stars, 2)
-        await firebase_patch(f"users/{user_id}", {"balance": new_bal})
-        await firebase_patch(f"promo_codes/{code}", {
-            "used_count": used_count + 1,
-            f"used_by/{user_id}": True,
-        })
-        try:
-            await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
-                "type": "promo", "amount": stars, "status": "success",
-                "created_at": now, "request_id": None, "reject_reason": None,
-                "label": f"Промокод {code}",
-            })
+        await firebase_patch(f"users/{user_id}", {"balance": user.get("balance", 0) + stars})
+        await firebase_patch(f"promo_codes/{code}", {"used_count": promo.get("used_count", 0) + 1, f"used_by/{user_id}": True})
+        try: await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={"type": "promo", "amount": stars, "status": "success", "created_at": now, "request_id": None, "reject_reason": None, "label": f"Промокод {code}"})
         except: pass
-        return {"status": "ok", "message": f"Начислено {stars} ★",
-                "new_balance": new_bal, "type": "fixed_stars", "amount": stars}
+        return {"status": "ok", "message": f"Начислено {stars} ★", "new_balance": user.get("balance", 0) + stars, "type": "fixed_stars", "amount": stars}
     elif ptype == "deposit_percent":
-        percent = promo.get("deposit_percent", 10)
-        min_dep = promo.get("min_deposit", 0) or 0
-        await firebase_patch(f"users/{user_id}", {
-            "pending_bonus": {"code": code, "percent": percent,
-                "min_deposit": min_dep, "applied_at": now}
-        })
-        await firebase_patch(f"promo_codes/{code}", {
-            "used_count": used_count + 1,
-            f"used_by/{user_id}": True,
-        })
-        return {"status": "ok",
-                "message": f"+{percent}% к следующему пополнению (мин. {min_dep}★)",
-                "type": "deposit_percent", "percent": percent, "min_deposit": min_dep}
-    raise HTTPException(400, "Unknown promo type")
+        percent = promo.get("deposit_percent", 10); min_dep = promo.get("min_deposit", 0) or 0
+        await firebase_patch(f"users/{user_id}", {"pending_bonus": {"code": code, "percent": percent, "min_deposit": min_dep, "applied_at": now}})
+        await firebase_patch(f"promo_codes/{code}", {"used_count": promo.get("used_count", 0) + 1, f"used_by/{user_id}": True})
+        return {"status": "ok", "message": f"+{percent}% к пополнению (мин. {min_dep}★)", "type": "deposit_percent", "percent": percent, "min_deposit": min_dep}
 
 @app.get("/api/chat/history")
 async def get_chat_history():
@@ -1811,8 +1491,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
-            payload = json.loads(data)
+            data = await websocket.receive_text(); payload = json.loads(data)
             msg_data = {"user_id": payload["user_id"], "first_name": payload["first_name"], "text": payload["text"]}
             await http_client.post(f"{FIREBASE_DB_URL}/chat_messages.json", json=msg_data)
             await manager.broadcast(msg_data)
