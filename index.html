@@ -32,7 +32,6 @@
     body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-dark); color: var(--text-main); overflow: hidden; height: 100vh; width: 100vw; }
     .bg-noise { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.03; pointer-events: none; z-index: 999; }
     
-    /* Header */
     header { height: var(--header-height); background: rgba(19, 15, 30, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
     .brand { font-weight: 800; font-size: 1.1rem; letter-spacing: 0.5px; background: linear-gradient(135deg, #fff 30%, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .header-actions { display: flex; align-items: center; gap: 10px; }
@@ -40,7 +39,6 @@
     .avatar-btn { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--accent); overflow: hidden; cursor: pointer; }
     .avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
     
-    /* Main */
     main { position: absolute; top: var(--header-height); bottom: var(--nav-height); left: 0; right: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 80px; }
     .tab-content { display: none; opacity: 0; }
     .tab-content.active { display: block; opacity: 1; }
@@ -53,7 +51,6 @@
     .league-filter-btn { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border); padding: 0 16px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; color: var(--text-main); cursor: pointer; width: 45%; }
     .league-filter-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
     
-    /* Modals */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 500; display: none; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(5px); }
     .modal-overlay.open { display: block; opacity: 1; }
     .modal-content { position: absolute; bottom: -100%; left: 0; right: 0; background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 20px; max-height: 90vh; display: flex; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid var(--border); }
@@ -62,14 +59,12 @@
     .modal-close { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer; transition: 0.2s; }
     .modal-close:active { background: rgba(255,255,255,0.2); transform: scale(0.95); }
 
-    /* League List */
     .league-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 60vh; padding-bottom: 20px; }
     .league-item { background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 0.9rem; font-weight: 600; color: var(--text-main); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
     .league-item:active { transform: scale(0.98); }
     .league-item.active { border-color: var(--accent); background: rgba(157, 78, 221, 0.15); }
     .league-top { background: var(--accent); color: #fff; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; font-weight: 800; letter-spacing: 0.5px; }
 
-    /* ===== MATCH MODAL UI (PREMIUM) ===== */
     .mm-header {
         background: linear-gradient(180deg, rgba(30, 20, 45, 0.8) 0%, rgba(19, 15, 30, 0) 100%);
         padding: 16px;
@@ -87,7 +82,6 @@
     .mm-score { font-size: 1.8rem; font-weight: 800; color: var(--accent); line-height: 1; letter-spacing: 1px; }
     .mm-time { font-size: 0.75rem; color: var(--red); font-weight: 700; margin-top: 4px; background: rgba(239, 68, 68, 0.1); padding: 2px 8px; border-radius: 8px; }
 
-    /* Filter Pills — FIX: full-bleed horizontal scroll без обрезки + flex-shrink: 0 */
     .market-filters {
         display: flex;
         overflow-x: auto;
@@ -124,7 +118,6 @@
         transform: translateY(-1px);
     }
 
-    /* Market Grid */
     .market-group { margin-bottom: 24px; }
     .market-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
     .market-title::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
@@ -150,7 +143,6 @@
     .market-btn.selected .market-btn-name { color: var(--text-main); }
     .market-btn-val { font-size: 1.05rem; font-weight: 800; color: #fff; }
 
-    /* Bet Slip Bar */
     .bet-slip-bar { position: fixed; bottom: var(--nav-height); left: 0; right: 0; padding: 12px 16px; background: linear-gradient(135deg, var(--accent), #7b2cbf); display: none; justify-content: space-between; align-items: center; z-index: 90; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); color: white; cursor: pointer; }
     .bet-slip-bar.active { display: flex; }
     .bet-slip-info { display: flex; flex-direction: column; }
@@ -158,7 +150,6 @@
     .bet-slip-odds { font-size: 1.1rem; font-weight: 800; }
     .bet-slip-continue { font-weight: 700; font-size: 0.95rem; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; }
 
-    /* Bet Slip Modal */
     .slip-items { flex: 1; overflow-y: auto; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
     .slip-item { background: var(--bg-card-hover); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
     .slip-item-info { display: flex; flex-direction: column; gap: 4px; }
@@ -169,7 +160,6 @@
     .slip-input-row .input-group { margin-bottom: 0; flex: 1; }
     .slip-potential { font-weight: 800; color: var(--green); margin-bottom: 16px; text-align: center; font-size: 1.1rem; }
 
-    /* Result Receipt Modal */
     #result-modal .modal-content { 
         align-items: stretch; text-align: left; padding: 24px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.6);
     }
@@ -189,7 +179,6 @@
     .receipt-stat-label { font-size: 0.7rem; color: var(--text-muted); }
     .receipt-stat-value { font-size: 1rem; font-weight: 800; }
 
-    /* Match Cards (Main Feed) */
     .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; cursor: pointer; transition: 0.2s; }
     .match-card:active { transform: scale(0.98); background: var(--bg-card-hover); }
     .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
@@ -206,7 +195,6 @@
     .odd-name { font-size: 0.7rem; color: var(--text-muted); }
     .odd-val { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
 
-    /* Tabs & Inputs */
     .pill-tabs { display: flex; background: var(--bg-card); padding: 4px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px; }
     .pill-tab { flex: 1; text-align: center; padding: 8px; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); border-radius: 8px; cursor: pointer; }
     .pill-tab.active { background: var(--accent); color: #fff; }
@@ -220,7 +208,6 @@
     .btn-submit:active { transform: scale(0.98); }
     .btn-submit:disabled { cursor: not-allowed; opacity: 0.6; }
 
-    /* Chat, Profile & Nav */
     .chat-container { display: flex; flex-direction: column; height: 100%; }
     .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; }
     .chat-msg { display: flex; gap: 10px; align-items: flex-start; }
@@ -339,7 +326,6 @@
     </div>
   </div>
 
-  <!-- МОДАЛКА МАТЧА (ПРЕМИАЛЬНАЯ) -->
   <div class="modal-overlay" id="match-details-modal" onclick="closeMatchDetails(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
@@ -347,10 +333,8 @@
         <button class="modal-close" onclick="closeMatchDetails()">✕</button>
       </div>
       
-      <!-- Шапка матча внутри модалки -->
       <div class="mm-header" id="mm-header-container"></div>
       
-      <!-- Фильтры рынков -->
       <div class="market-filters" id="market-filters-container"></div>
       
       <div id="match-markets-container" style="overflow-y:auto; flex:1; min-height:0; padding-bottom:20px;"></div>
@@ -378,7 +362,6 @@
     </div>
   </div>
 
-  <!-- НОВОЕ ОКНО РЕЗУЛЬТАТА (ЧЕК) -->
   <div class="modal-overlay" id="result-modal">
     <div class="modal-content">
       <div class="receipt-header">
@@ -544,41 +527,31 @@
       if (!match.status.startsWith('LIVE')) return match.status;
       
       let originalStatus = match.status.replace('LIVE', '').trim().replace('·', '').trim();
-      if (originalStatus === 'HT' || originalStatus === '2H' || originalStatus === '1H' || originalStatus === 'FT') return originalStatus;
+      if (originalStatus === 'HT' || originalStatus === 'FT') return originalStatus;
       
-      let baseMinute = null;
       const matchMinute = originalStatus.match(/(\d+)/);
+      if (!matchMinute) return 'LIVE';
       
-      if (matchMinute) {
-          baseMinute = parseInt(matchMinute[1], 10);
-      } else if (match.start_time) {
-          const now = Math.floor(Date.now() / 1000);
-          let elapsedMins = (now - match.start_time) / 60;
-          
-          if (elapsedMins > 0) {
-              if (elapsedMins < 45) baseMinute = Math.floor(elapsedMins);
-              else if (elapsedMins < 60) return 'HT';
-              else if (elapsedMins < 105) baseMinute = Math.floor(elapsedMins) - 15;
-              else return 'FT';
-          }
+      const baseMinute = parseInt(matchMinute[1], 10);
+      const now = Date.now();
+      const cached = window.matchTimers[match.id];
+      
+      // Синхронизация: если сервер дал новую минуту — сбрасываем локальный таймер
+      if (!cached || cached.baseMinute !== baseMinute) {
+        window.matchTimers[match.id] = { baseMinute, timestamp: now };
       }
-
-      if (baseMinute !== null) {
-          const now = Date.now();
-          if (!window.matchTimers[match.id] || Math.abs(window.matchTimers[match.id].baseMinute - baseMinute) > 0) {
-              window.matchTimers[match.id] = { baseMinute: baseMinute, timestamp: now };
-          }
-          
-          const timer = window.matchTimers[match.id];
-          const elapsedMins = Math.floor((now - timer.timestamp) / 60000);
-          let displayMinute = timer.baseMinute + elapsedMins;
-          
-          if (displayMinute > 45 && displayMinute < 60) displayMinute = 45;
-          if (displayMinute > 90 && displayMinute < 105) displayMinute = 90;
-          
-          return `${displayMinute}'`;
-      }
-      return 'LIVE';
+      
+      const timer = window.matchTimers[match.id];
+      const elapsedMin = Math.floor((now - timer.timestamp) / 60000);
+      const displayMinute = timer.baseMinute + elapsedMin;
+      
+      // Перерыв: сервер стоит на 45, локально прошло от 3 до 17 мин
+      if (timer.baseMinute === 45 && elapsedMin >= 3 && elapsedMin <= 17) return 'HT';
+      
+      // Конец матча
+      if (displayMinute >= 90) return '90+';
+      
+      return `${displayMinute}'`;
     }
 
     function renderMatches() {
@@ -589,15 +562,16 @@
       
       let filtered = allMatchesRaw.filter(m => {
         const isLive = m.status.includes('LIVE');
+        const isFrozen = m.status === 'ИДЕТ';
         const isStarted = m.start_time && m.start_time < now;
         const hasScore = m.score && m.score !== 'VS';
         
         if (m.start_time && m.start_time < now - 10800) return false;
 
         if (currentMode === 'live') {
-            if (!isLive && !(isStarted && hasScore)) return false;
+            if (!isLive && !isFrozen && !(isStarted && hasScore)) return false;
         } else {
-            if (isLive || isStarted) return false;
+            if (isLive || isFrozen || isStarted) return false;
         }
         return (currentLeague === 'all' || m.league === currentLeague);
       });
@@ -616,14 +590,15 @@
 
       filtered.forEach(match => {
         const isLive = match.status.includes('LIVE');
+        const isFrozen = match.status === 'ИДЕТ';
         const card = document.createElement('div'); card.className = 'match-card';
         card.onclick = () => openMatchDetails(match.id);
 
         let timeDisplay = match.status;
-        if (!isLive && match.start_time && match.start_time > now) {
+        if (!isLive && !isFrozen && match.start_time && match.start_time > now) {
           const date = new Date(match.start_time * 1000);
           timeDisplay = `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-        } else if (!isLive && match.start_time && match.start_time <= now) {
+        } else if (!isLive && !isFrozen && match.start_time && match.start_time <= now) {
             timeDisplay = 'ИДЕТ';
         }
 
@@ -652,8 +627,13 @@
           ? `<img src="${match.awayLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${match.away.substring(0,2).toUpperCase()}</div>` 
           : `<div class="team-logo">${match.away.substring(0,2).toUpperCase()}</div>`;
 
-        const displayStatus = isLive ? getLiveDisplayStatus(match) : (match.start_time && match.start_time <= now ? 'ИДЕТ' : timeDisplay);
-        const isLiveClass = isLive || (match.start_time && match.start_time <= now);
+        let displayStatus;
+        if (isLive) displayStatus = getLiveDisplayStatus(match);
+        else if (isFrozen) displayStatus = 'ИДЕТ';
+        else if (match.start_time && match.start_time <= now) displayStatus = 'ИДЕТ';
+        else displayStatus = timeDisplay;
+        
+        const isLiveClass = isLive || isFrozen || (match.start_time && match.start_time <= now);
 
         card.innerHTML = `
           <div class="match-header">
@@ -670,8 +650,6 @@
       });
     }
 
-    // ===== МОДАЛКА МАТЧА, ШАПКА И ФИЛЬТРЫ =====
-
     async function openMatchDetails(matchId) {
       const match = allMatchesRaw.find(m => m.id === matchId);
       if (!match) return;
@@ -683,11 +661,11 @@
       const filtersContainer = document.getElementById('market-filters-container');
       const headerContainer = document.getElementById('mm-header-container');
       
-      // Рендер шапки матча
       const now = Math.floor(Date.now() / 1000);
       const isLive = match.status.includes('LIVE');
-      let displayStatus = isLive ? getLiveDisplayStatus(match) : (match.start_time && match.start_time <= now ? 'ИДЕТ' : match.status);
-      if (!isLive && match.start_time > now) {
+      const isFrozen = match.status === 'ИДЕТ';
+      let displayStatus = isLive ? getLiveDisplayStatus(match) : (isFrozen ? 'ИДЕТ' : (match.start_time && match.start_time <= now ? 'ИДЕТ' : match.status));
+      if (!isLive && !isFrozen && match.start_time > now) {
           const d = new Date(match.start_time * 1000);
           displayStatus = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       }
@@ -704,7 +682,7 @@
             </div>
             <div class="mm-center-box">
                 <div class="mm-score">${match.score || 'VS'}</div>
-                <div class="mm-time">${isLive ? '<span class="live-dot" style="display:inline-block;margin-right:4px;"></span>' : ''}${displayStatus}</div>
+                <div class="mm-time">${(isLive || isFrozen) ? '<span class="live-dot" style="display:inline-block;margin-right:4px;"></span>' : ''}${displayStatus}</div>
             </div>
             <div class="mm-team">
                 ${aLogo}
@@ -836,8 +814,6 @@
       }
     }
 
-    // ===== КУПОН И СТАВКИ =====
-
     function toggleBet(matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName) {
       if (coeff === 0) return;
       
@@ -933,8 +909,6 @@
       const potential = (stake * totalOdds).toFixed(2);
       document.getElementById('slip-potential').innerText = `Возможная выплата: ${formatStars(potential)} ★`;
     }
-
-    // ===== ПОДТВЕРЖДЕНИЕ СТАВКИ И ЧЕК =====
 
     async function confirmBet() {
       const confirmBtn = document.getElementById('btn-confirm-bet');
@@ -1052,8 +1026,6 @@
       
       document.getElementById('result-modal').classList.add('open');
     }
-
-    // ===== ОСТАЛЬНОЕ (ЧАТ, ПРОМО И Т.Д.) =====
 
     async function handleTelegramInvoice() {
       const amount = parseInt(document.getElementById('deposit-amount').value);
