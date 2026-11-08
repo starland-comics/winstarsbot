@@ -92,6 +92,7 @@
         overflow-x: auto;
         gap: 8px;
         padding-bottom: 12px;
+        padding-right: 16px; /* Отступ чтобы последняя кнопка не прилипала */
         margin-bottom: 16px;
         border-bottom: 1px solid rgba(255,255,255,0.05);
         scrollbar-width: none;
@@ -806,7 +807,8 @@
         let groupHtml = `<div class="market-group"><div class="market-title">${groupName}</div><div class="market-grid">`;
         
         outcomes.forEach(out => {
-          const isSelected = betSlip.some(b => b.matchId === match.id && b.outcomeKey === out.name);
+          // ИСПРАВЛЕНИЕ БАГА: теперь проверяем и groupName тоже!
+          const isSelected = betSlip.some(b => b.matchId === match.id && b.groupName === groupName && b.outcomeKey === out.name);
           const selectedClass = isSelected ? 'selected' : '';
           groupHtml += `
             <div class="market-btn ${selectedClass}" onclick="toggleBet('${match.id}', '${match.title}', '${out.name}', ${out.odds}, '${match.league}', '${out.name}', '${groupName}')">
@@ -836,7 +838,8 @@
     function toggleBet(matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName) {
       if (coeff === 0) return;
       
-      const existingIndex = betSlip.findIndex(b => b.matchId === matchId);
+      // ИСПРАВЛЕНИЕ БАГА: проверяем в том числе groupName
+      const existingIndex = betSlip.findIndex(b => b.matchId === matchId && b.groupName === groupName);
       if (existingIndex !== -1) {
         if (betSlip[existingIndex].outcomeKey === outcomeKey) {
             betSlip.splice(existingIndex, 1);
@@ -844,6 +847,10 @@
             betSlip[existingIndex] = { matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName };
         }
       } else {
+        // Если в этом матче уже есть ставка, но в другой группе, нужно решить: удалять её или нет?
+        // По правилам БК, в купоне может быть только один исход с одного матча (для экспресса).
+        // Поэтому удаляем любые другие исходы с этого matchId
+        betSlip = betSlip.filter(b => b.matchId !== matchId);
         betSlip.push({ matchId, matchTitle, outcome, coeff, league, outcomeKey, groupName });
       }
       
