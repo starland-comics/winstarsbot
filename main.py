@@ -35,6 +35,8 @@ LIVE_POLL_SEC = 25
 SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
+# Ключи без точек для Firebase.
+# ВАЖНО: для Инд тоталов ID 1697-1737-1791 — это UNDER для Team 2 (по сырым данным Napoli-Lazio)
 FONBET_FACTORS = {
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
@@ -45,25 +47,44 @@ FONBET_FACTORS = {
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
     1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
     1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
-    1696: ("Инд тотал 1", "ТБ", True), 1697: ("Инд тотал 2", "ТБ", True),
-    1727: ("Инд тотал 1", "ТБ", True), 1728: ("Инд тотал 2", "ТБ", True),
-    1730: ("Инд тотал 1", "ТБ", True), 1731: ("Инд тотал 2", "ТБ", True),
-    1733: ("Инд тотал 1", "ТБ", True), 1734: ("Инд тотал 2", "ТБ", True),
-    1736: ("Инд тотал 1", "ТБ", True), 1737: ("Инд тотал 2", "ТБ", True),
-    1739: ("Инд тотал 1", "ТБ", True), 1791: ("Инд тотал 2", "ТБ", True),
-    1793: ("Инд тотал 1", "ТБ", True), 1794: ("Инд тотал 2", "ТБ", True),
-    1796: ("Инд тотал 1", "ТБ", True), 1797: ("Инд тотал 2", "ТБ", True),
+    # Инд тотал 1 — OVER (Napoli)
+    1696: ("Инд тотал 1", "ТБ", True),
+    1727: ("Инд тотал 1", "ТБ", True),
+    1730: ("Инд тотал 1", "ТБ", True),
+    1733: ("Инд тотал 1", "ТБ", True),
+    1736: ("Инд тотал 1", "ТБ", True),
+    1739: ("Инд тотал 1", "ТБ", True),
+    1793: ("Инд тотал 1", "ТБ", True),
+    1796: ("Инд тотал 1", "ТБ", True),
+    # Инд тотал 2 — UNDER (Lazio) — переклассифицировано из ТБ по сырым данным
+    1697: ("Инд тотал 2", "ТМ", True),
+    1728: ("Инд тотал 2", "ТМ", True),
+    1731: ("Инд тотал 2", "ТМ", True),
+    1734: ("Инд тотал 2", "ТМ", True),
+    1737: ("Инд тотал 2", "ТМ", True),
+    1791: ("Инд тотал 2", "ТМ", True),
+    1794: ("Инд тотал 2", "ТМ", True),
+    1797: ("Инд тотал 2", "ТМ", True),
+    # Инд тотал 2 — OVER (Lazio) — новые из сырых данных
+    1799: ("Инд тотал 2", "ТБ", True),
+    1802: ("Инд тотал 2", "ТБ", True),
+    # Инд тотал 2 — UNDER (Lazio) — новые из сырых данных
+    1800: ("Инд тотал 2", "ТМ", True),
+    1803: ("Инд тотал 2", "ТМ", True),
+    # Фора
     1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
     1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
     1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
     1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
     1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
+    # Тотал (общий)
     1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
     1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
     1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
     1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),
     1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
     1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
+    # Обе забьют 1-й тайм
     4241: ("Обе забьют 1-й тайм", "Нет", False), 4242: ("Обе забьют 1-й тайм", "Да", False),
 }
 
@@ -301,42 +322,37 @@ def _extract_number_from_name(name):
     if m: return float(m.group(1))
     return 999.0
 
-_LOGGED_FLIPS = set()
-
 def _fix_market_orientation(markets):
-    for group_name, outcomes in markets.items():
-        if not (group_name == "Тотал" or group_name.startswith("Инд ")):
+    """Safety net ТОЛЬКО для группы 'Тотал' (общий). Для Инд тоталов маппинг правильный."""
+    group_name = "Тотал"
+    outcomes = markets.get(group_name)
+    if not outcomes: return
+    
+    tb_items = []; tm_items = []
+    for o in outcomes:
+        n = o["name"]
+        try:
+            if n.startswith("ТБ "): tb_items.append((float(n[3:]), o))
+            elif n.startswith("ТМ "): tm_items.append((float(n[3:]), o))
+        except (ValueError, IndexError):
             continue
-        tb_items = []; tm_items = []
-        for o in outcomes:
-            n = o["name"]
-            try:
-                if n.startswith("ТБ "): tb_items.append((float(n[3:]), o))
-                elif n.startswith("ТМ "): tm_items.append((float(n[3:]), o))
-            except (ValueError, IndexError):
-                continue
-        
-        if tb_items and not tm_items and len(tb_items) >= 3:
-            tb_items.sort(key=lambda x: x[0])
-            violations = sum(1 for i in range(1, len(tb_items)) if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"])
-            if violations >= len(tb_items) - 2:
-                for lim, o in tb_items:
-                    o["name"] = f"ТМ {lim:g}"
-                if group_name not in _LOGGED_FLIPS:
-                    _LOGGED_FLIPS.add(group_name)
-                    print(f"   🔄 Auto-flip '{group_name}': ТБ→ТМ (violations={violations}/{len(tb_items)-1})")
-                continue
-        
-        if tm_items and not tb_items and len(tm_items) >= 3:
-            tm_items.sort(key=lambda x: x[0])
-            violations = sum(1 for i in range(1, len(tm_items)) if tm_items[i][1]["odds"] > tm_items[i-1][1]["odds"])
-            if violations >= len(tm_items) - 2:
-                for lim, o in tm_items:
-                    o["name"] = f"ТБ {lim:g}"
-                key = group_name + "|tm"
-                if key not in _LOGGED_FLIPS:
-                    _LOGGED_FLIPS.add(key)
-                    print(f"   🔄 Auto-flip '{group_name}': ТМ→ТБ (violations={violations}/{len(tm_items)-1})")
+    
+    if tb_items and not tm_items and len(tb_items) >= 3:
+        tb_items.sort(key=lambda x: x[0])
+        violations = sum(1 for i in range(1, len(tb_items)) if tb_items[i][1]["odds"] < tb_items[i-1][1]["odds"])
+        if violations >= len(tb_items) - 2:
+            for lim, o in tb_items:
+                o["name"] = f"ТМ {lim:g}"
+            print(f"   🔄 Auto-flip '{group_name}': ТБ→ТМ (violations={violations}/{len(tb_items)-1})")
+            return
+    
+    if tm_items and not tb_items and len(tm_items) >= 3:
+        tm_items.sort(key=lambda x: x[0])
+        violations = sum(1 for i in range(1, len(tm_items)) if tm_items[i][1]["odds"] > tm_items[i-1][1]["odds"])
+        if violations >= len(tm_items) - 2:
+            for lim, o in tm_items:
+                o["name"] = f"ТБ {lim:g}"
+            print(f"   🔄 Auto-flip '{group_name}': ТМ→ТБ (violations={violations}/{len(tm_items)-1})")
 
 def _parse_markets(factors_list):
     seen = set()
@@ -581,7 +597,7 @@ async def fonbet_scraper_worker():
                     if st > now_ts + seven_days: continue
                     if st < now_ts:
                         # Матч уже начался, но live нет. Если он был LIVE и ещё "свежий" (<2.5ч)
-                        # — оставляем замороженный снимок чтобы не пропадал при перерыве.
+                        # — оставляем замороженный снимок, чтобы не пропадал при перерыве.
                         old_m = cached_prev_matches.get(mid)
                         if isinstance(old_m, dict):
                             old_status = old_m.get("status", "")
@@ -687,7 +703,8 @@ async def fonbet_scraper_worker():
         if cycle % 15 == 0: gc.collect()
         await asyncio.sleep(LIVE_POLL_SEC)
 
-def calculate_outcome(outcome_str, s1, s2):
+def calculate_outcome(outcome_str, s1, s2, group_name=""):
+    """group_name нужен для Инд тоталов — там считать нужно по голам одной команды, а не по сумме."""
     o = outcome_str.lower().strip()
     if o in ["п1", "1", "победа 1", "победа хозяев"]: return s1 > s2
     if o in ["х", "x", "ничья"]: return s1 == s2
@@ -697,15 +714,25 @@ def calculate_outcome(outcome_str, s1, s2):
     if o in ["x2", "х2"]: return s2 >= s1
     if o in ["да", "обе забьют", "оз да"]: return s1 > 0 and s2 > 0
     if o in ["нет", "оз нет"]: return s1 == 0 or s2 == 0
+    
+    # Определяем счёт для тоталов: для Инд тотала — голы конкретной команды
+    gn = (group_name or "").lower()
+    if "инд тотал 1" in gn:
+        total = s1
+    elif "инд тотал 2" in gn:
+        total = s2
+    else:
+        total = s1 + s2
+    
     m_over = re.search(r'(?:тб|тотал больше|больше)\s*([+-]?\d+(?:\.\d+)?)', o)
     if m_over:
-        limit = float(m_over.group(1)); total = s1 + s2
+        limit = float(m_over.group(1))
         if total > limit: return True
         if total < limit: return False
         return None
     m_under = re.search(r'(?:тм|тотал меньше|меньше)\s*([+-]?\d+(?:\.\d+)?)', o)
     if m_under:
-        limit = float(m_under.group(1)); total = s1 + s2
+        limit = float(m_under.group(1))
         if total < limit: return True
         if total > limit: return False
         return None
@@ -762,7 +789,8 @@ async def settle_bets_worker():
                                 res = results[i]
                                 s1 = res.get("score1", 0); s2 = res.get("score2", 0)
                                 oc = event.get("outcome_key") or event.get("outcome", "")
-                                ws = calculate_outcome(oc, s1, s2)
+                                gn = event.get("group_name", "")
+                                ws = calculate_outcome(oc, s1, s2, gn)
                                 if ws is False: is_won = False; break
                                 elif ws is None: is_won = False; break
                             status = "won" if is_won else "lost"
@@ -789,7 +817,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: p-normalize + auto-orientation + cached-live (не пропадают на перерыве)")
+    print("   ВЕРСИЯ: Ind-total-split-fix (ТБ/ТМ по сырым данным) + cached-live + correct settle")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -843,7 +871,6 @@ async def debug_fonbet(ev_id: str):
 
 @app.get("/api/debug/fonbet/{ev_id}/raw")
 async def debug_fonbet_raw(ev_id: str):
-    """Возвращает сырые факторы события (для отладки ТБ/ТМ ориентации)."""
     results = {}
     for label, url in [("listBase", FONBET_BASE + FONBET_LINE_PATH), ("live", FONBET_BASE + FONBET_LIVE_PATH)]:
         try:
