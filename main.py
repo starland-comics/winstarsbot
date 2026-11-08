@@ -36,63 +36,55 @@ SETTLE_POLL_SEC = 60
 FINISHED_TTL = 90
 
 # Ключи без точек для Firebase.
-# ВАЖНО: для Инд тоталов ID 1697-1737-1791 — это UNDER для Team 2 (по сырым данным Napoli-Lazio)
+# Приоритет источников — см. FACTOR_PRIORITY ниже.
+# Инд. тоталы (1696..1803) и «Обе забьют 1-й тайм» (4241/4242) удалены:
+#   - инд. тоталы: маппинг ID нестабилен между матчами (переклассифицирован вручную по сырым Napoli–Lazio);
+#   - 1-й тайм: calculate_outcome не умеет считать по таймам (использует полный счёт → баг).
 FONBET_FACTORS = {
+    # Исход
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
+    # Двойной шанс
     924: ("Двойной шанс", "1Х", False), 925: ("Двойной шанс", "12", False), 926: ("Двойной шанс", "Х2", False),
+    # Обе забьют
     927: ("Обе забьют", "Нет", False), 928: ("Обе забьют", "Да", False),
+    # Тотал — основной источник (всегда primary)
     930: ("Тотал", "ТБ", True), 931: ("Тотал", "ТМ", True),
+    # Фора
     910: ("Фора", "Ф1", True), 912: ("Фора", "Ф2", True),
     989: ("Фора", "Ф1", True), 991: ("Фора", "Ф2", True),
     1672: ("Фора", "Ф1", True), 1675: ("Фора", "Ф2", True),
     1677: ("Фора", "Ф1", True), 1678: ("Фора", "Ф2", True),
     1680: ("Фора", "Ф1", True), 1681: ("Фора", "Ф2", True),
-    # Инд тотал 1 — OVER (команда 1)
-    1696: ("Инд тотал 1", "ТБ", True),
-    1727: ("Инд тотал 1", "ТБ", True),
-    1730: ("Инд тотал 1", "ТБ", True),
-    1733: ("Инд тотал 1", "ТБ", True),
-    1736: ("Инд тотал 1", "ТБ", True),
-    1739: ("Инд тотал 1", "ТБ", True),
-    1793: ("Инд тотал 1", "ТБ", True),
-    1796: ("Инд тотал 1", "ТБ", True),
-    # Инд тотал 1 — UNDER (команда 1) — парные IDs к строкам выше
-    # Нечётные IDs идут парой к чётным: 1696↔1697, 1727↔1728, etc.
-    # НО: по сырым данным Napoli-Lazio нечётные — это ТМ для команды 2.
-    # Решение: помечаем как "Инд тотал 1" ТМ, _fix_total_group сам откорректирует
-    # если коэффициенты покажут иное.
-    # Инд тотал 2 — оба направления
-    # Парные IDs: чётный=ТБ(т1), нечётный=ТМ(т2) — но это зависит от матча.
-    # Добавляем ОБА варианта с авто-коррекцией через _fix_total_group.
-    1697: ("Инд тотал 2", "ТБ", True),   # будет скорректировано если нужно
-    1728: ("Инд тотал 2", "ТБ", True),
-    1731: ("Инд тотал 2", "ТБ", True),
-    1734: ("Инд тотал 2", "ТБ", True),
-    1737: ("Инд тотал 2", "ТБ", True),
-    1791: ("Инд тотал 2", "ТБ", True),
-    1794: ("Инд тотал 2", "ТБ", True),
-    1797: ("Инд тотал 2", "ТБ", True),
-    # Инд тотал 2 — подтверждённые ТБ из сырых данных
-    1799: ("Инд тотал 2", "ТБ", True),
-    1802: ("Инд тотал 2", "ТБ", True),
-    # Инд тотал 2 — подтверждённые ТМ из сырых данных
-    1800: ("Инд тотал 2", "ТМ", True),
-    1803: ("Инд тотал 2", "ТМ", True),
-    # Фора
     1809: ("Фора", "Ф1", True), 1810: ("Фора", "Ф2", True),
     1812: ("Фора", "Ф1", True), 1813: ("Фора", "Ф2", True),
     1815: ("Фора", "Ф1", True), 1816: ("Фора", "Ф2", True),
     1818: ("Фора", "Ф1", True), 1819: ("Фора", "Ф2", True),
     1821: ("Фора", "Ф1", True), 1822: ("Фора", "Ф2", True),
-    # Тотал (общий)
+    # Тотал — расширенный источник (fallback, используется только если 930/931 не дали эту линию)
     1569: ("Тотал", "ТМ", True), 1572: ("Тотал", "ТБ", True),
     1854: ("Тотал", "ТБ", True), 1871: ("Тотал", "ТМ", True),
     1873: ("Тотал", "ТБ", True), 1874: ("Тотал", "ТМ", True),
     1880: ("Тотал", "ТБ", True), 1881: ("Тотал", "ТМ", True),
     1883: ("Тотал", "ТБ", True), 1884: ("Тотал", "ТМ", True),
     1886: ("Тотал", "ТБ", True), 1887: ("Тотал", "ТМ", True),
-    # Обе забьют 1-й тайм
-    4241: ("Обе забьют 1-й тайм", "Нет", False), 4242: ("Обе забьют 1-й тайм", "Да", False),
+}
+
+# Приоритет источника при дедупликации одной и той же линии (group + name).
+# Меньше = приоритетнее. 1 = основной ID Fonbet. 5 = расширенный fallback.
+# Логика: если 930 отдал "ТБ 2.5", а 1854 отдал "ТБ 2.5" — побеждает 930 (prio=1).
+FACTOR_PRIORITY = {
+    # Primary
+    921: 1, 922: 1, 923: 1,
+    924: 1, 925: 1, 926: 1,
+    927: 1, 928: 1,
+    930: 1, 931: 1,
+    910: 1, 912: 1, 989: 1, 991: 1,
+    1672: 1, 1675: 1, 1677: 1, 1678: 1, 1680: 1, 1681: 1,
+    1809: 1, 1810: 1, 1812: 1, 1813: 1, 1815: 1, 1816: 1, 1818: 1, 1819: 1, 1821: 1, 1822: 1,
+    # Fallback (total-expanded)
+    1569: 5, 1572: 5,
+    1854: 5, 1871: 5, 1873: 5, 1874: 5,
+    1880: 5, 1881: 5, 1883: 5, 1884: 5, 1886: 5, 1887: 5,
 }
 
 ALLOWED_LEAGUE_PATTERNS = [
@@ -329,148 +321,116 @@ def _extract_number_from_name(name):
     if m: return float(m.group(1))
     return 999.0
 
-def _fix_total_group(outcomes, group_name):
-    """
-    Универсальная проверка и исправление ориентации для любой группы тоталов.
-    
-    Правила:
-    - ТБ: коэффициент должен РАСТИ с ростом планки (больше забить — труднее)
-    - ТМ: коэффициент должен ПАДАТЬ с ростом планки (меньше забить при высокой планке — легче)
-    
-    Если все исходы — одного типа и нарушают правило → флипаем метку.
-    Если смешанные ТБ/ТМ → проверяем каждую группу отдельно и флипаем нарушителей.
-    """
-    tb_items = []; tm_items = []
+def _fix_market_orientation(markets):
+    """Safety net ТОЛЬКО для группы 'Тотал' (общий).
+    Признак инверсии: в группе только ТБ (или только ТМ), и коэффициенты идут
+    в порядке, который физически невозможен (ТБ 0.5 дороже ТБ 3.5 и т.п.).
+    Срабатывает только при явном большинстве нарушений — иначе не трогаем."""
+    group_name = "Тотал"
+    outcomes = markets.get(group_name)
+    if not outcomes:
+        return
+
+    tb_items = []
+    tm_items = []
     for o in outcomes:
         n = o["name"]
         try:
-            if n.startswith("ТБ "): tb_items.append((float(n[3:]), o))
-            elif n.startswith("ТМ "): tm_items.append((float(n[3:]), o))
+            if n.startswith("ТБ "):
+                tb_items.append((float(n[3:]), o))
+            elif n.startswith("ТМ "):
+                tm_items.append((float(n[3:]), o))
         except (ValueError, IndexError):
             continue
 
-    def count_violations_tb(items):
-        # ТБ правильно если коэф растёт с планкой
-        items_s = sorted(items, key=lambda x: x[0])
-        return sum(1 for i in range(1, len(items_s)) if items_s[i][1]["odds"] < items_s[i-1][1]["odds"])
-
-    def count_violations_tm(items):
-        # ТМ правильно если коэф падает с планкой
-        items_s = sorted(items, key=lambda x: x[0])
-        return sum(1 for i in range(1, len(items_s)) if items_s[i][1]["odds"] > items_s[i-1][1]["odds"])
-
-    # Случай 1: только ТБ, все нарушают — это на самом деле ТМ
-    if tb_items and not tm_items and len(tb_items) >= 2:
-        tb_sorted = sorted(tb_items, key=lambda x: x[0])
-        v = count_violations_tb(tb_sorted)
-        total_pairs = len(tb_sorted) - 1
-        if total_pairs > 0 and v >= total_pairs:
-            for lim, o in tb_sorted:
+    if tb_items and not tm_items and len(tb_items) >= 3:
+        tb_items.sort(key=lambda x: x[0])
+        violations = sum(
+            1 for i in range(1, len(tb_items))
+            if tb_items[i][1]["odds"] < tb_items[i - 1][1]["odds"]
+        )
+        if violations >= len(tb_items) - 2:
+            details = ", ".join(f"{lim:g}@{o['odds']}" for lim, o in tb_items)
+            print(f"   🔄 Auto-flip 'Тотал' ТБ→ТМ | violations={violations}/{len(tb_items) - 1} | {details}")
+            for lim, o in tb_items:
                 o["name"] = f"ТМ {lim:g}"
-            print(f"   🔄 Fix '{group_name}': все ТБ→ТМ (нарушений {v}/{total_pairs})")
             return
 
-    # Случай 2: только ТМ, все нарушают — это на самом деле ТБ
-    if tm_items and not tb_items and len(tm_items) >= 2:
-        tm_sorted = sorted(tm_items, key=lambda x: x[0])
-        v = count_violations_tm(tm_sorted)
-        total_pairs = len(tm_sorted) - 1
-        if total_pairs > 0 and v >= total_pairs:
-            for lim, o in tm_sorted:
+    if tm_items and not tb_items and len(tm_items) >= 3:
+        tm_items.sort(key=lambda x: x[0])
+        violations = sum(
+            1 for i in range(1, len(tm_items))
+            if tm_items[i][1]["odds"] > tm_items[i - 1][1]["odds"]
+        )
+        if violations >= len(tm_items) - 2:
+            details = ", ".join(f"{lim:g}@{o['odds']}" for lim, o in tm_items)
+            print(f"   🔄 Auto-flip 'Тотал' ТМ→ТБ | violations={violations}/{len(tm_items) - 1} | {details}")
+            for lim, o in tm_items:
                 o["name"] = f"ТБ {lim:g}"
-            print(f"   🔄 Fix '{group_name}': все ТМ→ТБ (нарушений {v}/{total_pairs})")
             return
-
-    # Случай 3: смешанные ТБ и ТМ — проверяем каждую группу
-    if tb_items and tm_items:
-        # Проверяем ТБ: если ТМ лучше описывают паттерн ТБ-исходов
-        if len(tb_items) >= 2:
-            tb_sorted = sorted(tb_items, key=lambda x: x[0])
-            v_tb = count_violations_tb(tb_sorted)
-            # Если нарушений > половины — скорее всего это ТМ
-            if v_tb > (len(tb_sorted) - 1) / 2:
-                # Убеждаемся что ТМ-паттерн подходит лучше
-                if count_violations_tm(tb_sorted) < v_tb:
-                    for lim, o in tb_sorted:
-                        o["name"] = f"ТМ {lim:g}"
-                    print(f"   🔄 Fix '{group_name}': ТБ→ТМ в смешанной группе (нарушений {v_tb}/{len(tb_sorted)-1})")
-
-        # Перечитываем после возможного изменения
-        tb_items2 = [(float(o["name"][3:]), o) for o in outcomes if o["name"].startswith("ТБ ") if _safe_float(o["name"][3:])]
-        tm_items2 = [(float(o["name"][3:]), o) for o in outcomes if o["name"].startswith("ТМ ") if _safe_float(o["name"][3:])]
-
-        if len(tm_items2) >= 2:
-            tm_sorted = sorted(tm_items2, key=lambda x: x[0])
-            v_tm = count_violations_tm(tm_sorted)
-            if v_tm > (len(tm_sorted) - 1) / 2:
-                if count_violations_tb(tm_sorted) < v_tm:
-                    for lim, o in tm_sorted:
-                        o["name"] = f"ТБ {lim:g}"
-                    print(f"   🔄 Fix '{group_name}': ТМ→ТБ в смешанной группе (нарушений {v_tm}/{len(tm_sorted)-1})")
-
-
-def _safe_float(s):
-    try: float(s); return True
-    except: return False
-
-
-def _fix_market_orientation(markets):
-    """Проверяет и исправляет ориентацию ТБ/ТМ для всех тотальных групп."""
-    for group_name in list(markets.keys()):
-        if group_name == "Тотал" or group_name.startswith("Инд тотал"):
-            outcomes = markets.get(group_name)
-            if outcomes and len(outcomes) >= 2:
-                _fix_total_group(outcomes, group_name)
 
 def _parse_markets(factors_list):
-    seen = set()
-    markets = {}
+    best = {}  # (group, name) -> {"prio", "odds", "fid"}
+
     for f in factors_list:
         fid = f.get("f")
-        if fid not in FONBET_FACTORS: continue
+        if fid not in FONBET_FACTORS:
+            continue
         group, base, has_param = FONBET_FACTORS[fid]
         odds = f.get("v")
-        if odds is None: continue
-        try: odds = float(odds)
-        except: continue
-        if odds <= 1.0: continue
-        
+        if odds is None:
+            continue
+        try:
+            odds = float(odds)
+        except (TypeError, ValueError):
+            continue
+        if odds <= 1.0:
+            continue
+
         name = base
         if has_param:
             p = f.get("p")
-            if p is None: continue
-            try: p_raw = float(p)
-            except: continue
-            p_val = _normalize_p(p_raw)
-            
-            if p_val == 0 and (group == "Тотал" or group.startswith("Инд ")):
+            if p is None:
                 continue
-                
-            if group == "Тотал" or group.startswith("Инд "):
+            try:
+                p_raw = float(p)
+            except (TypeError, ValueError):
+                continue
+            p_val = _normalize_p(p_raw)
+
+            if p_val == 0 and group == "Тотал":
+                continue
+
+            if group == "Тотал":
                 name = f"{base} {abs(p_val):g}"
             else:
-                if p_val == int(p_val): p_str = str(int(p_val))
-                else: p_str = f"{p_val:g}"
-                if p_val > 0: p_str = f"+{p_str}"
+                if p_val == int(p_val):
+                    p_str = str(int(p_val))
+                else:
+                    p_str = f"{p_val:g}"
+                if p_val > 0:
+                    p_str = f"+{p_str}"
                 name = f"{base} {p_str}"
-        
+
         key = (group, name)
-        if key in seen: continue
-        seen.add(key)
-        if group not in markets: markets[group] = []
-        markets[group].append({"name": name, "odds": odds})
-    
+        prio = FACTOR_PRIORITY.get(fid, 50)
+        prev = best.get(key)
+        if prev is None or prio < prev["prio"]:
+            best[key] = {"prio": prio, "odds": odds, "fid": fid}
+
+    markets = {}
+    for (group, name), data in best.items():
+        markets.setdefault(group, []).append({"name": name, "odds": data["odds"]})
+
     _fix_market_orientation(markets)
-    
+
     for g in markets:
-        markets[g].sort(key=lambda x: _extract_number_from_name(x['name']))
-        
+        markets[g].sort(key=lambda x: _extract_number_from_name(x["name"]))
+
     return markets
 
 def _get_group_score(group_name, s1, s2):
     if group_name == "Тотал": return s1 + s2
-    if "Инд тотал 1" in group_name: return s1
-    if "Инд тотал 2" in group_name: return s2
     return None
 
 def _filter_total_group(outs, current_score):
@@ -495,11 +455,8 @@ def _filter_decided(markets, s1, s2):
         if g == "Обе забьют":
             if s1 > 0 and s2 > 0: continue
             filtered[g] = outs
-        elif g == "Тотал" or g.startswith("Инд "):
-            group_score = _get_group_score(g, s1, s2)
-            if group_score is None:
-                filtered[g] = outs
-                continue
+        elif g == "Тотал":
+            group_score = s1 + s2
             new_outs = _filter_total_group(outs, group_score)
             if new_outs: filtered[g] = new_outs
         else:
@@ -772,26 +729,18 @@ async def fonbet_scraper_worker():
         await asyncio.sleep(LIVE_POLL_SEC)
 
 def calculate_outcome(outcome_str, s1, s2, group_name=""):
-    """group_name нужен для Инд тоталов — там считать нужно по голам одной команды, а не по сумме."""
     o = outcome_str.lower().strip()
     if o in ["п1", "1", "победа 1", "победа хозяев"]: return s1 > s2
     if o in ["х", "x", "ничья"]: return s1 == s2
     if o in ["п2", "2", "победа 2", "победа гостей"]: return s2 > s1
     if o in ["1x", "1х"]: return s1 >= s2
-    if o in ["12", "x2"]: return s1 != s2
+    if o in ["12"]: return s1 != s2
     if o in ["x2", "х2"]: return s2 >= s1
     if o in ["да", "обе забьют", "оз да"]: return s1 > 0 and s2 > 0
     if o in ["нет", "оз нет"]: return s1 == 0 or s2 == 0
-    
-    # Определяем счёт для тоталов: для Инд тотала — голы конкретной команды
-    gn = (group_name or "").lower()
-    if "инд тотал 1" in gn:
-        total = s1
-    elif "инд тотал 2" in gn:
-        total = s2
-    else:
-        total = s1 + s2
-    
+
+    total = s1 + s2
+
     m_over = re.search(r'(?:тб|тотал больше|больше)\s*([+-]?\d+(?:\.\d+)?)', o)
     if m_over:
         limit = float(m_over.group(1))
@@ -885,7 +834,7 @@ async def settle_bets_worker():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Main] Запуск WinStars API...")
-    print("   ВЕРСИЯ: Ind-total-split-fix (ТБ/ТМ по сырым данным) + cached-live + correct settle")
+    print("   ВЕРСИЯ: markets-normalized-v1 (no ind-totals, no 1st-half-BTTS, priority-dedup, audit-endpoint)")
     asyncio.create_task(dp.start_polling(bot))
     asyncio.create_task(fonbet_scraper_worker())
     asyncio.create_task(settle_bets_worker())
@@ -959,6 +908,71 @@ async def debug_fonbet_raw(ev_id: str):
         except Exception as e:
             results[label] = {"error": str(e)[:200]}
     return results
+
+@app.get("/api/debug/market-audit/{ev_id}")
+async def debug_market_audit(ev_id: str):
+    """Полный дамп: сырые факторы Fonbet + как их интерпретирует парсер + что лежит в Firebase.
+    Использование: /api/debug/market-audit/<числовой eventId Fonbet>"""
+    raw = []
+    for label, url in [
+        ("listBase", FONBET_BASE + FONBET_LINE_PATH),
+        ("live",     FONBET_BASE + FONBET_LIVE_PATH),
+    ]:
+        try:
+            r = cffi_requests.get(
+                url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=30
+            )
+            if r.status_code != 200:
+                raw.append({"src": label, "error": f"HTTP {r.status_code}"})
+                continue
+            data = r.json()
+            for f in data.get("factors", []):
+                if str(f.get("e")) == ev_id:
+                    raw.append({
+                        "src": label,
+                        "f": f.get("f"),
+                        "p": f.get("p"),
+                        "v": f.get("v"),
+                        "mapped": FONBET_FACTORS.get(f.get("f")),
+                    })
+            for cf in data.get("customFactors", []):
+                if str(cf.get("e")) == ev_id:
+                    for f in cf.get("factors", []):
+                        raw.append({
+                            "src": label + "/custom",
+                            "f": f.get("f"),
+                            "p": f.get("p"),
+                            "v": f.get("v"),
+                            "mapped": FONBET_FACTORS.get(f.get("f")),
+                        })
+        except Exception as e:
+            raw.append({"src": label, "error": str(e)[:200]})
+
+    by_fid = {}
+    for r in raw:
+        if "f" not in r or r.get("f") is None:
+            continue
+        by_fid.setdefault(r["f"], []).append({"p": r.get("p"), "v": r.get("v"), "src": r.get("src")})
+
+    computed = _parse_markets(
+        [{"f": r["f"], "p": r.get("p"), "v": r.get("v")} for r in raw if "f" in r and r.get("f") is not None]
+    )
+
+    fb = await firebase_get(f"matches/fonbet_{ev_id}") or {}
+
+    return {
+        "ev_id": ev_id,
+        "raw_factor_count": len([r for r in raw if "f" in r]),
+        "unmapped_fids": sorted({r["f"] for r in raw if "f" in r and r.get("mapped") is None}),
+        "by_fid": by_fid,
+        "computed_markets": computed,
+        "firebase_snapshot": {
+            "exists": bool(fb),
+            "status": fb.get("status") if isinstance(fb, dict) else None,
+            "score": fb.get("score") if isinstance(fb, dict) else None,
+            "markets": fb.get("markets") if isinstance(fb, dict) else None,
+        },
+    }
 
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
