@@ -88,7 +88,7 @@
     .slip-potential { font-weight: 800; color: var(--green); margin-bottom: 16px; text-align: center; font-size: 1.1rem; }
     #result-modal .modal-content { align-items: stretch; text-align: left; padding: 24px; border-radius: 24px; bottom: 50%; transform: translateY(50%); width: 90%; left: 5%; right: 5%; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
     .receipt-header { text-align: center; margin-bottom: 20px; }
-    .receipt-icon { width: 56px; height: 56px; background: rgba(16, 185, 129, 0.2); color: var(--green); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 12px; }
+    .receipt-icon { width: 56px; height: 56px; background: rgba(16, 185, 129, 0.2); color: var(--green); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; }
     .receipt-title { font-size: 1.2rem; font-weight: 800; color: var(--green); margin-bottom: 4px; }
     .receipt-brand-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .receipt-brand { font-weight: 800; font-size: 1.1rem; color: var(--text-main); }
@@ -126,9 +126,10 @@
     .svg-chart { width: 100%; height: 120px; overflow: visible; }
     .input-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
     .input-group input { background: transparent; border: none; outline: none; color: #fff; font-family: inherit; font-size: 0.95rem; width: 100%; }
-    .btn-submit { background: linear-gradient(135deg, var(--accent), #7b2cbf); border: none; border-radius: 12px; padding: 14px; width: 100%; color: #fff; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.2s; }
+    .btn-submit { background: linear-gradient(135deg, var(--accent), #7b2cbf); border: none; border-radius: 12px; padding: 14px; width: 100%; color: #fff; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
     .btn-submit:active { transform: scale(0.98); }
     .btn-submit:disabled { cursor: not-allowed; opacity: 0.6; }
+    .btn-secondary { background: var(--bg-card-hover); border: 1px solid var(--border); }
     .chat-container { display: flex; flex-direction: column; height: 100%; }
     .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; }
     .chat-msg { display: flex; gap: 10px; align-items: flex-start; }
@@ -147,14 +148,17 @@
     nav { height: var(--nav-height); background: rgba(19, 15, 30, 0.9); backdrop-filter: blur(16px); border-top: 1px solid var(--border); position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(5, 1fr); z-index: 100; }
     .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-muted); cursor: pointer; }
     .nav-item.active { color: var(--accent); } .nav-item span { font-size: 0.68rem; font-weight: 600; }
-    .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .icon-lg { width: 48px; height: 48px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-sm { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
     .menu-drawer { position: fixed; top: 0; right: -100%; width: 260px; height: 100%; background: var(--bg-card); border-left: 1px solid var(--border); z-index: 200; padding: 24px 16px; transition: right 0.3s; }
     .menu-drawer.open { right: 0; } .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 199; display: none; } .drawer-overlay.open { display: block; }
     .drawer-menu-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
     .history-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
-    .history-header { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+    .history-header { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; align-items: center; }
     .history-title { font-weight: 700; font-size: 0.9rem; }
     .history-odds { font-weight: 800; color: var(--accent); font-size: 1.1rem; }
+    .tx-label-row { display: flex; align-items: center; gap: 6px; }
   </style>
 </head>
 <body>
@@ -163,7 +167,7 @@
   <header>
     <div class="brand">WINSTARS</div>
     <div class="header-actions">
-      <div class="balance-badge"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span id="header-balance">0 ★</span></div>
+      <div class="balance-badge"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span id="header-balance">0 ★</span></div>
       <div class="avatar-btn" id="avatar-trigger"><img id="user-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=Default" alt="Avatar"></div>
     </div>
   </header>
@@ -177,7 +181,7 @@
         </div>
         <button class="league-filter-btn" onclick="openLeagueModal()">
           <span id="selected-league-text">Все лиги</span>
-          <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M6 9l6 6 6-6"/></svg>
+          <svg class="icon-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
       <div id="matches-container"><div style="text-align:center; color:var(--text-muted); padding: 20px;">Загрузка матчей...</div></div>
@@ -197,7 +201,7 @@
         <div class="chat-messages" id="chat-box"></div>
         <div class="chat-input-area">
           <div class="input-group" style="margin-bottom: 0;"><input type="text" id="chat-input" placeholder="Написать в чат..."></div>
-          <button class="btn-submit" style="width: auto; padding: 0 16px;" onclick="sendChatMessage()"><svg class="icon" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+          <button class="btn-submit" style="width: auto; padding: 0 16px;" onclick="sendChatMessage()"><svg class="icon-sm" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
         </div>
       </div>
     </div>
@@ -211,16 +215,28 @@
       
       <div id="cashier-deposit">
         <div style="font-size:0.9rem; font-weight:800; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px;">Пополнение звёзд (Telegram Stars)</div>
-        <div class="input-group"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><input type="number" placeholder="Количество звёзд..." id="deposit-amount"></div>
-        <button class="btn-submit" style="margin-bottom: 24px;" onclick="handleTelegramInvoice()">Оплатить через Stars</button>
+        <div class="input-group">
+          <svg class="icon-sm" viewBox="0 0 24 24" style="color:var(--accent);"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <input type="number" placeholder="Количество звёзд..." id="deposit-amount">
+        </div>
+        <button class="btn-submit" style="margin-bottom: 24px;" onclick="handleTelegramInvoice()">
+          <svg class="icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+          Оплатить через Stars
+        </button>
         <div style="font-size:0.9rem; font-weight:800; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px;">Активация промокода</div>
-        <div class="input-group"><svg class="icon" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01"/></svg><input type="text" placeholder="Введите промокод..." id="cashier-promo"></div>
+        <div class="input-group">
+          <svg class="icon-sm" viewBox="0 0 24 24" style="color:var(--accent);"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01"/></svg>
+          <input type="text" placeholder="Введите промокод..." id="cashier-promo">
+        </div>
         <button class="btn-submit" onclick="applyPromo('cashier-promo')">Применить</button>
       </div>
       
       <div id="cashier-withdraw" style="display:none;">
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
-          <div style="font-size: 1rem; font-weight: 800; margin-bottom: 6px;">💸 Вывод звёзд</div>
+          <div style="font-size: 1rem; font-weight: 800; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; color: var(--accent);">
+            <svg class="icon-sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            <span style="color: var(--text-main);">Вывод звёзд</span>
+          </div>
           <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5;">
             Минимум: <b>1000 ★</b><br>
             Комиссия: <b>5%</b><br>
@@ -245,7 +261,7 @@
         <div class="user-info">
           <h3 id="profile-name">Игрок</h3>
           <p id="profile-username">@username</p>
-          <div id="profile-frozen" style="font-size: 0.75rem; color: var(--orange); margin-top: 4px; display: none;"></div>
+          <div id="profile-frozen" style="font-size: 0.75rem; color: var(--orange); margin-top: 4px; display: none; align-items: center; gap: 4px;"></div>
         </div>
       </div>
       <div class="stats-grid">
@@ -273,7 +289,9 @@
 
   <div class="modal-overlay" id="league-modal" onclick="closeLeagueModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
-      <div class="modal-header">Выбор лиги <button class="modal-close" onclick="closeLeagueModal()">✕</button></div>
+      <div class="modal-header">Выбор лиги <button class="modal-close" onclick="closeLeagueModal()">
+        <svg class="icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button></div>
       <div class="league-list" id="league-list-container"></div>
     </div>
   </div>
@@ -282,7 +300,9 @@
     <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
         <div id="match-details-title" style="font-size:1rem;">Матч</div>
-        <button class="modal-close" onclick="closeMatchDetails()">✕</button>
+        <button class="modal-close" onclick="closeMatchDetails()">
+          <svg class="icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
       <div class="mm-header" id="mm-header-container"></div>
       <div class="market-filters" id="market-filters-container"></div>
@@ -297,12 +317,14 @@
           <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">WINSTARS · ПРОГНОЗ</div>
           <div id="slip-type-title">Экспресс · 1 матч</div>
         </div>
-        <button class="modal-close" onclick="closeBetSlipModal()">✕</button>
+        <button class="modal-close" onclick="closeBetSlipModal()">
+          <svg class="icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
       <div class="slip-items" id="slip-items-container"></div>
       <div class="slip-input-row">
         <div class="input-group" style="margin-bottom: 0; flex: 1;">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <svg class="icon-sm" viewBox="0 0 24 24" style="color:var(--accent);"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           <input type="number" step="0.01" id="slip-stake" placeholder="Сумма (мин. 10)..." oninput="updatePotentialWin()">
         </div>
       </div>
@@ -314,8 +336,10 @@
   <div class="modal-overlay" id="result-modal">
     <div class="modal-content">
       <div class="receipt-header">
-        <div class="receipt-icon">✓</div>
-        <div class="receipt-title">Ставка принята!</div>
+        <div class="receipt-icon" id="receipt-icon-el">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="receipt-title" id="receipt-title-el">Ставка принята!</div>
       </div>
       <div class="receipt-brand-row">
         <div class="receipt-brand">WINSTARS</div>
@@ -349,13 +373,21 @@
   <div class="modal-overlay" id="subscription-modal" style="z-index: 1000;" onclick="event.stopPropagation()">
     <div class="modal-content" onclick="event.stopPropagation()">
       <div style="text-align: center; padding: 20px;">
-        <div style="font-size: 3rem; margin-bottom: 16px;">📢</div>
+        <div style="color: var(--accent); margin-bottom: 16px; display: inline-block;">
+          <svg class="icon-lg" viewBox="0 0 24 24"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+        </div>
         <div style="font-size: 1.2rem; font-weight: 800; margin-bottom: 12px;">Подпишитесь на канал</div>
         <div style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.9rem; line-height: 1.5;">
           Для использования <b>WinStars</b> необходимо подписаться на наш канал.
         </div>
-        <button class="btn-submit" onclick="openChannel()" style="margin-bottom: 10px;">📢 Подписаться на канал</button>
-        <button class="btn-submit" onclick="checkSubscriptionAndRetry()" style="background: var(--bg-card-hover);">✅ Проверить подписку</button>
+        <button class="btn-submit" onclick="openChannel()" style="margin-bottom: 10px;">
+          <svg class="icon-sm" viewBox="0 0 24 24"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+          Подписаться на канал
+        </button>
+        <button class="btn-submit btn-secondary" onclick="checkSubscriptionAndRetry()">
+          <svg class="icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Проверить подписку
+        </button>
       </div>
     </div>
   </div>
@@ -365,6 +397,20 @@
     const CHANNEL_URL = 'https://t.me/winstarschannel';
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
+
+    // Иконки SVG (для использования в JS-рендере)
+    const SVG_ICONS = {
+      arrowUp: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+      arrowDown: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>',
+      hourglass: '<svg class="icon-lg" viewBox="0 0 24 24" style="color:var(--accent);"><path d="M6 2h12M6 22h12M6 2v6a6 6 0 0 0 12 0V2M6 22v-6a6 6 0 0 1 12 0v6"/></svg>',
+      lock: '<svg class="icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+      check: '<svg class="icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>',
+      warning: '<svg class="icon-sm" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+      copy: '<svg class="icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+      x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+      checkBig: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><polyline points="20 6 9 17 4 12"/></svg>',
+      infoBig: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    };
 
     let currentUser = null; 
     let ws = null; 
@@ -381,6 +427,24 @@
         let num = parseFloat(val) || 0;
         let rounded = Math.round(num * 100) / 100;
         return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(2);
+    }
+
+    function setReceiptIcon(type) {
+      const el = document.getElementById('receipt-icon-el');
+      if (!el) return;
+      if (type === 'success') {
+        el.innerHTML = SVG_ICONS.checkBig;
+        el.style.color = 'var(--green)';
+        el.style.background = 'rgba(16, 185, 129, 0.2)';
+      } else if (type === 'error') {
+        el.innerHTML = SVG_ICONS.x;
+        el.style.color = 'var(--red)';
+        el.style.background = 'rgba(239, 68, 68, 0.2)';
+      } else if (type === 'info') {
+        el.innerHTML = SVG_ICONS.infoBig;
+        el.style.color = 'var(--accent)';
+        el.style.background = 'rgba(157, 78, 221, 0.2)';
+      }
     }
 
     const LEAGUE_PRIORITY = {
@@ -478,7 +542,7 @@
     }
 
     function openLeagueModal() { document.getElementById('league-modal').classList.add('open'); }
-    function closeLeagueModal(e) { if (!e || e.target === document.getElementById('league-modal') || e.target.tagName === 'BUTTON') document.getElementById('league-modal').classList.remove('open'); }
+    function closeLeagueModal(e) { if (!e || e.target === document.getElementById('league-modal') || e.target.tagName === 'BUTTON' || e.target.closest('button')) document.getElementById('league-modal').classList.remove('open'); }
     function selectLeague(league) {
       currentLeague = league;
       document.getElementById('selected-league-text').innerText = league === 'all' ? 'Все лиги' : league;
@@ -712,7 +776,7 @@
     }
 
     function closeMatchDetails(e) {
-      if (!e || e.target === document.getElementById('match-details-modal') || e.target.tagName === 'BUTTON') {
+      if (!e || e.target === document.getElementById('match-details-modal') || e.target.tagName === 'BUTTON' || e.target.closest('button')) {
         document.getElementById('match-details-modal').classList.remove('open');
       }
     }
@@ -782,7 +846,7 @@
     }
 
     function closeBetSlipModal(e) {
-      if (!e || e.target === document.getElementById('bet-slip-modal') || e.target.tagName === 'BUTTON') {
+      if (!e || e.target === document.getElementById('bet-slip-modal') || e.target.tagName === 'BUTTON' || e.target.closest('button')) {
         document.getElementById('bet-slip-modal').classList.remove('open');
       }
     }
@@ -840,28 +904,27 @@
 
     function showErrorAlert(msg) {
         const modal = document.getElementById('result-modal');
-        modal.querySelector('.receipt-icon').style.color = 'var(--red)';
-        modal.querySelector('.receipt-icon').style.background = 'rgba(239, 68, 68, 0.2)';
-        modal.querySelector('.receipt-icon').innerText = '✕';
-        modal.querySelector('.receipt-title').style.color = 'var(--red)';
-        modal.querySelector('.receipt-title').innerText = 'Ошибка';
+        setReceiptIcon('error');
+        document.getElementById('receipt-title-el').style.color = 'var(--red)';
+        document.getElementById('receipt-title-el').innerText = 'Ошибка';
         modal.querySelector('.receipt-brand-row').style.display = 'none';
-        modal.querySelector('.receipt-info').innerText = msg;
-        modal.querySelector('.receipt-events').innerHTML = '';
-        modal.querySelector('.receipt-stats').style.display = 'none';
+        document.getElementById('receipt-info').innerText = msg;
+        document.getElementById('receipt-events').innerHTML = '';
+        document.querySelector('#result-modal .receipt-stats').style.display = 'none';
         modal.classList.add('open');
         setTimeout(() => {
-            modal.querySelector('.receipt-icon').style.color = 'var(--green)';
-            modal.querySelector('.receipt-icon').style.background = 'rgba(16, 185, 129, 0.2)';
-            modal.querySelector('.receipt-icon').innerText = '✓';
-            modal.querySelector('.receipt-title').style.color = 'var(--green)';
-            modal.querySelector('.receipt-title').innerText = 'Ставка принята!';
+            setReceiptIcon('success');
+            document.getElementById('receipt-title-el').style.color = 'var(--green)';
+            document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
             modal.querySelector('.receipt-brand-row').style.display = 'flex';
-            modal.querySelector('.receipt-stats').style.display = 'grid';
+            document.querySelector('#result-modal .receipt-stats').style.display = 'grid';
         }, 3000);
     }
 
     function showReceiptModal(stake, odds, payout, betType) {
+      setReceiptIcon('success');
+      document.getElementById('receipt-title-el').style.color = 'var(--green)';
+      document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
       document.getElementById('receipt-stake-val').innerText = `${formatStars(stake)} ★`;
       document.getElementById('receipt-odds-val').innerText = `${formatStars(odds)}`;
       document.getElementById('receipt-payout-val').innerText = `${formatStars(payout)} ★`;
@@ -909,7 +972,7 @@
       if (data.active_request) {
         container.innerHTML = `
           <div style="padding: 20px; text-align: center; background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border);">
-            <div style="font-size: 2.5rem; margin-bottom: 12px;">⏳</div>
+            <div style="color: var(--accent); margin-bottom: 12px; display: inline-block;">${SVG_ICONS.hourglass}</div>
             <div style="font-weight: 800; margin-bottom: 8px; font-size: 1.1rem;">Заявка в обработке</div>
             <div style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.5;">
               Сумма: <b>${formatStars(data.active_request.amount)} ★</b><br>
@@ -923,20 +986,25 @@
       const hasEnough = data.referral_count >= 5;
       let html = `
         <div style="background: var(--bg-card); border-radius: 16px; padding: 16px; border: 1px solid var(--border); margin-bottom: 16px;">
-          <div style="font-weight: 700; margin-bottom: 8px; font-size: 0.95rem;">
-            ${hasEnough ? '✅' : '🔒'} Друзей приведено: ${progress} / 5
+          <div style="font-weight: 700; margin-bottom: 8px; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+            <span style="color: ${hasEnough ? 'var(--green)' : 'var(--accent)'};">${hasEnough ? SVG_ICONS.check : SVG_ICONS.lock}</span>
+            Друзей приведено: ${progress} / 5
           </div>
           <div style="height: 8px; background: var(--bg-card-hover); border-radius: 4px; overflow: hidden;">
             <div style="height: 100%; width: ${progress * 20}%; background: ${hasEnough ? 'var(--green)' : 'var(--accent)'}; transition: 0.3s;"></div>
           </div>
-          <div style="font-size: 0.75rem; color: var(--orange); margin-top: 10px; line-height: 1.4;">
-            ⚠️ Рефералы обязаны подписаться на <a href="https://t.me/winstarschannel" style="color: var(--accent);">канал</a>. Иначе они не засчитываются.
+          <div style="font-size: 0.75rem; color: var(--orange); margin-top: 10px; line-height: 1.4; display: flex; align-items: flex-start; gap: 6px;">
+            <span style="flex-shrink: 0; padding-top: 1px;">${SVG_ICONS.warning}</span>
+            <span>Рефералы обязаны подписаться на <a href="https://t.me/winstarschannel" style="color: var(--accent);">канал</a>. Иначе они не засчитываются.</span>
           </div>
         </div>
         <div style="background: var(--bg-card); border-radius: 16px; padding: 16px; border: 1px solid var(--border); margin-bottom: 16px;">
           <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 8px;">Ваша реферальная ссылка:</div>
           <div style="background: var(--bg-card-hover); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.72rem; word-break: break-all; margin-bottom: 10px; color: var(--accent);" id="ref-link">${data.referral_link}</div>
-          <button class="btn-submit" onclick="copyReferralLink()" style="font-size: 0.85rem; padding: 10px;">📋 Копировать ссылку</button>
+          <button class="btn-submit" onclick="copyReferralLink()" style="font-size: 0.85rem; padding: 10px;">
+            ${SVG_ICONS.copy}
+            Копировать ссылку
+          </button>
         </div>
       `;
       if (hasEnough) {
@@ -993,7 +1061,7 @@
           currentUser.frozen_balance = (currentUser.frozen_balance || 0) + amt;
           updateUI();
           loadWithdrawStatus();
-          showResultModal('⏳', 'Заявка создана!', 
+          showResultModal('info', 'Заявка создана!', 
             `Сумма: <b>${data.amount} ★</b><br>К зачислению: <b>${data.amount_after_commission} ★</b><br><br>Заявка рассматривается в течение 5 рабочих дней.`);
         } else {
           alert(data.detail || 'Ошибка');
@@ -1005,26 +1073,22 @@
       }
     }
 
-    function showResultModal(icon, title, info) {
+    function showResultModal(type, title, info) {
       const modal = document.getElementById('result-modal');
-      modal.querySelector('.receipt-icon').innerText = icon;
-      modal.querySelector('.receipt-icon').style.background = 'rgba(157, 78, 221, 0.2)';
-      modal.querySelector('.receipt-icon').style.color = 'var(--accent)';
-      modal.querySelector('.receipt-title').innerText = title;
-      modal.querySelector('.receipt-title').style.color = 'var(--accent)';
+      setReceiptIcon(type);
+      document.getElementById('receipt-title-el').innerText = title;
+      document.getElementById('receipt-title-el').style.color = 'var(--accent)';
       modal.querySelector('.receipt-brand-row').style.display = 'none';
-      modal.querySelector('.receipt-info').innerHTML = info;
-      modal.querySelector('.receipt-events').innerHTML = '';
-      modal.querySelector('.receipt-stats').style.display = 'none';
+      document.getElementById('receipt-info').innerHTML = info;
+      document.getElementById('receipt-events').innerHTML = '';
+      document.querySelector('#result-modal .receipt-stats').style.display = 'none';
       modal.classList.add('open');
       setTimeout(() => {
-        modal.querySelector('.receipt-icon').innerText = '✓';
-        modal.querySelector('.receipt-icon').style.background = 'rgba(16, 185, 129, 0.2)';
-        modal.querySelector('.receipt-icon').style.color = 'var(--green)';
-        modal.querySelector('.receipt-title').style.color = 'var(--green)';
-        modal.querySelector('.receipt-title').innerText = 'Ставка принята!';
+        setReceiptIcon('success');
+        document.getElementById('receipt-title-el').style.color = 'var(--green)';
+        document.getElementById('receipt-title-el').innerText = 'Ставка принята!';
         modal.querySelector('.receipt-brand-row').style.display = 'flex';
-        modal.querySelector('.receipt-stats').style.display = 'grid';
+        document.querySelector('#result-modal .receipt-stats').style.display = 'grid';
       }, 4000);
     }
 
@@ -1041,11 +1105,11 @@
         }
         let html = '';
         items.forEach(tx => {
-          let icon, label, sign, color, statusText = '', reason = '', statusColor = '';
+          let iconSvg, label, sign, color, statusText = '', reason = '', statusColor = '', iconColor = '';
           if (tx.type === 'deposit') {
-            icon = '💰'; label = 'Пополнение звёзд'; sign = '+'; color = 'var(--green)';
+            iconSvg = SVG_ICONS.arrowDown; label = 'Пополнение звёзд'; sign = '+'; color = 'var(--green)'; iconColor = 'var(--green)';
           } else {
-            icon = '💸'; label = 'Вывод звёзд'; sign = '−'; color = 'var(--red)';
+            iconSvg = SVG_ICONS.arrowUp; label = 'Вывод звёзд'; sign = '−'; color = 'var(--red)'; iconColor = 'var(--red)';
             if (tx.status === 'pending') { statusText = 'Ожидание'; statusColor = 'var(--orange)'; }
             else if (tx.status === 'approved') { statusText = 'Успешно'; statusColor = 'var(--green)'; }
             else if (tx.status === 'rejected') { statusText = 'Отказ'; statusColor = 'var(--red)'; reason = tx.reject_reason || ''; }
@@ -1055,7 +1119,7 @@
           html += `
             <div class="history-card">
               <div class="history-header">
-                <span>${icon} ${label}</span>
+                <span class="tx-label-row"><span style="color:${iconColor};">${iconSvg}</span>${label}</span>
                 ${statusText ? `<span style="color:${statusColor}; font-weight:800;">${statusText}</span>` : ''}
               </div>
               <div style="font-size: 0.75rem; color: var(--text-muted);">${dateStr}</div>
@@ -1174,7 +1238,10 @@
       document.getElementById("profile-username").innerText = "@" + (currentUser.username || "user");
       const frozen = currentUser.frozen_balance || 0;
       const fEl = document.getElementById('profile-frozen');
-      if (frozen > 0) { fEl.innerText = `⏳ На выводе: ${formatStars(frozen)} ★`; fEl.style.display = 'block'; }
+      if (frozen > 0) { 
+        fEl.innerHTML = `<span style="color: var(--orange); display: inline-flex; align-items: center; gap: 4px;">${SVG_ICONS.hourglass.replace('icon-lg','icon-sm')} На выводе: ${formatStars(frozen)} ★</span>`; 
+        fEl.style.display = 'block'; 
+      }
       else { fEl.style.display = 'none'; }
       const wins = currentUser.wins || 0;
       const total = currentUser.total_bets || 0;
