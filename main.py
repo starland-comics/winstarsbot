@@ -168,7 +168,7 @@ _FINISHED_CACHE = {"data": {}, "ts": 0}
 _FULL_LINE_CACHE = {}
 _SUB_CHECK_CACHE = {}
 _PENDING_FINISHED = {}
-_SKIP_LOG = deque(maxlen=500)
+_SKIP_LOG = deque(maxlen=2000)
 _FIREBASE_BAD_CHARS = re.compile(r'[\.\$#\[\]/]')
 
 app = FastAPI(title="WinStars API")
@@ -573,6 +573,7 @@ def _filter_decided(markets, s1, s2):
     return filtered
 
 def _fetch_fonbet_with_fallback(path_and_query):
+    """Единичный запрос с fallback на зеркала (для endpoint'ов и full-line)."""
     for base in FONBET_MIRRORS:
         url = base + path_and_query
         for _ in range(2):
@@ -585,6 +586,50 @@ def _fetch_fonbet_with_fallback(path_and_query):
                 pass
             time.sleep(0.5)
     return None
+
+def _fetch_fonbet_from_all_mirrors(path_and_query):
+    """Запрашивает все зеркала, мержит events/factors/sports/liveEventInfos."""
+    merged = {
+        "events": [],
+        "factors": [],
+        "customFactors": [],
+        "sports": [],
+        "liveEventInfos": [],
+    }
+    seen_event_ids = set()
+    seen_sports_ids = set()
+    seen_live_ids = set()
+    any_success = False
+    for base in FONBET_MIRRORS:
+        url = base + path_and_query
+        try:
+            r = cffi_requests.get(url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=20)
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            any_success = True
+            for ev in data.get("events", []):
+                eid = ev.get("id")
+                if eid and eid not in seen_event_ids:
+                    seen_event_ids.add(eid)
+                    merged["events"].append(ev)
+            for sp in data.get("sports", []):
+                sid = sp.get("id")
+                if sid and sid not in seen_sports_ids:
+                    seen_sports_ids.add(sid)
+                    merged["sports"].append(sp)
+            for li in data.get("liveEventInfos", []):
+                eid = li.get("eventId")
+                if eid and eid not in seen_live_ids:
+                    seen_live_ids.add(eid)
+                    merged["liveEventInfos"].append(li)
+            merged["factors"].extend(data.get("factors", []))
+            merged["customFactors"].extend(data.get("customFactors", []))
+        except Exception:
+            continue
+    if not any_success:
+        return None
+    return merged
 
 def _build_logo_index(raw_cache):
     idx = {}
@@ -760,8 +805,8 @@ async def api_admin_refund_event(ev_id: str, admin_id: int = Query(0)):
 
 @app.get("/api/debug/leagues")
 async def debug_leagues():
-    line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
-    live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
+    line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
+    live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
     all_sports = []
     for data in [line_data, live_data]:
         if data:
@@ -802,8 +847,11 @@ async def debug_leagues():
                         "sid": v["sid"], "parentId": v["parentId"],
                         "topSportId": v["topSportId"], "topSportName": v["topSportName"]}
                        for k, v in leagues.items() if k.lower().startswith("россия")]
+    total_events = (len(line_data.get("events", [])) if line_data else 0) + \
+                   (len(live_data.get("events", [])) if live_data else 0)
     return {
         "total_leagues": len(leagues),
+        "total_events_in_feed": total_events,
         "allowed_count": len(allowed_list),
         "blocked_count": len(blocked_list),
         "russian_leagues": russian_leagues,
@@ -814,13 +862,17 @@ async def debug_leagues():
 @app.get("/api/debug/skipped")
 async def debug_skipped():
     items = list(_SKIP_LOG)
-    return {"count": len(items), "items": items[-100:]}
+    return {
+        "count": len(items),
+        "last_cycle_ts": items[-1]["ts"] if items else None,
+        "now_ts": int(time.time()),
+        "items": items[-100:],
+    }
 
 @app.get("/api/debug/check-event/{ev_id}")
 async def debug_check_event(ev_id: str):
-    """Прогоняет матч через всю цепочку фильтров парсера."""
-    line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
-    live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
+    line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
+    live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
     if not line_data and not live_data:
         return {"error": "Fonbet unavailable"}
     
@@ -866,27 +918,23 @@ async def debug_check_event(ev_id: str):
     steps = []
     ok = True
     
-    # 1. rootKind/kind
     if ev.get("rootKind") != 1 or ev.get("kind") != 1:
         steps.append({"step": "rootKind_kind", "ok": False, "rootKind": ev.get("rootKind"), "kind": ev.get("kind")})
         ok = False
     else:
         steps.append({"step": "rootKind_kind", "ok": True})
     
-    # 2. teams
     if not t1 or not t2:
         steps.append({"step": "teams", "ok": False, "t1": t1, "t2": t2})
         ok = False
     else:
         steps.append({"step": "teams", "ok": True, "t1": t1, "t2": t2})
     
-    # 3. startTime
     steps.append({"step": "startTime", "st": st, "now": now_ts,
                   "diff_min": round((st - now_ts) / 60.0, 1) if st else None,
                   "ok": st > 0})
     if st <= 0: ok = False
     
-    # 4. sportId
     sid = ev.get("sportId")
     top_sport = top_by_id.get(sid)
     steps.append({"step": "sportId", "sid": sid,
@@ -894,32 +942,27 @@ async def debug_check_event(ev_id: str):
                   "ok": bool(top_sport)})
     if not top_sport: ok = False
     
-    # 5. football check
     if top_sport:
         sn = (top_sport.get('name') or '').lower()
         fcheck = sn in ('футбол', 'football', 'soccer')
         steps.append({"step": "football_check", "name": sn, "ok": fcheck})
         if not fcheck: ok = False
     
-    # 6. league pattern
     league = tournament_by_id.get(sid, "")
     allowed = _is_allowed_league(league)
     steps.append({"step": "league_pattern", "league": league, "allowed": allowed})
     if not allowed: ok = False
     
-    # 7. blacklist
     text = f"{t1} {t2}".lower()
     bl_hits = [w for w in BLACKLIST_WORDS if w in text]
     steps.append({"step": "blacklist", "hits": bl_hits, "ok": not bl_hits})
     if bl_hits: ok = False
     
-    # 8. live check
     s1, s2, timer = _extract_score(all_live.get(ev.get("id")))
     is_live = s1 is not None and s2 is not None and timer is not None
     steps.append({"step": "live_check", "is_live": is_live, "s1": s1, "s2": s2, "timer": timer,
                   "has_live_info": ev.get("id") in all_live})
     
-    # 9. will it be saved?
     now = int(time.time())
     if ok:
         if is_live:
@@ -945,9 +988,9 @@ async def debug_check_event(ev_id: str):
     
     return {
         "ev_id": ev_id, "event": ev, "steps": steps,
-        "would_be_saved": would_save,
-        "save_status": save_status,
+        "would_be_saved": would_save, "save_status": save_status,
         "factors_in_feed": factors_count,
+        "feed_size": len(events_by_id),
     }
 
 @app.get("/api/debug/fonbet/{ev_id}")
@@ -1008,18 +1051,22 @@ async def debug_fonbet(ev_id: str):
 # ==================== WORKERS ====================
 
 async def fonbet_scraper_worker():
-    print(f"fonbet_scraper_worker started (poll {LIVE_POLL_SEC}s)...")
+    print(f"fonbet_scraper_worker started (poll {LIVE_POLL_SEC}s, multi-mirror merge)...")
     cycle = 0
     while True:
         try:
             t0 = time.time()
             now_ts = int(time.time())
             seven_days = 7 * 86400
-            line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
-            live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
+            
+            # Мерж с ВСЕХ зеркал
+            line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
+            live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
+            
             if not line_data and not live_data:
                 print("Fonbet fully unavailable, keeping old matches in DB...")
                 await asyncio.sleep(LIVE_POLL_SEC); continue
+            
             events_by_id = {}
             all_factors = {}
             all_sports = []
@@ -1045,17 +1092,20 @@ async def fonbet_scraper_worker():
                     eid = ev.get("id")
                     if eid and eid not in events_by_id:
                         events_by_id[eid] = dict(ev)
+            
             entry_by_id, parent_by_id, top_by_id = _build_sport_hierarchy(all_sports)
             tournament_by_id = {}
             for sp in all_sports:
                 if sp.get('kind') == 'sport': continue
                 sid = sp.get('id'); nm = sp.get('name', '')
                 if sid and nm: tournament_by_id[sid] = nm
+            
             raw_cache = await firebase_get("team_logos") or {}
             logo_idx = _build_logo_index(raw_cache)
             cached_prev_matches = await firebase_get("matches") or {}
             if not isinstance(cached_prev_matches, dict):
                 cached_prev_matches = {}
+            
             matches_dict = {}
             live_cnt = 0
             started_no_live_saved = 0
@@ -1063,6 +1113,7 @@ async def fonbet_scraper_worker():
             total_markets_count = 0
             full_line_fetched = 0
             live_no_data_skipped = 0
+            
             candidates = []
             for ev in events_by_id.values():
                 eid = ev.get("id")
@@ -1096,7 +1147,37 @@ async def fonbet_scraper_worker():
                     _log_skip(eid, teams_str, league, "league_blocked")
                     continue
                 candidates.append((ev, league))
+            
             candidates.sort(key=lambda x: (0 if x[0].get("id") in all_live else 1, abs(_parse_start_ts(x[0]) - now_ts)))
+            
+            # ========== ПАРАЛЛЕЛЬНАЯ ПРЕДЗАГРУЗКА FULL-LINE ==========
+            preloaded_factors = {}
+            max_full = max(FULL_LINE_MAX_PER_CYCLE, sum(1 for ev, _ in candidates if ev.get("id") in all_live))
+            sem = asyncio.Semaphore(10)
+            
+            async def _load_full_line(ev_id):
+                async with sem:
+                    d = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={ev_id}")
+                    if not d:
+                        return ev_id, None
+                    for cf in d.get("customFactors", []):
+                        if cf.get("e") == ev_id:
+                            return ev_id, cf.get("factors", [])
+                    return ev_id, None
+            
+            to_load = []
+            for idx, (ev, league) in enumerate(candidates):
+                eid = ev.get("id")
+                if eid in all_live or idx < max_full:
+                    to_load.append(eid)
+            
+            if to_load:
+                results = await asyncio.gather(*[_load_full_line(eid) for eid in to_load], return_exceptions=True)
+                for res in results:
+                    if isinstance(res, tuple) and res[1]:
+                        preloaded_factors[res[0]] = res[1]
+            
+            # ========== ОСНОВНОЙ ЦИКЛ ==========
             for idx, (ev, league) in enumerate(candidates):
                 eid = ev.get("id")
                 mid = f"fonbet_{eid}"
@@ -1104,34 +1185,24 @@ async def fonbet_scraper_worker():
                 st = _parse_start_ts(ev)
                 s1, s2, timer = _extract_score(all_live.get(eid))
                 is_live = s1 is not None and s2 is not None and timer is not None
+                
                 if is_live and timer is not None and isinstance(timer, int):
                     elapsed_real_min = (now_ts - st) / 60.0
                     if elapsed_real_min > timer + 45:
                         _log_skip(eid, f"{t1} - {t2}", league, "stuck_live")
                         continue
-                # ========== ГЛАВНЫЙ ФИКС: сохраняем "ИДЕТ" если матч стартовал но live ещё нет ==========
+                
+                # ========== ГЛАВНЫЙ ФИКС: сохраняем "ИДЕТ" если стартовал но live нет ==========
                 if not is_live:
                     if st > now_ts + seven_days:
-                        _log_skip(eid, f"{t1} - {t2}", league, "too_far")
                         continue
                     if st < now_ts - int(3.5 * 3600):
-                        _log_skip(eid, f"{t1} - {t2}", league, "too_old")
                         continue
                     if st < now_ts:
-                        # Матч уже должен идти по времени, но Fonbet ещё не отдал live-счёт
-                        # СОХРАНЯЕМ с пометкой ИДЕТ, чтобы не потерять
-                        factors_for_ev = all_factors.get(eid, [])
-                        if idx < FULL_LINE_MAX_PER_CYCLE:
-                            full_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={eid}")
-                            if full_data:
-                                for cf in full_data.get("customFactors", []):
-                                    if cf.get("e") == eid:
-                                        factors_for_ev = cf.get("factors", [])
-                                        if factors_for_ev:
-                                            full_line_fetched += 1
-                                        break
+                        factors_for_ev = preloaded_factors.get(eid) or all_factors.get(eid, [])
+                        if factors_for_ev:
+                            full_line_fetched += 1
                         markets_data = _parse_markets(factors_for_ev)
-                        # Если пусто — попробуем из старого кэша
                         old_m = cached_prev_matches.get(mid)
                         if not markets_data and isinstance(old_m, dict) and old_m.get("markets"):
                             markets_data = old_m["markets"]
@@ -1157,19 +1228,11 @@ async def fonbet_scraper_worker():
                         started_no_live_saved += 1
                         _log_skip(eid, f"{t1} - {t2}", league, f"started_no_live_SAVED_as_IDET (factors={len(factors_for_ev)})")
                         continue
-                # ============ нормальная обработка (prematch или live) ============
-                factors_for_ev = None
-                if is_live or idx < FULL_LINE_MAX_PER_CYCLE:
-                    full_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={eid}")
-                    if full_data:
-                        for cf in full_data.get("customFactors", []):
-                            if cf.get("e") == eid:
-                                factors_for_ev = cf.get("factors", [])
-                                if factors_for_ev:
-                                    full_line_fetched += 1
-                                break
-                if not factors_for_ev:
-                    factors_for_ev = all_factors.get(eid, [])
+                
+                # ============ normal: prematch или live ============
+                factors_for_ev = preloaded_factors.get(eid) or all_factors.get(eid, [])
+                if factors_for_ev:
+                    full_line_fetched += 1
                 markets_data = _parse_markets(factors_for_ev)
                 if is_live and s1 is not None and s2 is not None:
                     markets_data = _filter_decided(markets_data, s1, s2)
@@ -1213,6 +1276,8 @@ async def fonbet_scraper_worker():
                     "markets": markets_data,
                     "score_breakdown": score_breakdown,
                 }
+            
+            # ============ ОБРАБОТКА ИСЧЕЗНУВШИХ МАТЧЕЙ ============
             all_active_mids = set(matches_dict.keys())
             finished_known = await firebase_get("finished_matches") or {}
             if not isinstance(finished_known, dict): finished_known = {}
@@ -1272,10 +1337,12 @@ async def fonbet_scraper_worker():
                     if not ok:
                         _PENDING_FINISHED[mid] = {"score1": s1_old, "score2": s2_old, "source": "fonbet_last"}
                 except: pass
+            
             for mid in list(_PENDING_FINISHED.keys()):
                 d = _PENDING_FINISHED[mid]
                 if await _record_finished(mid, d["score1"], d["score2"], d["source"]):
                     _PENDING_FINISHED.pop(mid, None)
+            
             if matches_dict:
                 try:
                     approx_size = len(json.dumps(matches_dict, ensure_ascii=False))
@@ -1286,7 +1353,7 @@ async def fonbet_scraper_worker():
                 if cached_frozen: extra += f" | frozen: {cached_frozen}"
                 if started_no_live_saved: extra += f" | started_no_live_SAVED: {started_no_live_saved}"
                 if live_no_data_skipped: extra += f" | live_no_data: {live_no_data_skipped}"
-                print(f"[FONBET] {len(matches_dict)} matches (LIVE: {live_cnt}) | {total_markets_count} mkts | full-line: {full_line_fetched}{extra} | {size_mb:.1f}MB {time.time()-t0:.1f}s")
+                print(f"[FONBET] feed={len(events_by_id)} saved={len(matches_dict)} (LIVE: {live_cnt}) | {total_markets_count} mkts | full-line: {full_line_fetched}{extra} | {size_mb:.1f}MB {time.time()-t0:.1f}s")
         except Exception as e:
             import traceback
             print(f"fonbet_scraper: {e}")
@@ -1518,7 +1585,7 @@ async def _notify_admin_withdrawal(req_id, data):
 @app.on_event("startup")
 async def startup_event():
     print("WinStars API starting...")
-    print("   VERSION: v13 (started-no-live-saved-as-IDET, skip-log, check-event)")
+    print("   VERSION: v14 (multi-mirror merge, parallel full-line, feed=log)")
     try:
         chat = await bot.get_chat(CHANNEL_ID)
         print(f"   Channel OK: {chat.title} (@{chat.username})")
