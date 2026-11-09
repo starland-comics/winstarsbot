@@ -19,7 +19,15 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from curl_cffi import requests as cffi_requests
 
-BOT_TOKEN = "9010161317:AAEMgcEP5yhgMiyV8OCOwJ5fpxmAUrg0ke8"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+if not BOT_TOKEN:
+    raise RuntimeError(
+        "BOT_TOKEN env variable is not set! "
+        "Add it in Render → Environment → Add Environment Variable."
+    )
+if ":" not in BOT_TOKEN or len(BOT_TOKEN) < 40:
+    raise RuntimeError(f"BOT_TOKEN looks invalid (len={len(BOT_TOKEN)}). Check it in Render ENV.")
+print(f"✅ BOT_TOKEN loaded from env (len={len(BOT_TOKEN)})")
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
