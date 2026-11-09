@@ -19,6 +19,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from curl_cffi import requests as cffi_requests
 
+# ==================== SECURITY: BOT_TOKEN FROM ENV ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 if not BOT_TOKEN:
     raise RuntimeError(
@@ -28,6 +29,7 @@ if not BOT_TOKEN:
 if ":" not in BOT_TOKEN or len(BOT_TOKEN) < 40:
     raise RuntimeError(f"BOT_TOKEN looks invalid (len={len(BOT_TOKEN)}). Check it in Render ENV.")
 print(f"✅ BOT_TOKEN loaded from env (len={len(BOT_TOKEN)})")
+
 WEBAPP_URL = "https://starland-comics.github.io/winstarsbot/"
 FIREBASE_DB_URL = "https://winstars-435f1-default-rtdb.firebaseio.com"
 
@@ -116,8 +118,8 @@ FACTOR_PRIORITY = {
 }
 
 ALLOWED_LEAGUE_PATTERNS = [
-    # Россия: +"1-я лига" (Fonbet так называет ФНЛ)
-    r'^россия\.\s*(премьер|рпл|фнл|1-я лига|первая лига|кубок)',
+    # Россия: расширено — покрывает все возможные названия ФНЛ/первой лиги
+    r'^россия\.\s*(премьер|рпл|фнл|1-я|1 я|первая|вторая|2-я|2 я|футбольная национальная|кубок|суперкубок)',
     r'^англия\.\s*(премьер|чемпионшип|кубок англии|fa cup|кубок лиги|efl cup|carabao)($|\s*\.|\s*сезон)',
     r'^испания\.\s*(ла лига|примера|сегунда|кубок|copa)($|\s*дивизион|\s*лига|\s*\.)',
     r'^италия\.\s*(серия а|серия b|серия б|кубок)($|\s*\.|\s*сезон)',
@@ -623,97 +625,68 @@ def _build_sport_hierarchy(all_sports):
 # ==================== REFUND LOGIC ====================
 
 async def refund_bet_by_id(bet_id: str):
-    """Возвращает деньги за ставку. Помечает её как void."""
     bet = await firebase_get(f"bets/{bet_id}")
     if not isinstance(bet, dict):
         return {"status": "error", "message": "Ставка не найдена"}
-    
     user_id = bet.get("user_id")
     amount = float(bet.get("amount", 0))
     old_status = bet.get("status", "unknown")
-    
     if old_status == "void" and bet.get("refunded"):
         return {"status": "already_refunded", "message": "Уже возвращено"}
-    
     user = await firebase_get(f"users/{user_id}")
     if not isinstance(user, dict):
         return {"status": "error", "message": "Пользователь не найден"}
-    
     cur_balance = float(user.get("balance", 0))
     cur_profit = float(user.get("profit", 0))
     cur_wins = int(user.get("wins", 0))
-    
-    balance_delta = 0.0
-    profit_delta = 0.0
-    wins_delta = 0
-    
+    balance_delta = 0.0; profit_delta = 0.0; wins_delta = 0
     if old_status == "lost":
-        # При проигрыше: balance уже уменьшен на amount при создании ставки. profit -= amount.
-        # Возвращаем amount на баланс, откатываем profit.
         balance_delta = amount
         profit_delta = amount
     elif old_status == "won":
-        # При выигрыше: balance += win_amount. profit += (win - amount). wins += 1.
-        # Откатываем всё и возвращаем ставку как void.
         eff_coeff = float(bet.get("effective_coefficient", bet.get("total_coefficient", 1)))
         win_amount = amount * eff_coeff
-        balance_delta = amount - win_amount  # вернуть ставку, забрать выигрыш
+        balance_delta = amount - win_amount
         profit_delta = -(win_amount - amount)
         wins_delta = -1
     elif old_status == "active":
-        # Активная ставка: возвращаем amount
         balance_delta = amount
         await firebase_delete(f"active_bets/{bet_id}")
     else:
         return {"status": "error", "message": f"Неизвестный статус {old_status}"}
-    
     new_balance = round(cur_balance + balance_delta, 2)
     new_profit = round(cur_profit + profit_delta, 2)
     new_wins = max(0, cur_wins + wins_delta)
-    
     await firebase_patch(f"users/{user_id}", {
-        "balance": new_balance,
-        "profit": new_profit,
-        "wins": new_wins,
+        "balance": new_balance, "profit": new_profit, "wins": new_wins,
     })
     refund_payload = {
-        "status": "void",
-        "refunded": True,
+        "status": "void", "refunded": True,
         "refunded_at": int(time.time()),
-        "refund_reason": "fake_score_bug",
+        "refund_reason": "manual_refund",
         "previous_status": old_status,
     }
     await firebase_patch(f"bets/{bet_id}", refund_payload)
     await firebase_patch(f"users/{user_id}/bets/{bet_id}", refund_payload)
-    
-    # Пуш игроку
     try:
         await send_user_notification(
             int(user_id),
             f"<b>Ставка отменена</b>\n\n"
             f"Возврат <b>{amount} ★</b> на баланс.\n\n"
-            f"Причина: техническая ошибка при расчёте матча. Приносим извинения.",
+            f"Причина: техническая ошибка. Приносим извинения.",
             "Открыть WinStars", WEBAPP_URL
         )
     except: pass
-    
     return {
-        "status": "ok",
-        "bet_id": bet_id,
-        "user_id": user_id,
-        "amount": amount,
-        "previous_status": old_status,
-        "balance_delta": balance_delta,
-        "profit_delta": profit_delta,
-        "new_balance": new_balance,
-        "new_profit": new_profit,
+        "status": "ok", "bet_id": bet_id, "user_id": user_id,
+        "amount": amount, "previous_status": old_status,
+        "balance_delta": balance_delta, "profit_delta": profit_delta,
+        "new_balance": new_balance, "new_profit": new_profit,
     }
 
 async def find_bad_bets():
-    """Ищет все LOST-ставки, где все ноги = 0:0 и source=fonbet_last."""
     all_bets = await firebase_get("bets") or {}
-    if not isinstance(all_bets, dict):
-        return []
+    if not isinstance(all_bets, dict): return []
     finished = await firebase_get("finished_matches") or {}
     bad = []
     for bet_id, bet in all_bets.items():
@@ -730,7 +703,6 @@ async def find_bad_bets():
             fin = finished.get(mid) if isinstance(finished, dict) else None
             if not isinstance(fin, dict):
                 all_suspect = False; break
-            # Проверяем: score 0:0 и source=fonbet_last
             is_zero = fin.get("score1") == 0 and fin.get("score2") == 0
             is_last = fin.get("source") == "fonbet_last"
             if not (is_zero and is_last):
@@ -738,10 +710,8 @@ async def find_bad_bets():
             leg_info.append({"match_id": mid, "match_title": ev.get("match_title")})
         if all_suspect and leg_info:
             bad.append({
-                "bet_id": bet_id,
-                "user_id": bet.get("user_id"),
-                "amount": bet.get("amount"),
-                "timestamp": bet.get("timestamp"),
+                "bet_id": bet_id, "user_id": bet.get("user_id"),
+                "amount": bet.get("amount"), "timestamp": bet.get("timestamp"),
                 "events": leg_info,
             })
     bad.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
@@ -756,15 +726,14 @@ async def api_admin_bad_bets(admin_id: int = Query(0)):
     bad = await find_bad_bets()
     return {"count": len(bad), "bets": bad}
 
-@app.post("/api/admin/refund-bet/{bet_id}")
+@app.api_route("/api/admin/refund-bet/{bet_id}", methods=["GET", "POST"])
 async def api_admin_refund_bet(bet_id: str, admin_id: int = Query(0)):
     if admin_id != ADMIN_TELEGRAM_ID:
         raise HTTPException(403, "Forbidden")
     return await refund_bet_by_id(bet_id)
 
-@app.post("/api/admin/refund-event/{ev_id}")
+@app.api_route("/api/admin/refund-event/{ev_id}", methods=["GET", "POST"])
 async def api_admin_refund_event(ev_id: str, admin_id: int = Query(0)):
-    """Возвращает все ставки по конкретному событию (всем игрокам)."""
     if admin_id != ADMIN_TELEGRAM_ID:
         raise HTTPException(403, "Forbidden")
     mid = f"fonbet_{ev_id}"
@@ -782,6 +751,52 @@ async def api_admin_refund_event(ev_id: str, admin_id: int = Query(0)):
                 refunded.append({"bet_id": bet_id, "result": res.get("status")})
                 break
     return {"refunded": len(refunded), "bets": refunded}
+
+@app.get("/api/debug/leagues")
+async def debug_leagues():
+    """Показывает все лиги Fonbet с pass/fail фильтром."""
+    line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
+    live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
+    all_sports = []
+    for data in [line_data, live_data]:
+        if data:
+            all_sports.extend(data.get("sports", []))
+    entry_by_id, parent_by_id, top_by_id = _build_sport_hierarchy(all_sports)
+    leagues = {}
+    for sp in all_sports:
+        if sp.get('kind') == 'sport': continue
+        sid = sp.get('id')
+        name = sp.get('name', '')
+        if not sid or not name: continue
+        top = top_by_id.get(sid)
+        if not top: continue
+        sport_name = (top.get('name') or '').lower()
+        if sport_name not in ('футбол', 'football', 'soccer'): continue
+        allowed = _is_allowed_league(name)
+        count = 0
+        for d in [line_data, live_data]:
+            if not d: continue
+            for ev in d.get("events", []):
+                if ev.get("sportId") == sid:
+                    count += 1
+        if name not in leagues:
+            leagues[name] = {"allowed": allowed, "count": count}
+        else:
+            leagues[name]["count"] += count
+    allowed_list = sorted([{"league": k, "matches": v["count"]} for k, v in leagues.items() if v["allowed"]],
+                          key=lambda x: x["matches"], reverse=True)
+    blocked_list = sorted([{"league": k, "matches": v["count"]} for k, v in leagues.items() if not v["allowed"]],
+                          key=lambda x: x["matches"], reverse=True)
+    russian_leagues = [{"league": k, "matches": v["count"], "allowed": v["allowed"]}
+                       for k, v in leagues.items() if k.lower().startswith("россия")]
+    return {
+        "total_leagues": len(leagues),
+        "allowed_count": len(allowed_list),
+        "blocked_count": len(blocked_list),
+        "russian_leagues": russian_leagues,
+        "allowed_top_30": allowed_list[:30],
+        "blocked_top_30": blocked_list[:30],
+    }
 
 @app.get("/api/debug/fonbet/{ev_id}")
 async def debug_fonbet(ev_id: str):
@@ -818,9 +833,7 @@ async def debug_fonbet(ev_id: str):
             cf = data.get("customFactors", [])
             my_cf = next((c for c in cf if str(c.get("e")) == ev_id), None)
             result["endpoints"]["full"] = {
-                "event_found": ev is not None,
-                "live_info": li,
-                "event": ev,
+                "event_found": ev is not None, "live_info": li, "event": ev,
                 "factors_count": len(my_cf.get("factors", [])) if my_cf else 0,
             }
         else:
@@ -840,7 +853,7 @@ async def debug_fonbet(ev_id: str):
         result["in_matches_db"] = {"error": str(e)[:200]}
     return result
 
-# ==================== WORKERS (без изменений) ====================
+# ==================== WORKERS ====================
 
 async def fonbet_scraper_worker():
     print(f"fonbet_scraper_worker started (poll {LIVE_POLL_SEC}s)...")
@@ -1297,7 +1310,7 @@ async def _notify_admin_withdrawal(req_id, data):
 @app.on_event("startup")
 async def startup_event():
     print("WinStars API starting...")
-    print("   VERSION: v11 (refund-bet, bad-bets-list, admin-tools)")
+    print("   VERSION: v12 (env-token, expanded-russia-league, debug-leagues)")
     try:
         chat = await bot.get_chat(CHANNEL_ID)
         print(f"   Channel OK: {chat.title} (@{chat.username})")
