@@ -8,6 +8,7 @@ import time
 import base64
 import re
 import hashlib
+import sys
 from collections import deque
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -76,6 +77,7 @@ FINISHED_TTL = 20
 FULL_LINE_TTL = 60
 FULL_LINE_MAX_PER_CYCLE = 60
 SUB_CHECK_TTL = 60
+FULL_LINE_CONCURRENCY = 5
 
 FONBET_FACTORS = {
     921: ("Исход", "П1", False), 922: ("Исход", "Х", False), 923: ("Исход", "П2", False),
@@ -573,7 +575,7 @@ def _filter_decided(markets, s1, s2):
     return filtered
 
 def _fetch_fonbet_with_fallback(path_and_query):
-    """Единичный запрос с fallback на зеркала (для endpoint'ов и full-line)."""
+    """Единичный запрос с fallback на зеркала."""
     for base in FONBET_MIRRORS:
         url = base + path_and_query
         for _ in range(2):
@@ -584,52 +586,8 @@ def _fetch_fonbet_with_fallback(path_and_query):
                     except: pass
             except Exception:
                 pass
-            time.sleep(0.5)
+            time.sleep(0.3)
     return None
-
-def _fetch_fonbet_from_all_mirrors(path_and_query):
-    """Запрашивает все зеркала, мержит events/factors/sports/liveEventInfos."""
-    merged = {
-        "events": [],
-        "factors": [],
-        "customFactors": [],
-        "sports": [],
-        "liveEventInfos": [],
-    }
-    seen_event_ids = set()
-    seen_sports_ids = set()
-    seen_live_ids = set()
-    any_success = False
-    for base in FONBET_MIRRORS:
-        url = base + path_and_query
-        try:
-            r = cffi_requests.get(url, headers=FONBET_HEADERS, impersonate="chrome120", timeout=20)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            any_success = True
-            for ev in data.get("events", []):
-                eid = ev.get("id")
-                if eid and eid not in seen_event_ids:
-                    seen_event_ids.add(eid)
-                    merged["events"].append(ev)
-            for sp in data.get("sports", []):
-                sid = sp.get("id")
-                if sid and sid not in seen_sports_ids:
-                    seen_sports_ids.add(sid)
-                    merged["sports"].append(sp)
-            for li in data.get("liveEventInfos", []):
-                eid = li.get("eventId")
-                if eid and eid not in seen_live_ids:
-                    seen_live_ids.add(eid)
-                    merged["liveEventInfos"].append(li)
-            merged["factors"].extend(data.get("factors", []))
-            merged["customFactors"].extend(data.get("customFactors", []))
-        except Exception:
-            continue
-    if not any_success:
-        return None
-    return merged
 
 def _build_logo_index(raw_cache):
     idx = {}
@@ -805,112 +763,123 @@ async def api_admin_refund_event(ev_id: str, admin_id: int = Query(0)):
 
 @app.api_route("/api/admin/force-refresh/{ev_id}", methods=["GET", "POST"])
 async def api_admin_force_refresh(ev_id: str, admin_id: int = Query(0)):
-    """Принудительно запрашивает матч по ID через зеркала, парсит и сохраняет в Firebase."""
+    """Принудительно запрашивает матч по ID, парсит и сохраняет. Таймаут 20 сек."""
     if admin_id != ADMIN_TELEGRAM_ID:
         raise HTTPException(403, "Forbidden")
     
-    direct = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={ev_id}")
-    if not direct:
-        return {"status": "error", "message": "Fonbet не отдаёт матч ни через одно зеркало"}
+    async def _do():
+        # Быстрый запрос: только первое рабочее зеркало, таймаут 10 сек
+        data = None
+        for base in FONBET_MIRRORS:
+            url = f"{base}{FONBET_FULL_LINE_PATH}&eventId={ev_id}"
+            try:
+                r = await asyncio.to_thread(
+                    cffi_requests.get, url,
+                    headers=FONBET_HEADERS, impersonate="chrome120", timeout=10
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    break
+            except Exception:
+                continue
+        if not data:
+            return {"status": "error", "message": "Fonbet не отдаёт матч"}
+        
+        ev = None
+        for e in data.get("events", []):
+            if str(e.get("id")) == str(ev_id):
+                ev = e
+                break
+        if not ev:
+            return {"status": "error", "message": "Событие не найдено"}
+        
+        all_sports = data.get("sports", [])
+        _, _, top_by_id = _build_sport_hierarchy(all_sports)
+        tournament_by_id = {}
+        for sp in all_sports:
+            if sp.get('kind') == 'sport':
+                continue
+            sid = sp.get('id')
+            nm = sp.get('name', '')
+            if sid and nm:
+                tournament_by_id[sid] = nm
+        
+        sid = ev.get("sportId")
+        league = tournament_by_id.get(sid, "")
+        
+        factors = []
+        for cf in data.get("customFactors", []):
+            if str(cf.get("e")) == str(ev_id):
+                factors = cf.get("factors", [])
+                break
+        
+        live_info = None
+        for li in data.get("liveEventInfos", []):
+            if str(li.get("eventId")) == str(ev_id):
+                live_info = li
+                break
+        
+        s1, s2, timer = _extract_score(live_info)
+        is_live = s1 is not None and s2 is not None and timer is not None
+        
+        markets_data = _parse_markets(factors)
+        if is_live:
+            markets_data = _filter_decided(markets_data, s1, s2)
+        
+        t1, t2 = ev.get("team1", ""), ev.get("team2", "")
+        st = _parse_start_ts(ev)
+        now_ts = int(time.time())
+        
+        raw_cache = await firebase_get("team_logos") or {}
+        logo_idx = _build_logo_index(raw_cache)
+        
+        p1 = px = p2 = None
+        if "Исход" in markets_data:
+            for o in markets_data["Исход"]:
+                if o["name"] == "П1": p1 = o["odds"]
+                elif o["name"] == "Х": px = o["odds"]
+                elif o["name"] == "П2": p2 = o["odds"]
+        
+        if is_live:
+            status_str = f"LIVE {timer}'"
+            score_str = f"{s1} : {s2}"
+        elif st < now_ts:
+            status_str = "ИДЕТ"
+            score_str = "?"
+        else:
+            status_str = time.strftime("%d.%m %H:%M", time.localtime(st))
+            score_str = "VS"
+        
+        payload = {
+            "title": f"{t1} - {t2}", "home": t1, "away": t2,
+            "homeLogo": logo_idx.get(t1, ""), "awayLogo": logo_idx.get(t2, ""),
+            "league": league, "status": status_str, "score": score_str,
+            "start_time": st,
+            "odds": {"1": p1, "X": px, "2": p2},
+            "markets": markets_data,
+            "score_breakdown": _extract_score_breakdown(live_info) if live_info else [],
+        }
+        
+        mid = f"fonbet_{ev_id}"
+        r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=payload, timeout=15.0)
+        return {
+            "status": "ok" if r.status_code == 200 else "error",
+            "mid": mid, "is_live": is_live,
+            "status_str": status_str, "score": score_str,
+            "markets_count": sum(len(v) for v in markets_data.values()),
+        }
     
-    ev = None
-    for e in direct.get("events", []):
-        if str(e.get("id")) == str(ev_id):
-            ev = e
-            break
-    if not ev:
-        return {"status": "error", "message": "Событие не найдено в ответе Fonbet"}
-    
-    all_sports = direct.get("sports", [])
-    entry_by_id, parent_by_id, top_by_id = _build_sport_hierarchy(all_sports)
-    tournament_by_id = {}
-    for sp in all_sports:
-        if sp.get('kind') == 'sport': continue
-        sid = sp.get('id'); nm = sp.get('name', '')
-        if sid and nm: tournament_by_id[sid] = nm
-    
-    sid = ev.get("sportId")
-    league = tournament_by_id.get(sid, "")
-    
-    factors = []
-    for cf in direct.get("customFactors", []):
-        if str(cf.get("e")) == str(ev_id):
-            factors = cf.get("factors", [])
-            break
-    if not factors:
-        for f in direct.get("factors", []):
-            if str(f.get("e")) == str(ev_id):
-                factors.append(f)
-    
-    live_info = None
-    for li in direct.get("liveEventInfos", []):
-        if str(li.get("eventId")) == str(ev_id):
-            live_info = li
-            break
-    
-    s1, s2, timer = _extract_score(live_info)
-    is_live = s1 is not None and s2 is not None and timer is not None
-    
-    markets_data = _parse_markets(factors)
-    if is_live:
-        markets_data = _filter_decided(markets_data, s1, s2)
-    
-    t1 = ev.get("team1", ""); t2 = ev.get("team2", "")
-    st = _parse_start_ts(ev)
-    now_ts = int(time.time())
-    
-    raw_cache = await firebase_get("team_logos") or {}
-    logo_idx = _build_logo_index(raw_cache)
-    
-    p1 = px = p2 = None
-    if "Исход" in markets_data:
-        for o in markets_data["Исход"]:
-            if o["name"] == "П1": p1 = o["odds"]
-            elif o["name"] == "Х": px = o["odds"]
-            elif o["name"] == "П2": p2 = o["odds"]
-    
-    if is_live:
-        status_str = f"LIVE {timer}'"
-        score_str = f"{s1} : {s2}"
-        score_breakdown = _extract_score_breakdown(live_info)
-    elif st < now_ts:
-        status_str = "ИДЕТ"
-        score_str = "?"
-        score_breakdown = []
-    else:
-        status_str = time.strftime("%d.%m %H:%M", time.localtime(st))
-        score_str = "VS"
-        score_breakdown = []
-    
-    match_payload = {
-        "title": f"{t1} - {t2}", "home": t1, "away": t2,
-        "homeLogo": logo_idx.get(t1, ""), "awayLogo": logo_idx.get(t2, ""),
-        "league": league, "status": status_str, "score": score_str,
-        "start_time": st,
-        "odds": {"1": p1, "X": px, "2": p2},
-        "markets": markets_data,
-        "score_breakdown": score_breakdown,
-    }
-    
-    mid = f"fonbet_{ev_id}"
-    r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=match_payload, timeout=15.0)
-    
-    return {
-        "status": "ok" if r.status_code == 200 else "error",
-        "http_code": r.status_code,
-        "mid": mid,
-        "is_live": is_live,
-        "status_str": status_str,
-        "score": score_str,
-        "league": league,
-        "markets_count": sum(len(v) for v in markets_data.values()),
-        "factors_used": len(factors),
-    }
+    try:
+        return await asyncio.wait_for(_do(), timeout=25.0)
+    except asyncio.TimeoutError:
+        return {"status": "timeout", "message": "Fonbet не ответил за 25 сек"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
 
 @app.get("/api/debug/leagues")
 async def debug_leagues():
-    line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
-    live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
+    line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
+    live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
     all_sports = []
     for data in [line_data, live_data]:
         if data:
@@ -975,11 +944,9 @@ async def debug_skipped():
 
 @app.get("/api/debug/check-event/{ev_id}")
 async def debug_check_event(ev_id: str):
-    # Используем первое рабочее зеркало (быстрее, без 502)
     line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
     live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
     
-    # Если event не в listBase/live — пробуем прямой запрос по ID
     if line_data or live_data:
         found = False
         for d in [line_data, live_data]:
@@ -1046,13 +1013,13 @@ async def debug_check_event(ev_id: str):
     ok = True
     
     if ev.get("rootKind") != 1 or ev.get("kind") != 1:
-        steps.append({"step": "rootKind_kind", "ok": False, "rootKind": ev.get("rootKind"), "kind": ev.get("kind")})
+        steps.append({"step": "rootKind_kind", "ok": False})
         ok = False
     else:
         steps.append({"step": "rootKind_kind", "ok": True})
     
     if not t1 or not t2:
-        steps.append({"step": "teams", "ok": False, "t1": t1, "t2": t2})
+        steps.append({"step": "teams", "ok": False})
         ok = False
     else:
         steps.append({"step": "teams", "ok": True, "t1": t1, "t2": t2})
@@ -1103,7 +1070,7 @@ async def debug_check_event(ev_id: str):
             save_status = "too_old (>3.5h)"
         elif st <= now:
             would_save = True
-            save_status = "ИДЕТ (started, no live yet — will be saved as ИДЕТ)"
+            save_status = "ИДЕТ (started, no live yet)"
         else:
             would_save = True
             save_status = "prematch"
@@ -1111,113 +1078,53 @@ async def debug_check_event(ev_id: str):
         would_save = False
         save_status = "blocked by filter"
     
-    factors_count = len(all_factors.get(ev.get("id"), []))
-    
     return {
         "ev_id": ev_id, "event": ev, "steps": steps,
         "would_be_saved": would_save, "save_status": save_status,
-        "factors_in_feed": factors_count,
+        "factors_in_feed": len(all_factors.get(ev.get("id"), [])),
         "feed_size": len(events_by_id),
     }
-
-@app.get("/api/debug/fonbet/{ev_id}")
-async def debug_fonbet(ev_id: str):
-    result = {"ev_id": ev_id, "endpoints": {}}
-    try:
-        data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
-        if data:
-            events = data.get("events", [])
-            ev = next((e for e in events if str(e.get("id")) == ev_id), None)
-            result["endpoints"]["listBase"] = {"event_found": ev is not None, "event": ev}
-        else:
-            result["endpoints"]["listBase"] = {"no_data": True}
-    except Exception as e:
-        result["endpoints"]["listBase"] = {"error": str(e)[:300]}
-    try:
-        data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
-        if data:
-            events = data.get("events", [])
-            ev = next((e for e in events if str(e.get("id")) == ev_id), None)
-            infos = data.get("liveEventInfos", [])
-            li = next((i for i in infos if str(i.get("eventId")) == ev_id), None)
-            result["endpoints"]["live"] = {"event_found": ev is not None, "live_info": li, "event": ev}
-        else:
-            result["endpoints"]["live"] = {"no_data": True}
-    except Exception as e:
-        result["endpoints"]["live"] = {"error": str(e)[:300]}
-    try:
-        data = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={ev_id}")
-        if data:
-            events = data.get("events", [])
-            ev = next((e for e in events if str(e.get("id")) == ev_id), None)
-            infos = data.get("liveEventInfos", [])
-            li = next((i for i in infos if str(i.get("eventId")) == ev_id), None)
-            cf = data.get("customFactors", [])
-            my_cf = next((c for c in cf if str(c.get("e")) == ev_id), None)
-            result["endpoints"]["full"] = {
-                "event_found": ev is not None, "live_info": li, "event": ev,
-                "factors_count": len(my_cf.get("factors", [])) if my_cf else 0,
-            }
-        else:
-            result["endpoints"]["full"] = {"no_data": True}
-    except Exception as e:
-        result["endpoints"]["full"] = {"error": str(e)[:300]}
-    try:
-        fin = await firebase_get(f"finished_matches/fonbet_{ev_id}")
-        result["finished_in_db"] = fin
-    except Exception as e:
-        result["finished_in_db"] = {"error": str(e)[:200]}
-    try:
-        fb = await firebase_get(f"matches/fonbet_{ev_id}")
-        result["in_matches_db"] = {"exists": bool(fb), "status": fb.get("status") if fb else None,
-                                    "score": fb.get("score") if fb else None} if fb else {"exists": False}
-    except Exception as e:
-        result["in_matches_db"] = {"error": str(e)[:200]}
-    return result
 
 # ==================== WORKERS ====================
 
 async def fonbet_scraper_worker():
-    print(f"fonbet_scraper_worker started (poll {LIVE_POLL_SEC}s, multi-mirror merge)...")
+    print(f"fonbet_scraper_worker started (poll {LIVE_POLL_SEC}s, memory-optimized)...")
     cycle = 0
     while True:
         try:
             t0 = time.time()
             now_ts = int(time.time())
-            seven_days = 7 * 86400
+            seven_days = 20 * 86400
             
-            line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
-            live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
+            line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
+            live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
             
             if not line_data and not live_data:
-                print("Fonbet fully unavailable, keeping old matches in DB...")
+                print("Fonbet fully unavailable")
+                gc.collect()
                 await asyncio.sleep(LIVE_POLL_SEC); continue
             
+            # ЭТАП 1: собираем только events и sports (без факторов)
             events_by_id = {}
-            all_factors = {}
             all_sports = []
             all_live = {}
+            raw_factor_sources = []  # (factors_list, custom_factors_list, eid_attr)
+            
             for data in [line_data, live_data]:
                 if not data: continue
-                events = data.get("events", [])
-                factors_raw = data.get("factors", [])
-                custom_factors_raw = data.get("customFactors", [])
-                sps = data.get("sports", [])
-                live_infos = data.get("liveEventInfos", [])
-                all_sports.extend(sps)
-                for li in live_infos:
+                all_sports.extend(data.get("sports", []))
+                for li in data.get("liveEventInfos", []):
                     eid = li.get("eventId")
                     if eid: all_live[eid] = li
-                for f in factors_raw:
-                    eid = f.get("e")
-                    if eid: all_factors.setdefault(eid, []).append(f)
-                for cf in custom_factors_raw:
-                    eid = cf.get("e")
-                    if eid: all_factors.setdefault(eid, []).extend(cf.get("factors", []))
-                for ev in events:
+                for ev in data.get("events", []):
                     eid = ev.get("id")
                     if eid and eid not in events_by_id:
                         events_by_id[eid] = dict(ev)
+                # сохраняем ссылки на факторы для второго прохода
+                raw_factor_sources.append({
+                    "factors": data.get("factors", []),
+                    "customFactors": data.get("customFactors", []),
+                })
             
             entry_by_id, parent_by_id, top_by_id = _build_sport_hierarchy(all_sports)
             tournament_by_id = {}
@@ -1226,21 +1133,9 @@ async def fonbet_scraper_worker():
                 sid = sp.get('id'); nm = sp.get('name', '')
                 if sid and nm: tournament_by_id[sid] = nm
             
-            raw_cache = await firebase_get("team_logos") or {}
-            logo_idx = _build_logo_index(raw_cache)
-            cached_prev_matches = await firebase_get("matches") or {}
-            if not isinstance(cached_prev_matches, dict):
-                cached_prev_matches = {}
-            
-            matches_dict = {}
-            live_cnt = 0
-            started_no_live_saved = 0
-            cached_frozen = 0
-            total_markets_count = 0
-            full_line_fetched = 0
-            live_no_data_skipped = 0
-            
+            # ЭТАП 2: фильтруем события, определяем candidates
             candidates = []
+            candidate_eids = set()
             for ev in events_by_id.values():
                 eid = ev.get("id")
                 t1 = ev.get("team1", ""); t2 = ev.get("team2", "")
@@ -1273,10 +1168,28 @@ async def fonbet_scraper_worker():
                     _log_skip(eid, teams_str, league, "league_blocked")
                     continue
                 candidates.append((ev, league))
+                candidate_eids.add(eid)
+            
+            # ЭТАП 3: парсим факторы ТОЛЬКО для candidates
+            all_factors = {}
+            for src in raw_factor_sources:
+                for f in src["factors"]:
+                    eid = f.get("e")
+                    if eid and eid in candidate_eids:
+                        all_factors.setdefault(eid, []).append(f)
+                for cf in src["customFactors"]:
+                    eid = cf.get("e")
+                    if eid and eid in candidate_eids:
+                        all_factors.setdefault(eid, []).extend(cf.get("factors", []))
+            # освобождаем тяжёлые ссылки
+            raw_factor_sources = None
+            line_data = None
+            live_data = None
+            gc.collect()
             
             candidates.sort(key=lambda x: (0 if x[0].get("id") in all_live else 1, abs(_parse_start_ts(x[0]) - now_ts)))
             
-            # ========== АВТОСПАСЕНИЕ МАТЧЕЙ С АКТИВНЫМИ СТАВКАМИ ==========
+            # Автоспасение для матчей с активными ставками
             active_bets = await firebase_get("active_bets") or {}
             tracked_eids = set()
             if isinstance(active_bets, dict):
@@ -1288,10 +1201,10 @@ async def fonbet_scraper_worker():
                         if isinstance(mid_b, str) and mid_b.startswith("fonbet_"):
                             tracked_eids.add(mid_b.replace("fonbet_", ""))
             
-            candidate_eids = {str(ev.get("id")) for ev, _ in candidates}
+            c_eids = {str(ev.get("id")) for ev, _ in candidates}
             rescued = 0
             for eid in tracked_eids:
-                if eid in candidate_eids: continue
+                if eid in c_eids: continue
                 direct = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={eid}")
                 if not direct: continue
                 for ev_d in direct.get("events", []):
@@ -1300,35 +1213,46 @@ async def fonbet_scraper_worker():
                         lg = ""
                         for sp_d in direct.get("sports", []):
                             if sp_d.get("id") == sid:
-                                lg = sp_d.get("name", "")
-                                break
+                                lg = sp_d.get("name", ""); break
                         candidates.append((ev_d, lg))
-                        candidate_eids.add(eid)
+                        c_eids.add(eid)
                         for cf_d in direct.get("customFactors", []):
                             if str(cf_d.get("e")) == eid:
                                 all_factors[eid] = cf_d.get("factors", [])
                                 break
                         for li_d in direct.get("liveEventInfos", []):
                             if str(li_d.get("eventId")) == eid:
-                                all_live[eid] = li_d
-                                break
+                                all_live[eid] = li_d; break
                         rescued += 1
                         break
             
             if rescued:
-                print(f"   🆘 RESCUED {rescued} matches from active_bets via direct ID")
+                print(f"   🆘 RESCUED {rescued} matches from active_bets")
                 candidates.sort(key=lambda x: (0 if x[0].get("id") in all_live else 1, abs(_parse_start_ts(x[0]) - now_ts)))
             
-            # ========== ПАРАЛЛЕЛЬНАЯ ПРЕДЗАГРУЗКА FULL-LINE ==========
+            raw_cache = await firebase_get("team_logos") or {}
+            logo_idx = _build_logo_index(raw_cache)
+            cached_prev_matches = await firebase_get("matches") or {}
+            if not isinstance(cached_prev_matches, dict):
+                cached_prev_matches = {}
+            
+            matches_dict = {}
+            live_cnt = 0
+            started_no_live_saved = 0
+            cached_frozen = 0
+            total_markets_count = 0
+            full_line_fetched = 0
+            live_no_data_skipped = 0
+            
+            # Параллельная предзагрузка full-line (только для live + первых N)
             preloaded_factors = {}
-            max_full = max(FULL_LINE_MAX_PER_CYCLE, sum(1 for ev, _ in candidates if ev.get("id") in all_live))
-            sem = asyncio.Semaphore(10)
+            max_full = FULL_LINE_MAX_PER_CYCLE
+            sem = asyncio.Semaphore(FULL_LINE_CONCURRENCY)
             
             async def _load_full_line(ev_id):
                 async with sem:
                     d = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={ev_id}")
-                    if not d:
-                        return ev_id, None
+                    if not d: return ev_id, None
                     for cf in d.get("customFactors", []):
                         if cf.get("e") == ev_id:
                             return ev_id, cf.get("factors", [])
@@ -1346,7 +1270,6 @@ async def fonbet_scraper_worker():
                     if isinstance(res, tuple) and res[1]:
                         preloaded_factors[res[0]] = res[1]
             
-            # ========== ОСНОВНОЙ ЦИКЛ ==========
             for idx, (ev, league) in enumerate(candidates):
                 eid = ev.get("id")
                 mid = f"fonbet_{eid}"
@@ -1444,7 +1367,12 @@ async def fonbet_scraper_worker():
                     "score_breakdown": score_breakdown,
                 }
             
-            # ============ ОБРАБОТКА ИСЧЕЗНУВШИХ МАТЧЕЙ ============
+            # Освобождаем до обработки disappeared
+            all_factors = None
+            preloaded_factors = None
+            gc.collect()
+            
+            # Обработка исчезнувших матчей
             all_active_mids = set(matches_dict.keys())
             finished_known = await firebase_get("finished_matches") or {}
             if not isinstance(finished_known, dict): finished_known = {}
@@ -1521,13 +1449,19 @@ async def fonbet_scraper_worker():
                 if cached_frozen: extra += f" | frozen: {cached_frozen}"
                 if started_no_live_saved: extra += f" | started_no_live_SAVED: {started_no_live_saved}"
                 if live_no_data_skipped: extra += f" | live_no_data: {live_no_data_skipped}"
-                print(f"[FONBET] feed={len(events_by_id)} saved={len(matches_dict)} (LIVE: {live_cnt}) | {total_markets_count} mkts | full-line: {full_line_fetched}{extra} | {size_mb:.1f}MB {time.time()-t0:.1f}s")
+                print(f"[FONBET] feed={len(events_by_id)} candidates={len(candidates)} saved={len(matches_dict)} (LIVE: {live_cnt}) | {total_markets_count} mkts | full-line: {full_line_fetched}{extra} | {size_mb:.1f}MB {time.time()-t0:.1f}s")
+            
+            events_by_id = None
+            matches_dict = None
+            cached_prev_matches = None
+            all_live = None
+            gc.collect()
         except Exception as e:
             import traceback
             print(f"fonbet_scraper: {e}")
             traceback.print_exc()
         cycle += 1
-        if cycle % 15 == 0: gc.collect()
+        gc.collect()
         await asyncio.sleep(LIVE_POLL_SEC)
 
 def calculate_outcome(outcome_str, s1, s2, group_name=""):
@@ -1736,9 +1670,8 @@ async def _notify_admin_withdrawal(req_id, data):
         f"Игрок: {data.get('first_name','')} (@{data.get('username','')})\n"
         f"ID: <code>{data.get('user_id')}</code>\n"
         f"Сумма: <b>{data.get('amount')} ★</b>\n"
-        f"К зачислению: <b>{data.get('amount_after_commission')} ★</b> (комиссия 5%)\n"
-        f"Друзей: {data.get('referral_count', 0)}\n"
-        f"Дата: {time.strftime('%d.%m.%Y %H:%M', time.localtime(data.get('created_at', 0)))}\n\n"
+        f"К зачислению: <b>{data.get('amount_after_commission')} ★</b>\n"
+        f"Друзей: {data.get('referral_count', 0)}\n\n"
         f"<b>Telegram ID для перевода:</b> <code>{data.get('user_id')}</code>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -1753,7 +1686,7 @@ async def _notify_admin_withdrawal(req_id, data):
 @app.on_event("startup")
 async def startup_event():
     print("WinStars API starting...")
-    print("   VERSION: v15 (force-refresh, auto-rescue active-bets, check-event fix)")
+    print("   VERSION: v16 (memory-optimized, two-pass filter, fast-force-refresh)")
     try:
         chat = await bot.get_chat(CHANNEL_ID)
         print(f"   Channel OK: {chat.title} (@{chat.username})")
@@ -1882,11 +1815,7 @@ async def cmd_bad_bets(message: types.Message):
         return
     lines = [f"<b>Подозрительные ставки (LOST 0:0):</b> {len(bad)}\n"]
     for b in bad[:30]:
-        lines.append(
-            f"<code>{b['bet_id']}</code>\n"
-            f"user: <code>{b['user_id']}</code> | {b['amount']} ★\n"
-            f"{b['events'][0].get('match_title', '') if b['events'] else ''}\n"
-        )
+        lines.append(f"<code>{b['bet_id']}</code> | user: <code>{b['user_id']}</code> | {b['amount']} ★")
     lines.append("\nВозврат: <code>/refund BET_ID</code>")
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -1895,19 +1824,16 @@ async def cmd_refund(message: types.Message):
     if message.from_user.id != ADMIN_TELEGRAM_ID: return
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("Использование: <code>/refund BET_ID</code>", parse_mode="HTML")
-        return
+        await message.answer("Использование: <code>/refund BET_ID</code>", parse_mode="HTML"); return
     bet_id = parts[1].strip()
     res = await refund_bet_by_id(bet_id)
     if res.get("status") == "ok":
         await message.answer(
             f"<b>Возврат выполнен</b>\n"
             f"bet_id: <code>{bet_id}</code>\n"
-            f"Ставка была: {res.get('previous_status')}\n"
             f"Возвращено: <b>{res.get('balance_delta')} ★</b>\n"
-            f"Новый баланс игрока: {res.get('new_balance')} ★",
-            parse_mode="HTML"
-        )
+            f"Новый баланс: {res.get('new_balance')} ★",
+            parse_mode="HTML")
     elif res.get("status") == "already_refunded":
         await message.answer(f"<code>{bet_id}</code> — уже возвращено.", parse_mode="HTML")
     else:
@@ -1925,12 +1851,7 @@ async def cmd_admin(message: types.Message):
         await message.answer("Нет активных заявок"); return
     lines = ["<b>Активные заявки:</b>\n"]
     for rid, r in pending[:20]:
-        lines.append(
-            f"#{rid}\n"
-            f"{r.get('first_name')} (@{r.get('username')}) | ID: <code>{r.get('user_id')}</code>\n"
-            f"{r.get('amount')} ★ (к зачислению {r.get('amount_after_commission')} ★)\n"
-            f"{time.strftime('%d.%m.%Y %H:%M', time.localtime(r.get('created_at', 0)))}\n"
-        )
+        lines.append(f"#{rid} | {r.get('first_name')} (@{r.get('username')}) | {r.get('amount')} ★")
     rows = [[
         InlineKeyboardButton(text=f"OK #{rid}", callback_data=f"wd_approve:{rid}"),
         InlineKeyboardButton(text=f"NO #{rid}", callback_data=f"wd_reject:{rid}"),
@@ -1946,8 +1867,7 @@ async def cmd_promo_create(message: types.Message):
             "<b>Создание промокода</b>\n\n"
             "<code>/promo_create CODE fixed 50 100 30</code>\n"
             "<code>/promo_create CODE bonus 10 100 30 50</code>",
-            parse_mode="HTML"
-        )
+            parse_mode="HTML")
         return
     code = parts[1].upper()
     ptype = parts[2]
@@ -1970,19 +1890,10 @@ async def cmd_promo_create(message: types.Message):
         "expires_at": expires_at, "new_users_only": new_only,
         "created_at": int(time.time()),
     }
-    if ptype == "fixed":
-        data["reward_stars"] = val
-    else:
-        data["deposit_percent"] = val
-        data["min_deposit"] = min_dep
+    if ptype == "fixed": data["reward_stars"] = val
+    else: data["deposit_percent"] = val; data["min_deposit"] = min_dep
     await firebase_put(f"promo_codes/{code}", data)
-    await message.answer(
-        f"Промокод <code>{code}</code> создан\n"
-        f"Тип: {ptype}\nЗначение: {val}{'★' if ptype=='fixed' else '%'}\n"
-        f"Лимит: {max_uses}\nСрок: {days} дней\n"
-        f"Только новым: {'да' if new_only else 'нет'}",
-        parse_mode="HTML"
-    )
+    await message.answer(f"Промокод <code>{code}</code> создан", parse_mode="HTML")
 
 @dp.message(Command("promo_list"))
 async def cmd_promo_list(message: types.Message):
@@ -2030,25 +1941,10 @@ async def on_wd_approve(callback: types.CallbackQuery):
     if isinstance(user, dict):
         frozen = max(0, user.get("frozen_balance", 0) - amount)
         await firebase_patch(f"users/{user_id}", {"frozen_balance": frozen})
-    txs = await firebase_get(f"transactions/{user_id}") or {}
-    if isinstance(txs, dict):
-        for tx_id, tx in txs.items():
-            if isinstance(tx, dict) and tx.get("request_id") == req_id:
-                await firebase_patch(f"transactions/{user_id}/{tx_id}", {"status": "approved"})
     try:
         await send_user_notification(int(user_id),
-            f"<b>Ваша заявка на вывод одобрена!</b>\n\n"
-            f"Сумма: <b>{amount} ★</b>\n"
-            f"К зачислению: <b>{req.get('amount_after_commission')} ★</b>\n\n"
-            f"Звёзды будут отправлены вам в личные сообщения в течение нескольких минут.",
+            f"<b>Ваша заявка на вывод одобрена!</b>\n\nСумма: <b>{amount} ★</b>\nК зачислению: <b>{req.get('amount_after_commission')} ★</b>",
             "Открыть WinStars", WEBAPP_URL)
-    except: pass
-    try:
-        await callback.message.edit_text(
-            f"<b>ОДОБРЕНО</b> (заявка #{req_id})\n\n"
-            f"Переведите <b>{req.get('amount_after_commission')} ★</b> игроку "
-            f"@{req.get('username')} (ID: <code>{user_id}</code>)",
-            parse_mode="HTML")
     except: pass
     await callback.answer("Одобрено")
 
@@ -2070,7 +1966,7 @@ async def on_wd_reject_start(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(Command("cancel"), WithdrawReject.waiting_reason)
 async def cmd_cancel_reject(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("Отменено. Заявка осталась в ожидании.")
+    await message.answer("Отменено.")
 
 @dp.message(WithdrawReject.waiting_reason)
 async def on_wd_reject_reason(message: types.Message, state: FSMContext):
@@ -2078,8 +1974,7 @@ async def on_wd_reject_reason(message: types.Message, state: FSMContext):
     if not message.text or message.text.startswith("/"): return
     reason = message.text.strip()
     if len(reason) < 3:
-        await message.answer("Причина слишком короткая. Введите ещё раз.")
-        return
+        await message.answer("Причина слишком короткая."); return
     data = await state.get_data()
     await state.clear()
     req_id = data["req_id"]; user_id = data["user_id"]; amount = data["amount"]
@@ -2092,19 +1987,9 @@ async def on_wd_reject_reason(message: types.Message, state: FSMContext):
         bal = user.get("balance", 0) + amount
         frozen = max(0, user.get("frozen_balance", 0) - amount)
         await firebase_patch(f"users/{user_id}", {"balance": bal, "frozen_balance": frozen})
-    txs = await firebase_get(f"transactions/{user_id}") or {}
-    if isinstance(txs, dict):
-        for tx_id, tx in txs.items():
-            if isinstance(tx, dict) and tx.get("request_id") == req_id:
-                await firebase_patch(f"transactions/{user_id}/{tx_id}", {
-                    "status": "rejected", "reject_reason": reason,
-                })
     try:
         await send_user_notification(int(user_id),
-            f"<b>Заявка на вывод отклонена</b>\n\n"
-            f"Сумма: <b>{amount} ★</b>\n"
-            f"Причина: <i>{reason}</i>\n\n"
-            f"Все звёзды возвращены на баланс.",
+            f"<b>Заявка на вывод отклонена</b>\n\nСумма: <b>{amount} ★</b>\nПричина: <i>{reason}</i>",
             "Открыть WinStars", WEBAPP_URL)
     except: pass
     await message.answer(f"Заявка #{req_id} отклонена. Звёзды возвращены.")
@@ -2148,10 +2033,7 @@ async def process_successful_payment(message: types.Message):
                         "label": pending_label,
                     })
             except: pass
-            if bonus_amount > 0:
-                await message.answer(f"Баланс пополнен на {amount} ★ + бонус {bonus_amount} ★!")
-            else:
-                await message.answer(f"Баланс пополнен на {amount} ★!")
+            await message.answer(f"Баланс пополнен на {amount + bonus_amount} ★!")
 
 # ==================== REST API ====================
 
@@ -2332,8 +2214,7 @@ async def place_bet(request: Request):
     if not await is_subscribed(uid_int): raise HTTPException(403, "Subscribe to channel")
     user = await firebase_get(f"users/{user_id}")
     if not isinstance(user, dict): raise HTTPException(404, "Profile not found")
-    if not user.get("agreed_terms"):
-        raise HTTPException(403, "Terms not accepted")
+    if not user.get("agreed_terms"): raise HTTPException(403, "Terms not accepted")
     user_balance = user.get("balance", 0)
     if not isinstance(user_balance, (int, float)): user_balance = 0
     if user_balance < amount: raise HTTPException(400, "Insufficient stars")
@@ -2396,9 +2277,8 @@ async def activate_promo(request: Request):
     if user_id in used_by: raise HTTPException(400, "Already used")
     user = await firebase_get(f"users/{user_id}")
     if not isinstance(user, dict): raise HTTPException(400, "Profile not found")
-    if promo.get("new_users_only"):
-        if user.get("total_bets", 0) > 0:
-            raise HTTPException(400, "Promo for new users only")
+    if promo.get("new_users_only") and user.get("total_bets", 0) > 0:
+        raise HTTPException(400, "Promo for new users only")
     ptype = promo.get("type", "fixed_stars")
     if ptype == "fixed_stars":
         stars = promo.get("reward_stars", 50)
@@ -2406,28 +2286,17 @@ async def activate_promo(request: Request):
         if not isinstance(cur, (int, float)): cur = 0
         new_bal = round(cur + stars, 2)
         await firebase_patch(f"users/{user_id}", {"balance": new_bal})
-        await firebase_patch(f"promo_codes/{code}", {
-            "used_count": used_count + 1, f"used_by/{user_id}": True,
-        })
-        try:
-            await http_client.post(f"{FIREBASE_DB_URL}/transactions/{user_id}.json", json={
-                "type": "promo", "amount": stars, "status": "success",
-                "created_at": now, "request_id": None, "reject_reason": None, "label": f"Промокод {code}",
-            })
-        except: pass
-        return {"status": "ok", "message": f"Начислено {stars} ★",
-                "new_balance": new_bal, "type": "fixed_stars", "amount": stars}
+        await firebase_patch(f"promo_codes/{code}", {"used_count": used_count + 1, f"used_by/{user_id}": True})
+        return {"status": "ok", "message": f"Начислено {stars} ★", "new_balance": new_bal,
+                "type": "fixed_stars", "amount": stars}
     elif ptype == "deposit_percent":
         percent = promo.get("deposit_percent", 10)
         min_dep = promo.get("min_deposit", 0) or 0
         await firebase_patch(f"users/{user_id}", {
             "pending_bonus": {"code": code, "percent": percent, "min_deposit": min_dep, "applied_at": now}
         })
-        await firebase_patch(f"promo_codes/{code}", {
-            "used_count": used_count + 1, f"used_by/{user_id}": True,
-        })
-        return {"status": "ok",
-                "message": f"+{percent}% к следующему пополнению (мин. {min_dep}★)",
+        await firebase_patch(f"promo_codes/{code}", {"used_count": used_count + 1, f"used_by/{user_id}": True})
+        return {"status": "ok", "message": f"+{percent}% к следующему пополнению",
                 "type": "deposit_percent", "percent": percent, "min_deposit": min_dep}
     raise HTTPException(400, "Unknown promo type")
 
