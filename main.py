@@ -803,6 +803,110 @@ async def api_admin_refund_event(ev_id: str, admin_id: int = Query(0)):
                 break
     return {"refunded": len(refunded), "bets": refunded}
 
+@app.api_route("/api/admin/force-refresh/{ev_id}", methods=["GET", "POST"])
+async def api_admin_force_refresh(ev_id: str, admin_id: int = Query(0)):
+    """Принудительно запрашивает матч по ID через зеркала, парсит и сохраняет в Firebase."""
+    if admin_id != ADMIN_TELEGRAM_ID:
+        raise HTTPException(403, "Forbidden")
+    
+    direct = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={ev_id}")
+    if not direct:
+        return {"status": "error", "message": "Fonbet не отдаёт матч ни через одно зеркало"}
+    
+    ev = None
+    for e in direct.get("events", []):
+        if str(e.get("id")) == str(ev_id):
+            ev = e
+            break
+    if not ev:
+        return {"status": "error", "message": "Событие не найдено в ответе Fonbet"}
+    
+    all_sports = direct.get("sports", [])
+    entry_by_id, parent_by_id, top_by_id = _build_sport_hierarchy(all_sports)
+    tournament_by_id = {}
+    for sp in all_sports:
+        if sp.get('kind') == 'sport': continue
+        sid = sp.get('id'); nm = sp.get('name', '')
+        if sid and nm: tournament_by_id[sid] = nm
+    
+    sid = ev.get("sportId")
+    league = tournament_by_id.get(sid, "")
+    
+    factors = []
+    for cf in direct.get("customFactors", []):
+        if str(cf.get("e")) == str(ev_id):
+            factors = cf.get("factors", [])
+            break
+    if not factors:
+        for f in direct.get("factors", []):
+            if str(f.get("e")) == str(ev_id):
+                factors.append(f)
+    
+    live_info = None
+    for li in direct.get("liveEventInfos", []):
+        if str(li.get("eventId")) == str(ev_id):
+            live_info = li
+            break
+    
+    s1, s2, timer = _extract_score(live_info)
+    is_live = s1 is not None and s2 is not None and timer is not None
+    
+    markets_data = _parse_markets(factors)
+    if is_live:
+        markets_data = _filter_decided(markets_data, s1, s2)
+    
+    t1 = ev.get("team1", ""); t2 = ev.get("team2", "")
+    st = _parse_start_ts(ev)
+    now_ts = int(time.time())
+    
+    raw_cache = await firebase_get("team_logos") or {}
+    logo_idx = _build_logo_index(raw_cache)
+    
+    p1 = px = p2 = None
+    if "Исход" in markets_data:
+        for o in markets_data["Исход"]:
+            if o["name"] == "П1": p1 = o["odds"]
+            elif o["name"] == "Х": px = o["odds"]
+            elif o["name"] == "П2": p2 = o["odds"]
+    
+    if is_live:
+        status_str = f"LIVE {timer}'"
+        score_str = f"{s1} : {s2}"
+        score_breakdown = _extract_score_breakdown(live_info)
+    elif st < now_ts:
+        status_str = "ИДЕТ"
+        score_str = "?"
+        score_breakdown = []
+    else:
+        status_str = time.strftime("%d.%m %H:%M", time.localtime(st))
+        score_str = "VS"
+        score_breakdown = []
+    
+    match_payload = {
+        "title": f"{t1} - {t2}", "home": t1, "away": t2,
+        "homeLogo": logo_idx.get(t1, ""), "awayLogo": logo_idx.get(t2, ""),
+        "league": league, "status": status_str, "score": score_str,
+        "start_time": st,
+        "odds": {"1": p1, "X": px, "2": p2},
+        "markets": markets_data,
+        "score_breakdown": score_breakdown,
+    }
+    
+    mid = f"fonbet_{ev_id}"
+    r = await http_client.put(f"{FIREBASE_DB_URL}/matches/{mid}.json", json=match_payload, timeout=15.0)
+    
+    return {
+        "status": "ok" if r.status_code == 200 else "error",
+        "http_code": r.status_code,
+        "mid": mid,
+        "is_live": is_live,
+        "status_str": status_str,
+        "score": score_str,
+        "league": league,
+        "markets_count": sum(len(v) for v in markets_data.values()),
+        "factors_used": len(factors),
+    }
+
 @app.get("/api/debug/leagues")
 async def debug_leagues():
     line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
@@ -871,8 +975,31 @@ async def debug_skipped():
 
 @app.get("/api/debug/check-event/{ev_id}")
 async def debug_check_event(ev_id: str):
-    line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
-    live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
+    # Используем первое рабочее зеркало (быстрее, без 502)
+    line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
+    live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
+    
+    # Если event не в listBase/live — пробуем прямой запрос по ID
+    if line_data or live_data:
+        found = False
+        for d in [line_data, live_data]:
+            if not d: continue
+            for ev_check in d.get("events", []):
+                if str(ev_check.get("id")) == str(ev_id):
+                    found = True
+                    break
+            if found: break
+        if not found:
+            direct = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={ev_id}")
+            if direct:
+                if not line_data:
+                    line_data = {"events": [], "sports": [], "factors": [], "customFactors": [], "liveEventInfos": []}
+                line_data["events"].extend(direct.get("events", []))
+                line_data["sports"].extend(direct.get("sports", []))
+                line_data["customFactors"].extend(direct.get("customFactors", []))
+                line_data["factors"].extend(direct.get("factors", []))
+                line_data["liveEventInfos"].extend(direct.get("liveEventInfos", []))
+    
     if not line_data and not live_data:
         return {"error": "Fonbet unavailable"}
     
@@ -1059,7 +1186,6 @@ async def fonbet_scraper_worker():
             now_ts = int(time.time())
             seven_days = 7 * 86400
             
-            # Мерж с ВСЕХ зеркал
             line_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LINE_PATH)
             live_data = await asyncio.to_thread(_fetch_fonbet_from_all_mirrors, FONBET_LIVE_PATH)
             
@@ -1150,6 +1276,49 @@ async def fonbet_scraper_worker():
             
             candidates.sort(key=lambda x: (0 if x[0].get("id") in all_live else 1, abs(_parse_start_ts(x[0]) - now_ts)))
             
+            # ========== АВТОСПАСЕНИЕ МАТЧЕЙ С АКТИВНЫМИ СТАВКАМИ ==========
+            active_bets = await firebase_get("active_bets") or {}
+            tracked_eids = set()
+            if isinstance(active_bets, dict):
+                for bet in active_bets.values():
+                    if not isinstance(bet, dict): continue
+                    for ev_b in bet.get("events", []):
+                        if not isinstance(ev_b, dict): continue
+                        mid_b = ev_b.get("match_id", "")
+                        if isinstance(mid_b, str) and mid_b.startswith("fonbet_"):
+                            tracked_eids.add(mid_b.replace("fonbet_", ""))
+            
+            candidate_eids = {str(ev.get("id")) for ev, _ in candidates}
+            rescued = 0
+            for eid in tracked_eids:
+                if eid in candidate_eids: continue
+                direct = await asyncio.to_thread(_fetch_fonbet_with_fallback, f"{FONBET_FULL_LINE_PATH}&eventId={eid}")
+                if not direct: continue
+                for ev_d in direct.get("events", []):
+                    if str(ev_d.get("id")) == eid:
+                        sid = ev_d.get("sportId")
+                        lg = ""
+                        for sp_d in direct.get("sports", []):
+                            if sp_d.get("id") == sid:
+                                lg = sp_d.get("name", "")
+                                break
+                        candidates.append((ev_d, lg))
+                        candidate_eids.add(eid)
+                        for cf_d in direct.get("customFactors", []):
+                            if str(cf_d.get("e")) == eid:
+                                all_factors[eid] = cf_d.get("factors", [])
+                                break
+                        for li_d in direct.get("liveEventInfos", []):
+                            if str(li_d.get("eventId")) == eid:
+                                all_live[eid] = li_d
+                                break
+                        rescued += 1
+                        break
+            
+            if rescued:
+                print(f"   🆘 RESCUED {rescued} matches from active_bets via direct ID")
+                candidates.sort(key=lambda x: (0 if x[0].get("id") in all_live else 1, abs(_parse_start_ts(x[0]) - now_ts)))
+            
             # ========== ПАРАЛЛЕЛЬНАЯ ПРЕДЗАГРУЗКА FULL-LINE ==========
             preloaded_factors = {}
             max_full = max(FULL_LINE_MAX_PER_CYCLE, sum(1 for ev, _ in candidates if ev.get("id") in all_live))
@@ -1192,7 +1361,6 @@ async def fonbet_scraper_worker():
                         _log_skip(eid, f"{t1} - {t2}", league, "stuck_live")
                         continue
                 
-                # ========== ГЛАВНЫЙ ФИКС: сохраняем "ИДЕТ" если стартовал но live нет ==========
                 if not is_live:
                     if st > now_ts + seven_days:
                         continue
@@ -1229,7 +1397,6 @@ async def fonbet_scraper_worker():
                         _log_skip(eid, f"{t1} - {t2}", league, f"started_no_live_SAVED_as_IDET (factors={len(factors_for_ev)})")
                         continue
                 
-                # ============ normal: prematch или live ============
                 factors_for_ev = preloaded_factors.get(eid) or all_factors.get(eid, [])
                 if factors_for_ev:
                     full_line_fetched += 1
@@ -1350,6 +1517,7 @@ async def fonbet_scraper_worker():
                 except: size_mb = 0
                 await _save_matches(matches_dict)
                 extra = ""
+                if rescued: extra += f" | rescued: {rescued}"
                 if cached_frozen: extra += f" | frozen: {cached_frozen}"
                 if started_no_live_saved: extra += f" | started_no_live_SAVED: {started_no_live_saved}"
                 if live_no_data_skipped: extra += f" | live_no_data: {live_no_data_skipped}"
@@ -1585,7 +1753,7 @@ async def _notify_admin_withdrawal(req_id, data):
 @app.on_event("startup")
 async def startup_event():
     print("WinStars API starting...")
-    print("   VERSION: v14 (multi-mirror merge, parallel full-line, feed=log)")
+    print("   VERSION: v15 (force-refresh, auto-rescue active-bets, check-event fix)")
     try:
         chat = await bot.get_chat(CHANNEL_ID)
         print(f"   Channel OK: {chat.title} (@{chat.username})")
