@@ -1094,7 +1094,7 @@ async def fonbet_scraper_worker():
         try:
             t0 = time.time()
             now_ts = int(time.time())
-            seven_days = 20 * 86400
+            seven_days = 7 * 86400
             
             line_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LINE_PATH)
             live_data = await asyncio.to_thread(_fetch_fonbet_with_fallback, FONBET_LIVE_PATH)
