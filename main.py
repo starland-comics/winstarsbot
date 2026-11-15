@@ -40,7 +40,7 @@ FIREBASE_URL = os.getenv(
 ).rstrip("/")
 FIREBASE_SECRET = os.getenv("FIREBASE_SECRET", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://winstars-app.onrender.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://starland-comics.github.io/winstarsbot/")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "winstars_admin")
 
 LIVE_POLL_SEC = 20
