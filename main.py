@@ -10,7 +10,6 @@ import time
 import urllib.parse
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -566,29 +565,91 @@ def _extract_1x2_odds(factors: List[Dict[str, Any]]) -> Tuple[Optional[float], O
     return p1, px, p2
 
 
-def _extract_extra_markets(factors: List[Dict[str, Any]]) -> Dict[str, Any]:
-    markets: Dict[str, Any] = {}
+def _build_grouped_markets(factors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    p1, px, p2 = _extract_1x2_odds(factors)
+    dc_1x: Optional[float] = None
+    dc_12: Optional[float] = None
+    dc_x2: Optional[float] = None
+    btts_yes: Optional[float] = None
+    btts_no: Optional[float] = None
+    totals_over: Dict[str, float] = {}
+    totals_under: Dict[str, float] = {}
+    handicaps: List[Dict[str, Any]] = []
+
     for f in factors:
         fid = f.get("f")
         val = f.get("v")
         pt = f.get("pt")
         if not isinstance(val, (int, float)) or val <= 1.0:
             continue
-        if fid == 930 and pt is not None:
-            markets[f"to_{pt}"] = round(float(val), 2)
-        elif fid == 931 and pt is not None:
-            markets[f"tu_{pt}"] = round(float(val), 2)
-        elif fid == 1571:
-            markets["btts_yes"] = round(float(val), 2)
-        elif fid == 1572:
-            markets["btts_no"] = round(float(val), 2)
-        elif fid == 924:
-            markets["1x"] = round(float(val), 2)
+        coef = round(float(val), 2)
+        if fid == 924:
+            dc_1x = coef
         elif fid == 925:
-            markets["12"] = round(float(val), 2)
+            dc_12 = coef
         elif fid == 926:
-            markets["x2"] = round(float(val), 2)
-    return markets
+            dc_x2 = coef
+        elif fid == 1571:
+            btts_yes = coef
+        elif fid == 1572:
+            btts_no = coef
+        elif fid == 930 and pt is not None:
+            totals_over[str(pt)] = coef
+        elif fid == 931 and pt is not None:
+            totals_under[str(pt)] = coef
+        elif fid in (927, 928) and pt is not None:
+            side = "Ф1" if fid == 927 else "Ф2"
+            sign = "+" if float(pt) > 0 else ""
+            label = f"{side} ({sign}{pt})"
+            handicaps.append({"name": label, "outcome_key": label, "coefficient": coef})
+
+    groups: List[Dict[str, Any]] = []
+
+    main_outcomes = []
+    if p1:
+        main_outcomes.append({"name": "П1", "outcome_key": "П1", "coefficient": p1})
+    if px:
+        main_outcomes.append({"name": "Х", "outcome_key": "Х", "coefficient": px})
+    if p2:
+        main_outcomes.append({"name": "П2", "outcome_key": "П2", "coefficient": p2})
+    if main_outcomes:
+        groups.append({"group_name": "Исход", "outcomes": main_outcomes})
+
+    dc_outcomes = []
+    if dc_1x:
+        dc_outcomes.append({"name": "1Х", "outcome_key": "1Х", "coefficient": dc_1x})
+    if dc_12:
+        dc_outcomes.append({"name": "12", "outcome_key": "12", "coefficient": dc_12})
+    if dc_x2:
+        dc_outcomes.append({"name": "Х2", "outcome_key": "Х2", "coefficient": dc_x2})
+    if dc_outcomes:
+        groups.append({"group_name": "Двойной шанс", "outcomes": dc_outcomes})
+
+    all_pts = sorted(
+        set(list(totals_over.keys()) + list(totals_under.keys())),
+        key=lambda x: float(x) if x.replace(".", "", 1).isdigit() else 999,
+    )
+    total_outcomes = []
+    for pt in all_pts:
+        if pt in totals_over:
+            total_outcomes.append({"name": f"ТБ {pt}", "outcome_key": f"ТБ {pt}", "coefficient": totals_over[pt]})
+        if pt in totals_under:
+            total_outcomes.append({"name": f"ТМ {pt}", "outcome_key": f"ТМ {pt}", "coefficient": totals_under[pt]})
+    if total_outcomes:
+        groups.append({"group_name": "Тотал", "outcomes": total_outcomes})
+
+    if handicaps:
+        groups.append({"group_name": "Фора", "outcomes": handicaps[:8]})
+
+    btts_outcomes = []
+    if btts_yes:
+        btts_outcomes.append({"name": "Да", "outcome_key": "Да", "coefficient": btts_yes})
+    if btts_no:
+        btts_outcomes.append({"name": "Нет", "outcome_key": "Нет", "coefficient": btts_no})
+    if btts_outcomes:
+        groups.append({"group_name": "Обе забьют", "outcomes": btts_outcomes})
+
+    return groups
 
 
 async def _fetch_fonbet_list_base() -> Optional[Dict[str, Any]]:
@@ -628,13 +689,12 @@ async def _fetch_fonbet_event_full(event_id: int) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _parse_live_timer_and_score(
+def _parse_live_status_and_score(
     event: Dict[str, Any],
     misc: Dict[str, Any],
 ) -> Tuple[int, int, str]:
     score1 = 0
     score2 = 0
-    minute_str = ""
 
     sc1 = misc.get("score1")
     sc2 = misc.get("score2")
@@ -650,26 +710,16 @@ def _parse_live_timer_and_score(
     comment = (misc.get("comment") or "").strip()
 
     if "перерыв" in comment.lower() or "ht" in comment.lower():
-        minute_str = "Перерыв"
+        status_str = "LIVE · HT"
     elif isinstance(timer_sec, (int, float)) and timer_sec >= 0 and timer_dir != 0:
         mins = int(timer_sec // 60) + 1
-        minute_str = f"{mins}'"
+        status_str = f"LIVE · {mins}'"
     elif comment:
-        minute_str = comment
+        status_str = f"LIVE · {comment}"
     else:
-        minute_str = "LIVE"
+        status_str = "LIVE"
 
-    return score1, score2, minute_str
-
-
-def _format_prematch_time(start_ts: int) -> str:
-    if not start_ts:
-        return "Скоро"
-    try:
-        dt_msk = datetime.fromtimestamp(int(start_ts) + 3 * 3600, tz=timezone.utc)
-        return dt_msk.strftime("%d.%m %H:%M")
-    except Exception:
-        return "Скоро"
+    return score1, score2, status_str
 
 
 async def scrape_once() -> Dict[str, Any]:
@@ -773,9 +823,7 @@ async def scrape_once() -> Dict[str, Any]:
         if not (p1 or px or p2):
             continue
 
-        extra_markets = _extract_extra_markets(factors)
         misc = misc_by_event.get(eid, {})
-
         h_logo = _get_team_logo(t1, league_name, exact_logo_idx, fallback_logo_idx)
         a_logo = _get_team_logo(t2, league_name, exact_logo_idx, fallback_logo_idx)
 
@@ -788,46 +836,45 @@ async def scrape_once() -> Dict[str, Any]:
 
         start_ts = int(ev.get("startTime") or 0)
         if is_live:
-            s1, s2, minute_str = _parse_live_timer_and_score(ev, misc)
-            status_str = "live"
-            time_str = minute_str
+            s1, s2, status_str = _parse_live_status_and_score(ev, misc)
+            score_str = f"{s1}:{s2}"
         else:
-            s1, s2, minute_str = 0, 0, ""
-            status_str = "upcoming"
-            time_str = _format_prematch_time(start_ts)
+            s1, s2 = 0, 0
+            status_str = "PREMATCH"
+            score_str = "VS"
 
-        odds_map = {
-            "1": p1,
-            "X": px,
-            "2": p2,
-            "П1": p1,
-            "Х": px,
-            "П2": p2,
-            **extra_markets,
-        }
+        safe_t1 = t1.replace("'", "’")
+        safe_t2 = t2.replace("'", "’")
+        safe_league = league_name.replace("'", "’")
 
         match_obj: Dict[str, Any] = {
             "id": full_id,
             "raw_id": eid,
             "sport": "football",
-            "league": league_name,
-            "team1": t1,
-            "team2": t2,
+            "league": safe_league,
+            "home": safe_t1,
+            "away": safe_t2,
+            "title": f"{safe_t1} - {safe_t2}",
+            "homeLogo": h_logo,
+            "awayLogo": a_logo,
+            "team1": safe_t1,
+            "team2": safe_t2,
             "logo1": h_logo,
             "logo2": a_logo,
             "p1": p1,
             "px": px,
             "p2": p2,
-            "odds": odds_map,
-            "markets": extra_markets,
+            "odds": {
+                "1": p1,
+                "X": px,
+                "2": p2,
+            },
             "start_time": start_ts,
-            "time": time_str,
-            "minute": minute_str,
             "is_live": is_live,
             "status": status_str,
             "score1": s1,
             "score2": s2,
-            "score": f"{s1}:{s2}",
+            "score": score_str,
         }
 
         matches_by_id[full_id] = match_obj
@@ -1147,9 +1194,9 @@ async def sync_user(request: Request) -> Dict[str, Any]:
 async def get_matches() -> Dict[str, Any]:
     if latest_matches_cache.get("updated_at", 0) > 0:
         return latest_matches_cache
-    fb_data = await firebase_get("matches_feed")
+    fb_data = await firebase_get("matches")
     if isinstance(fb_data, dict):
-        return {"status": "ok", "ok": True, **fb_data}
+        return {"status": "ok", "ok": True, "matches": fb_data}
     return latest_matches_cache
 
 
@@ -1161,19 +1208,30 @@ async def get_match_markets(match_id: str) -> Dict[str, Any]:
     if not match_obj:
         match_obj = await firebase_get(f"matches/{full_id}") or {}
 
-    full_payload = await _fetch_fonbet_event_full(int(clean_id)) if clean_id.isdigit() else None
-    extra_markets: Dict[str, Any] = dict(match_obj.get("markets") or {})
-    if full_payload:
-        for cf in full_payload.get("customFactors") or []:
-            if str(cf.get("e")) == str(clean_id):
-                extra_markets.update(_extract_extra_markets(cf.get("factors") or []))
+    factors: List[Dict[str, Any]] = []
+    if clean_id.isdigit():
+        full_payload = await _fetch_fonbet_event_full(int(clean_id))
+        if full_payload:
+            for cf in full_payload.get("customFactors") or []:
+                if str(cf.get("e")) == str(clean_id):
+                    factors = cf.get("factors") or []
+
+    grouped_markets = _build_grouped_markets(factors)
+    if not grouped_markets and isinstance(match_obj.get("odds"), dict):
+        odds = match_obj["odds"]
+        fallback_outcomes = []
+        for k, label in (("1", "П1"), ("X", "Х"), ("2", "П2")):
+            if odds.get(k):
+                fallback_outcomes.append({"name": label, "outcome_key": label, "coefficient": odds[k]})
+        if fallback_outcomes:
+            grouped_markets = [{"group_name": "Исход", "outcomes": fallback_outcomes}]
 
     return {
         "status": "ok",
         "ok": True,
         "match_id": full_id,
         "match": match_obj,
-        "markets": extra_markets,
+        "markets": grouped_markets,
     }
 
 
@@ -1225,8 +1283,8 @@ async def place_bet(request: Request) -> Dict[str, Any]:
 
     match_info = (latest_matches_cache.get("matches") or {}).get(full_id) or await firebase_get(f"matches/{full_id}") or {}
 
-    t1 = match_info.get("team1", body.get("team1", ""))
-    t2 = match_info.get("team2", body.get("team2", ""))
+    t1 = match_info.get("home", body.get("team1", ""))
+    t2 = match_info.get("away", body.get("team2", ""))
     match_title = body.get("match_title") or (f"{t1} - {t2}" if t1 and t2 else "")
 
     new_balance = round(balance - amount, 2)
