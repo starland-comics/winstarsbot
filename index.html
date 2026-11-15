@@ -10,7 +10,6 @@
       --bg: #0c0912;
       --card: #161120;
       --card-inner: #211a30;
-      --card-hover: #2a213d;
       --border: rgba(255, 255, 255, 0.06);
       --accent: #a855f7;
       --accent-glow: rgba(168, 85, 247, 0.35);
@@ -36,7 +35,6 @@
       overflow-x: hidden;
     }
 
-    /* TOP HEADER */
     .topbar {
       position: sticky;
       top: 0;
@@ -93,7 +91,6 @@
       object-fit: cover;
     }
 
-    /* CONTROLS ROW */
     .controls {
       display: flex;
       align-items: center;
@@ -131,7 +128,6 @@
     .league-select-wrap {
       flex: 1;
       min-width: 0;
-      position: relative;
     }
 
     .league-select {
@@ -147,7 +143,6 @@
       text-overflow: ellipsis;
     }
 
-    /* CONTAINER */
     .container {
       padding: 4px 16px 20px;
     }
@@ -160,14 +155,13 @@
       display: block;
     }
 
-    /* MATCH CARD (ИСПРАВЛЕНО ОБРЕЗАНИЕ LIVE / ПЕРЕРЫВ) */
+    /* КАРТОЧКА МАТЧА: LIVE / ПЕРЕРЫВ / МИНУТЫ НЕ ОБРЕЗАЮТСЯ */
     .match-card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 13px 14px;
       margin-bottom: 12px;
-      transition: transform 0.12s ease;
     }
 
     .match-card-header {
@@ -314,7 +308,6 @@
       color: #fff;
     }
 
-    /* BOTTOM NAV */
     .bottom-nav {
       position: fixed;
       bottom: 0;
@@ -355,7 +348,6 @@
       stroke-width: 1.9;
     }
 
-    /* MODAL / BOTTOM SHEET */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -394,7 +386,7 @@
       margin: 0 auto 14px;
     }
 
-    /* КРАСИВАЯ ЦЕНТРАЛЬНАЯ ШАПКА В ДОП. РЫНКАХ */
+    /* ЦЕНТРАЛЬНОЕ ОФОРМЛЕНИЕ МАТЧА В ОКНЕ ДОП. РЫНКОВ */
     .market-match-hero {
       background: linear-gradient(180deg, rgba(168, 85, 247, 0.14) 0%, rgba(33, 26, 48, 0.65) 100%);
       border: 1px solid rgba(168, 85, 247, 0.25);
@@ -492,7 +484,6 @@
       grid-template-columns: repeat(3, 1fr);
     }
 
-    /* BET SLIP */
     .slip-box {
       background: var(--card);
       border: 1px solid var(--border);
@@ -545,7 +536,6 @@
       box-shadow: 0 4px 18px var(--accent-glow);
     }
 
-    /* OTHER TABS (BETS, CHAT, CASHIER, PROFILE) */
     .bet-item {
       background: var(--card);
       border: 1px solid var(--border);
@@ -630,7 +620,6 @@
     </div>
   </header>
 
-  <!-- TAB 1: СОБЫТИЯ -->
   <section id="tab-events" class="tab-view active">
     <div class="controls">
       <div class="seg-toggle">
@@ -648,7 +637,6 @@
     </div>
   </section>
 
-  <!-- TAB 2: СТАВКИ -->
   <section id="tab-bets" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <h3 style="margin-bottom:12px;font-size:16px;">Мои купоны</h3>
@@ -656,7 +644,6 @@
     </div>
   </section>
 
-  <!-- TAB 3: ЧАТ -->
   <section id="tab-chat" class="tab-view">
     <div class="container" style="padding-top:12px;">
       <div id="chatMessages" class="chat-box"></div>
@@ -667,7 +654,6 @@
     </div>
   </section>
 
-  <!-- TAB 4: КАССА -->
   <section id="tab-cashier" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <div class="slip-box" style="text-align:center;">
@@ -696,7 +682,6 @@
     </div>
   </section>
 
-  <!-- TAB 5: ПРОФИЛЬ -->
   <section id="tab-profile" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <div class="slip-box" style="display:flex;align-items:center;gap:12px;">
@@ -727,7 +712,6 @@
     </div>
   </section>
 
-  <!-- BOTTOM NAVIGATION -->
   <nav class="bottom-nav">
     <button class="nav-item active" data-tab="events" onclick="switchTab('events')">
       <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
@@ -751,7 +735,6 @@
     </button>
   </nav>
 
-  <!-- MODAL: ДОП. РЫНКИ С ЦЕНТРАЛЬНОЙ ШАПКОЙ МАТЧА -->
   <div id="marketsModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'marketsModal')">
     <div class="sheet">
       <div class="sheet-handle"></div>
@@ -760,7 +743,6 @@
     </div>
   </div>
 
-  <!-- MODAL: КУПОН СТАВКИ -->
   <div id="betSlipModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'betSlipModal')">
     <div class="sheet">
       <div class="sheet-handle"></div>
@@ -788,6 +770,9 @@
   </div>
 
   <script>
+    const API_BASE = "https://winstarsbot.onrender.com";
+    const WS_BASE = "wss://winstarsbot.onrender.com";
+
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.expand();
@@ -979,7 +964,7 @@
       document.getElementById("marketsModal").classList.add("open");
 
       try {
-        const res = await fetch(`/api/match/${matchId}/markets`);
+        const res = await fetch(`${API_BASE}/api/match/${matchId}/markets`);
         if (res.ok && state.activeMatchId === matchId) {
           const fresh = await res.json();
           renderMarketsHero(fresh);
@@ -1024,7 +1009,7 @@
       if (!state.slip) return;
       const amount = Number(document.getElementById("betAmount").value || 0);
       try {
-        const res = await fetch("/api/bet", {
+        const res = await fetch(`${API_BASE}/api/bet`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1044,14 +1029,14 @@
         document.getElementById("betSlipModal").classList.remove("open");
         showToast("Ставка принята!");
       } catch (e) {
-        showToast("Ошибка соединения");
+        showToast("Ошибка соединения с сервером");
       }
     }
 
     async function loadUserBets() {
       const box = document.getElementById("betsList");
       box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Загрузка...</div>`;
-      const res = await fetch(`/api/bets/${state.userId}`);
+      const res = await fetch(`${API_BASE}/api/bets/${state.userId}`);
       const bets = await res.json();
       if (!bets.length) {
         box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:30px;">У вас пока нет ставок</div>`;
@@ -1066,7 +1051,7 @@
           </div>
           <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${b.match_title} ${b.final_score ? `(${b.final_score})` : ""}</div>
           <div style="display:flex;justify-content:space-between;font-size:13px;">
-            <span>${b.selection} @ <b>${b.odd}</b></span>
+            <span>${b.selection || b.outcome} @ <b>${b.odd || b.coef}</b></span>
             <span>Ставка: <b>${b.amount} ₽</b></span>
           </div>
         </div>
@@ -1074,7 +1059,7 @@
     }
 
     async function refreshProfile() {
-      const res = await fetch(`/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
+      const res = await fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
       const data = await res.json();
       const u = data.user || {};
       updateBalanceUI(u.balance);
@@ -1089,7 +1074,7 @@
 
     async function requestDeposit() {
       const amount = Number(document.getElementById("depAmount").value || 0);
-      const res = await fetch("/api/cashier/deposit", {
+      const res = await fetch(`${API_BASE}/api/cashier/deposit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: state.userId, amount }),
@@ -1102,7 +1087,7 @@
       const amount = Number(document.getElementById("withAmount").value || 0);
       const details = document.getElementById("withDetails").value.trim();
       if (!details) return showToast("Укажите реквизиты");
-      const res = await fetch("/api/cashier/withdraw", {
+      const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: state.userId, amount, details }),
@@ -1114,8 +1099,7 @@
     }
 
     function initChat() {
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      state.ws = new WebSocket(`${proto}://${location.host}/ws/chat`);
+      state.ws = new WebSocket(`${WS_BASE}/ws/chat`);
       state.ws.onmessage = (e) => {
         const data = JSON.parse(e.data);
         const box = document.getElementById("chatMessages");
@@ -1158,7 +1142,7 @@
         document.getElementById("profileAvatar").textContent = letter;
       }
 
-      const res = await fetch(`/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
+      const res = await fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
       const data = await res.json();
       updateBalanceUI(data.user?.balance || 0);
       state.live = data.live || [];
@@ -1167,10 +1151,9 @@
       renderMatches();
       initChat();
 
-      // Автообновление линии и открытой шапки матча каждые 10 секунд
       setInterval(async () => {
         try {
-          const r = await fetch("/api/matches");
+          const r = await fetch(`${API_BASE}/api/matches`);
           const d = await r.json();
           state.live = d.live || [];
           state.prematch = d.prematch || [];
