@@ -58,18 +58,21 @@
     .topbar-right {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
     }
 
     .balance-pill {
       background: var(--card-inner);
-      border: 1px solid var(--border);
+      border: 1px solid rgba(168, 85, 247, 0.35);
       padding: 6px 13px;
       border-radius: 999px;
       font-size: 13px;
       font-weight: 700;
       color: #fff;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
 
     .avatar {
@@ -83,6 +86,7 @@
       font-size: 13px;
       font-weight: 700;
       overflow: hidden;
+      flex-shrink: 0;
     }
 
     .avatar img {
@@ -155,7 +159,6 @@
       display: block;
     }
 
-    /* КАРТОЧКА МАТЧА: LIVE / ПЕРЕРЫВ / МИНУТЫ НЕ ОБРЕЗАЮТСЯ */
     .match-card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -386,7 +389,6 @@
       margin: 0 auto 14px;
     }
 
-    /* ЦЕНТРАЛЬНОЕ ОФОРМЛЕНИЕ МАТЧА В ОКНЕ ДОП. РЫНКОВ */
     .market-match-hero {
       background: linear-gradient(180deg, rgba(168, 85, 247, 0.14) 0%, rgba(33, 26, 48, 0.65) 100%);
       border: 1px solid rgba(168, 85, 247, 0.25);
@@ -542,6 +544,7 @@
       border-radius: 14px;
       padding: 12px 14px;
       margin-bottom: 10px;
+      cursor: pointer;
     }
 
     .badge {
@@ -615,11 +618,15 @@
   <header class="topbar">
     <div class="brand">WINSTARS</div>
     <div class="topbar-right">
-      <div class="balance-pill" onclick="switchTab('cashier')"><span id="balanceVal">0</span> ₽ ▾</div>
+      <div class="balance-pill" onclick="toggleCurrency()" title="Нажмите для смены валюты">
+        <span id="balanceVal">0 ★</span>
+        <span style="font-size:10px;color:var(--muted);">⇄</span>
+      </div>
       <div class="avatar" id="userAvatar">W</div>
     </div>
   </header>
 
+  <!-- СОБЫТИЯ -->
   <section id="tab-events" class="tab-view active">
     <div class="controls">
       <div class="seg-toggle">
@@ -637,6 +644,7 @@
     </div>
   </section>
 
+  <!-- СТАВКИ -->
   <section id="tab-bets" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <h3 style="margin-bottom:12px;font-size:16px;">Мои купоны</h3>
@@ -644,6 +652,7 @@
     </div>
   </section>
 
+  <!-- ЧАТ -->
   <section id="tab-chat" class="tab-view">
     <div class="container" style="padding-top:12px;">
       <div id="chatMessages" class="chat-box"></div>
@@ -654,43 +663,66 @@
     </div>
   </section>
 
+  <!-- КАССА -->
   <section id="tab-cashier" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <div class="slip-box" style="text-align:center;">
-        <div style="font-size:12px;color:var(--muted);">Доступный баланс</div>
-        <div style="font-size:28px;font-weight:800;margin:6px 0;"><span id="cashierBalance">0</span> ₽</div>
+        <div style="font-size:12px;color:var(--muted);">Доступный баланс (1 ★ = 1.5 ₽)</div>
+        <div style="font-size:26px;font-weight:800;margin:6px 0;" id="cashierBalance">0 ★ (0 ₽)</div>
       </div>
 
-      <div class="slip-box">
-        <div style="font-weight:700;margin-bottom:8px;">Пополнение баланса (СБП / Карта РФ)</div>
-        <input id="depAmount" type="number" class="slip-input" placeholder="Сумма от 50 ₽" value="500" />
-        <div class="quick-amounts">
-          <button class="q-btn" onclick="document.getElementById('depAmount').value=100">100 ₽</button>
-          <button class="q-btn" onclick="document.getElementById('depAmount').value=500">500 ₽</button>
-          <button class="q-btn" onclick="document.getElementById('depAmount').value=1000">1000 ₽</button>
-          <button class="q-btn" onclick="document.getElementById('depAmount').value=3000">3000 ₽</button>
+      <div class="seg-toggle" style="width:100%;margin-bottom:12px;">
+        <button class="seg-btn active" style="flex:1;" id="cTabDep" onclick="switchCashierSub('dep')">Пополнить</button>
+        <button class="seg-btn" style="flex:1;" id="cTabWith" onclick="switchCashierSub('with')">Вывод</button>
+        <button class="seg-btn" style="flex:1;" id="cTabHist" onclick="switchCashierSub('hist')">История</button>
+      </div>
+
+      <div id="cashierDep">
+        <div class="slip-box">
+          <div style="font-weight:700;margin-bottom:6px;">Telegram Stars (XTR)</div>
+          <input id="starsAmount" type="number" class="slip-input" placeholder="Количество ★" value="50" />
+          <div class="quick-amounts">
+            <button class="q-btn" onclick="document.getElementById('starsAmount').value=25">25 ★</button>
+            <button class="q-btn" onclick="document.getElementById('starsAmount').value=50">50 ★</button>
+            <button class="q-btn" onclick="document.getElementById('starsAmount').value=100">100 ★</button>
+            <button class="q-btn" onclick="document.getElementById('starsAmount').value=500">500 ★</button>
+          </div>
+          <button class="primary-btn" onclick="payWithStars()">Оплатить Stars ★</button>
         </div>
-        <button class="primary-btn" onclick="requestDeposit()">Пополнить в рублях</button>
+
+        <div class="slip-box">
+          <div style="font-weight:700;margin-bottom:6px;">СБП / Карта РФ</div>
+          <input id="depRubAmount" type="number" class="slip-input" placeholder="Сумма от 50 ₽" value="300" />
+          <button class="primary-btn" style="background:var(--card-inner);box-shadow:none;border:1px solid var(--border);" onclick="requestSbpDeposit()">Пополнить через СБП</button>
+        </div>
       </div>
 
-      <div class="slip-box">
-        <div style="font-weight:700;margin-bottom:8px;">Вывод средств</div>
-        <input id="withAmount" type="number" class="slip-input" placeholder="Сумма от 100 ₽" />
-        <input id="withDetails" type="text" class="slip-input" style="font-size:14px;font-weight:500;" placeholder="Номер карты или телефон СБП (+7...)" />
-        <button class="primary-btn" style="background:var(--card-inner);box-shadow:none;border:1px solid var(--border);" onclick="requestWithdraw()">Заказать выплату</button>
+      <div id="cashierWith" style="display:none;">
+        <div class="slip-box">
+          <div style="font-weight:700;margin-bottom:6px;">Заявка на вывод (от 50 ★ / 75 ₽)</div>
+          <input id="withAmount" type="number" class="slip-input" placeholder="Сумма в выбранной валюте" />
+          <input id="withDetails" type="text" class="slip-input" style="font-size:14px;font-weight:500;" placeholder="@username (для Stars) или СБП +7..." />
+          <button class="primary-btn" onclick="requestWithdraw()">Заказать вывод</button>
+        </div>
+      </div>
+
+      <div id="cashierHist" style="display:none;">
+        <div id="txList"></div>
       </div>
     </div>
   </section>
 
+  <!-- ПРОФИЛЬ -->
   <section id="tab-profile" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <div class="slip-box" style="display:flex;align-items:center;gap:12px;">
         <div class="avatar" style="width:48px;height:48px;font-size:18px;" id="profileAvatar">W</div>
-        <div>
+        <div style="flex:1;min-width:0;">
           <div style="font-weight:700;font-size:16px;" id="profileName">Игрок</div>
-          <div style="font-size:12px;color:var(--muted);">ID: <span id="profileId">-</span></div>
+          <div style="font-size:12px;color:var(--muted);">ID: <span id="profileId">-</span> • Рефералов: <b id="statRefs">0</b></div>
         </div>
       </div>
+
       <div class="stat-grid">
         <div class="stat-card">
           <div style="font-size:12px;color:var(--muted);">Всего ставок</div>
@@ -706,7 +738,34 @@
         </div>
         <div class="stat-card">
           <div style="font-size:12px;color:var(--muted);">Чистый профит</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px;color:var(--accent);" id="statProfit">0 ₽</div>
+          <div style="font-size:20px;font-weight:800;margin-top:4px;" id="statProfit">0 ★</div>
+        </div>
+      </div>
+
+      <!-- ДИНАМИЧЕСКИЙ ГРАФИК ПРИБЫЛИ -->
+      <div class="slip-box" style="margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span style="font-size:13px;font-weight:700;">График профита</span>
+          <span id="chartBadge" style="font-size:12px;font-weight:700;color:var(--accent);">0 ★</span>
+        </div>
+        <svg id="profitChartSvg" viewBox="0 0 300 90" style="width:100%;height:90px;display:block;"></svg>
+      </div>
+
+      <!-- ПРОМОКОД -->
+      <div class="slip-box">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Активация промокода</div>
+        <div style="display:flex;gap:8px;">
+          <input id="promoInput" class="slip-input" style="margin:0;text-transform:uppercase;font-size:14px;" placeholder="ВВЕДИТЕ КОД" />
+          <button class="primary-btn" style="width:auto;padding:0 18px;" onclick="activatePromo()">OK</button>
+        </div>
+      </div>
+
+      <!-- РЕФЕРАЛЬНАЯ ССЫЛКА -->
+      <div class="slip-box">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Пригласить друга (+5 ★ за друга)</div>
+        <div style="display:flex;gap:8px;">
+          <input id="refLinkInput" class="slip-input" style="margin:0;font-size:12px;font-weight:500;" readonly />
+          <button class="primary-btn" style="width:auto;padding:0 16px;" onclick="copyRefLink()">Копия</button>
         </div>
       </div>
     </div>
@@ -735,6 +794,7 @@
     </button>
   </nav>
 
+  <!-- МОДАЛКА ДОП. РЫНКОВ -->
   <div id="marketsModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'marketsModal')">
     <div class="sheet">
       <div class="sheet-handle"></div>
@@ -743,10 +803,11 @@
     </div>
   </div>
 
+  <!-- МОДАЛКА КУПОНА СТАВКИ -->
   <div id="betSlipModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'betSlipModal')">
     <div class="sheet">
       <div class="sheet-handle"></div>
-      <div style="font-size:16px;font-weight:800;margin-bottom:10px;">Купон ставки</div>
+      <div style="font-size:16px;font-weight:800;margin-bottom:10px;">Купон ставки (<span id="slipCurLabel">★</span>)</div>
       <div class="slip-box">
         <div id="slipMatchTitle" style="font-size:13px;color:var(--muted);margin-bottom:4px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -754,24 +815,33 @@
           <span id="slipOdd" style="background:var(--accent);padding:3px 9px;border-radius:8px;font-weight:800;font-size:13px;"></span>
         </div>
       </div>
-      <input id="betAmount" type="number" class="slip-input" value="100" min="10" oninput="updatePotentialWin()" />
+      <input id="betAmount" type="number" class="slip-input" value="10" min="1" oninput="updatePotentialWin()" />
       <div class="quick-amounts">
-        <button class="q-btn" onclick="setBetAmt(50)">50 ₽</button>
-        <button class="q-btn" onclick="setBetAmt(100)">100 ₽</button>
-        <button class="q-btn" onclick="setBetAmt(250)">250 ₽</button>
-        <button class="q-btn" onclick="setBetAmt(state.balance)">MAX</button>
+        <button class="q-btn" onclick="setBetAmt(10)">10</button>
+        <button class="q-btn" onclick="setBetAmt(25)">25</button>
+        <button class="q-btn" onclick="setBetAmt(50)">50</button>
+        <button class="q-btn" onclick="setMaxBet()">MAX</button>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:12px;">
         <span style="color:var(--muted);">Возможный выигрыш:</span>
-        <span id="potentialWin" style="font-weight:800;color:var(--green);">0 ₽</span>
+        <span id="potentialWin" style="font-weight:800;color:var(--green);">0</span>
       </div>
       <button class="primary-btn" onclick="submitBet()">Сделать ставку</button>
+    </div>
+  </div>
+
+  <!-- ДЕТАЛЬНАЯ МОДАЛКА СТАТУСА СТАВКИ -->
+  <div id="betDetailModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'betDetailModal')">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div id="betDetailContent"></div>
     </div>
   </div>
 
   <script>
     const API_BASE = "https://winstarsbot.onrender.com";
     const WS_BASE = "wss://winstarsbot.onrender.com";
+    const STAR_RATE = 1.5;
 
     const tg = window.Telegram?.WebApp;
     if (tg) {
@@ -785,20 +855,55 @@
     const state = {
       userId: String(tgUser.id),
       userName: tgUser.first_name || "Игрок",
-      balance: 0,
+      botUsername: "WinStarsPlaybot",
+      balanceStars: 0,
+      currency: "STARS", // STARS или RUB
       mode: "live",
       live: [],
       prematch: [],
+      betsCache: [],
       activeMatchId: null,
       slip: null,
       ws: null,
     };
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
 
     function showToast(msg) {
       const el = document.getElementById("toast");
       el.textContent = msg;
       el.style.display = "block";
       setTimeout(() => (el.style.display = "none"), 2600);
+    }
+
+    function formatMoney(starsVal) {
+      const s = Number(starsVal || 0);
+      if (state.currency === "RUB") {
+        const rub = s * STAR_RATE;
+        return `${Number.isInteger(rub) ? rub : rub.toFixed(2)} ₽`;
+      }
+      return `${Number.isInteger(s) ? s : s.toFixed(2)} ★`;
+    }
+
+    function updateBalanceUI(starsVal) {
+      state.balanceStars = Number(starsVal || 0);
+      const rub = (state.balanceStars * STAR_RATE).toFixed(2);
+      const st = Number.isInteger(state.balanceStars) ? state.balanceStars : state.balanceStars.toFixed(2);
+      document.getElementById("balanceVal").textContent = formatMoney(state.balanceStars);
+      document.getElementById("cashierBalance").textContent = `${st} ★ (${rub} ₽)`;
+    }
+
+    function toggleCurrency() {
+      state.currency = state.currency === "STARS" ? "RUB" : "STARS";
+      updateBalanceUI(state.balanceStars);
+      showToast(`Валюта: ${state.currency === "STARS" ? "Telegram Stars (★)" : "Рубли (₽)"}`);
     }
 
     function getInitials(name) {
@@ -809,16 +914,9 @@
     }
 
     function logoHtml(url, name) {
-      const initials = getInitials(name);
+      const initials = escapeHtml(getInitials(name));
       if (!url) return `<div class="team-logo-box">${initials}</div>`;
-      return `<div class="team-logo-box"><img src="${url}" alt="" onerror="this.parentElement.textContent='${initials}'" /></div>`;
-    }
-
-    function updateBalanceUI(val) {
-      state.balance = Number(val || 0);
-      const formatted = Number.isInteger(state.balance) ? state.balance : state.balance.toFixed(2);
-      document.getElementById("balanceVal").textContent = formatted;
-      document.getElementById("cashierBalance").textContent = formatted;
+      return `<div class="team-logo-box"><img src="${escapeHtml(url)}" alt="" onerror="this.parentElement.textContent='${initials}'" /></div>`;
     }
 
     function switchTab(tab) {
@@ -829,6 +927,17 @@
 
       if (tab === "bets") loadUserBets();
       if (tab === "profile") refreshProfile();
+      if (tab === "cashier") loadTransactions();
+    }
+
+    function switchCashierSub(sub) {
+      document.getElementById("cTabDep").classList.toggle("active", sub === "dep");
+      document.getElementById("cTabWith").classList.toggle("active", sub === "with");
+      document.getElementById("cTabHist").classList.toggle("active", sub === "hist");
+      document.getElementById("cashierDep").style.display = sub === "dep" ? "block" : "none";
+      document.getElementById("cashierWith").style.display = sub === "with" ? "block" : "none";
+      document.getElementById("cashierHist").style.display = sub === "hist" ? "block" : "none";
+      if (sub === "hist") loadTransactions();
     }
 
     function setMode(mode) {
@@ -845,7 +954,7 @@
       const current = select.value;
       const leagues = [...new Set(list.map((m) => m.league))];
       select.innerHTML = `<option value="all">Все лиги (${leagues.length})</option>` +
-        leagues.map((l) => `<option value="${l}">${l}</option>`).join("");
+        leagues.map((l) => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
       if (leagues.includes(current)) select.value = current;
     }
 
@@ -864,8 +973,8 @@
 
       container.innerHTML = list.map((m) => {
         const statusHtml = m.is_live
-          ? `<div class="match-status"><span class="live-dot"></span><span>${m.time_label}</span></div>`
-          : `<div class="match-status prematch"><span>${m.time_label}</span></div>`;
+          ? `<div class="match-status"><span class="live-dot"></span><span>${escapeHtml(m.time_label)}</span></div>`
+          : `<div class="match-status prematch"><span>${escapeHtml(m.time_label)}</span></div>`;
 
         const scoreHtml = m.is_live
           ? `<div class="score-center">${m.score1}:${m.score2}</div>`
@@ -875,29 +984,29 @@
           <div class="match-card">
             <div class="match-card-header">
               ${statusHtml}
-              <div class="match-league">${m.league}</div>
+              <div class="match-league">${escapeHtml(m.league)}</div>
             </div>
-            <div class="match-body" onclick="openMarkets('${m.id}')">
+            <div class="match-body" onclick="openMarkets('${escapeHtml(m.id)}')">
               <div class="team-col">
                 ${logoHtml(m.logo1, m.team1)}
-                <div class="team-name">${m.team1}</div>
+                <div class="team-name">${escapeHtml(m.team1)}</div>
               </div>
               ${scoreHtml}
               <div class="team-col">
                 ${logoHtml(m.logo2, m.team2)}
-                <div class="team-name">${m.team2}</div>
+                <div class="team-name">${escapeHtml(m.team2)}</div>
               </div>
             </div>
             <div class="odds-row">
-              <button class="odd-btn" onclick="openBetSlip('${m.id}', 'П1', ${m.odds.P1})">
+              <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', 'П1', ${m.odds.P1})">
                 <span class="odd-label">П1</span>
                 <span class="odd-val">${m.odds.P1}</span>
               </button>
-              <button class="odd-btn" onclick="openBetSlip('${m.id}', 'X', ${m.odds.X || 3.25})">
+              <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', 'X', ${m.odds.X || 3.25})">
                 <span class="odd-label">X</span>
                 <span class="odd-val">${m.odds.X || 3.25}</span>
               </button>
-              <button class="odd-btn" onclick="openBetSlip('${m.id}', 'П2', ${m.odds.P2})">
+              <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', 'П2', ${m.odds.P2})">
                 <span class="odd-label">П2</span>
                 <span class="odd-val">${m.odds.P2}</span>
               </button>
@@ -914,19 +1023,19 @@
 
       document.getElementById("marketsHeroContainer").innerHTML = `
         <div class="market-match-hero">
-          <div class="hero-league">${m.league}</div>
+          <div class="hero-league">${escapeHtml(m.league)}</div>
           <div class="hero-scoreboard">
             <div class="hero-team">
               ${logoHtml(m.logo1, m.team1)}
-              <span>${m.team1}</span>
+              <span>${escapeHtml(m.team1)}</span>
             </div>
             <div class="hero-center">
               <div class="hero-score">${scoreText}</div>
-              <div class="${badgeClass}">${dot}<span>${m.time_label}</span></div>
+              <div class="${badgeClass}">${dot}<span>${escapeHtml(m.time_label)}</span></div>
             </div>
             <div class="hero-team">
               ${logoHtml(m.logo2, m.team2)}
-              <span>${m.team2}</span>
+              <span>${escapeHtml(m.team2)}</span>
             </div>
           </div>
         </div>
@@ -939,11 +1048,11 @@
         const colsClass = g.outcomes.length === 3 ? "market-grid cols-3" : "market-grid";
         return `
           <div class="market-group">
-            <div class="market-title">${g.title}</div>
+            <div class="market-title">${escapeHtml(g.title)}</div>
             <div class="${colsClass}">
               ${g.outcomes.map((o) => `
-                <button class="odd-btn" onclick="openBetSlip('${m.id}', '${o.label}', ${o.odd})">
-                  <span class="odd-label">${o.label}</span>
+                <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', '${escapeHtml(o.label)}', ${o.odd})">
+                  <span class="odd-label">${escapeHtml(o.label)}</span>
                   <span class="odd-val">${o.odd}</span>
                 </button>
               `).join("")}
@@ -986,6 +1095,8 @@
         odd: Number(odd),
       };
 
+      const unit = state.currency === "RUB" ? "₽" : "★";
+      document.getElementById("slipCurLabel").textContent = unit;
       document.getElementById("slipMatchTitle").textContent = state.slip.title;
       document.getElementById("slipSelection").textContent = selection;
       document.getElementById("slipOdd").textContent = state.slip.odd.toFixed(2);
@@ -994,15 +1105,23 @@
     }
 
     function setBetAmt(val) {
-      document.getElementById("betAmount").value = Math.max(10, Math.floor(val || 10));
+      document.getElementById("betAmount").value = Math.max(1, Math.floor(val || 1));
       updatePotentialWin();
+    }
+
+    function setMaxBet() {
+      const maxVal = state.currency === "RUB"
+        ? Math.floor(state.balanceStars * STAR_RATE)
+        : Math.floor(state.balanceStars);
+      setBetAmt(maxVal);
     }
 
     function updatePotentialWin() {
       if (!state.slip) return;
       const amt = Number(document.getElementById("betAmount").value || 0);
       const win = (amt * state.slip.odd).toFixed(2);
-      document.getElementById("potentialWin").textContent = `${win} ₽`;
+      const unit = state.currency === "RUB" ? "₽" : "★";
+      document.getElementById("potentialWin").textContent = `${win} ${unit}`;
     }
 
     async function submitBet() {
@@ -1018,6 +1137,7 @@
             selection: state.slip.selection,
             odd: state.slip.odd,
             amount,
+            currency: state.currency,
           }),
         });
         const data = await res.json();
@@ -1038,57 +1158,101 @@
       box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Загрузка...</div>`;
       const res = await fetch(`${API_BASE}/api/bets/${state.userId}`);
       const bets = await res.json();
+      state.betsCache = bets;
+
       if (!bets.length) {
         box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:30px;">У вас пока нет ставок</div>`;
         return;
       }
       const labels = {
-        active: "В игре",
-        pending: "В игре",
+        active: "В ожидании",
+        pending: "В ожидании",
         won: "Выигрыш",
         lost: "Проигрыш",
         void: "Возврат",
         refund: "Возврат",
       };
-      box.innerHTML = bets.map((b) => {
-        const ev = Array.isArray(b.events) && b.events.length ? b.events[0] : {};
-        const title = b.match_title || ev.match_title || ev.match || "Событие";
-        const league = b.league || ev.league || "";
-        const sel = b.selection || b.outcome || ev.outcome || "Исход";
-        const odd = b.odd || b.total_coefficient || b.coefficient || ev.coefficient || "1.00";
+      box.innerHTML = bets.map((b, idx) => {
+        const unit = b.currency === "STARS" ? "★" : "₽";
         const st = b.status || "active";
         return `
-          <div class="bet-item">
+          <div class="bet-item" onclick="openBetDetail(${idx})">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-              <span style="font-size:12px;color:var(--muted);">${league}</span>
+              <span style="font-size:12px;color:var(--muted);">${escapeHtml(b.league || "")}</span>
               <span class="badge ${st}">${labels[st] || st}</span>
             </div>
-            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${title} ${b.final_score ? `(${b.final_score})` : ""}</div>
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(b.match_title)} ${b.final_score ? `(${escapeHtml(b.final_score)})` : ""}</div>
             <div style="display:flex;justify-content:space-between;font-size:13px;">
-              <span>${sel} @ <b>${odd}</b></span>
-              <span>Ставка: <b>${b.amount} ₽</b></span>
+              <span>${escapeHtml(b.selection)} @ <b>${b.odd}</b></span>
+              <span>Ставка: <b>${b.amount} ${unit}</b></span>
             </div>
           </div>
         `;
       }).join("");
     }
 
-    async function refreshProfile() {
-      const res = await fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
-      const data = await res.json();
-      const u = data.user || {};
-      updateBalanceUI(u.balance);
-      const total = u.total_bets || 0;
-      const won = u.won_bets || 0;
-      const wr = total ? Math.round((won / total) * 100) : 0;
-      document.getElementById("statTotal").textContent = total;
-      document.getElementById("statWon").textContent = won;
-      document.getElementById("statWinrate").textContent = `${wr}%`;
-      document.getElementById("statProfit").textContent = `${Number(u.net_profit || 0).toFixed(0)} ₽`;
+    function openBetDetail(idx) {
+      const b = state.betsCache[idx];
+      if (!b) return;
+      const unit = b.currency === "STARS" ? "★" : "₽";
+      const headers = {
+        active: { title: "В ожидании!", color: "#facc15" },
+        won: { title: "Ставка сыграла!", color: "var(--green)" },
+        lost: { title: "Ставка проиграла!", color: "var(--red)" },
+        void: { title: "Возврат ставки", color: "var(--muted)" },
+      };
+      const h = headers[b.status] || headers.active;
+      const winSum = b.status === "won" ? (b.payout || (b.amount * b.odd).toFixed(2)) : (b.amount * b.odd).toFixed(2);
+
+      document.getElementById("betDetailContent").innerHTML = `
+        <div style="text-align:center;margin-bottom:14px;">
+          <div style="font-size:20px;font-weight:800;color:${h.color};">${h.title}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${escapeHtml(b.league)}</div>
+        </div>
+        <div class="slip-box">
+          <div style="font-weight:700;font-size:15px;margin-bottom:8px;">${escapeHtml(b.match_title)}</div>
+          ${b.final_score ? `<div style="font-size:13px;margin-bottom:6px;">Итоговый счёт: <b>${escapeHtml(b.final_score)}</b></div>` : ""}
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+            <span style="color:var(--muted);">Выбранный исход:</span>
+            <b>${escapeHtml(b.selection)} @ ${b.odd}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+            <span style="color:var(--muted);">Сумма ставки:</span>
+            <b>${b.amount} ${unit}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;">
+            <span style="color:var(--muted);">${b.status === "won" ? "Выплата:" : "Возможный выигрыш:"}</span>
+            <b style="color:var(--green);">${winSum} ${unit}</b>
+          </div>
+        </div>
+      `;
+      document.getElementById("betDetailModal").classList.add("open");
     }
 
-    async function requestDeposit() {
-      const amount = Number(document.getElementById("depAmount").value || 0);
+    async function payWithStars() {
+      const stars = parseInt(document.getElementById("starsAmount").value || "0", 10);
+      if (stars < 1) return showToast("Введите количество Stars");
+      const res = await fetch(`${API_BASE}/api/invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: state.userId, stars }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showToast(data.detail || "Ошибка счёта");
+      if (tg && tg.openInvoice) {
+        tg.openInvoice(data.invoice_url, (status) => {
+          if (status === "paid") {
+            showToast(`Оплачено ${stars} ★!`);
+            refreshProfile();
+          }
+        });
+      } else {
+        window.open(data.invoice_url, "_blank");
+      }
+    }
+
+    async function requestSbpDeposit() {
+      const amount = Number(document.getElementById("depRubAmount").value || 0);
       const res = await fetch(`${API_BASE}/api/cashier/deposit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1105,7 +1269,12 @@
       const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: state.userId, amount, details }),
+        body: JSON.stringify({
+          user_id: state.userId,
+          amount,
+          currency: state.currency,
+          details,
+        }),
       });
       const data = await res.json();
       if (!res.ok) return showToast(data.detail || "Ошибка вывода");
@@ -1113,10 +1282,114 @@
       showToast("Заявка на вывод отправлена");
     }
 
+    async function loadTransactions() {
+      const box = document.getElementById("txList");
+      const res = await fetch(`${API_BASE}/api/transactions/${state.userId}`);
+      const list = await res.json();
+      if (!list.length) {
+        box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Операций пока нет</div>`;
+        return;
+      }
+      box.innerHTML = list.map((t) => `
+        <div class="bet-item">
+          <div style="display:flex;justify-content:space-between;font-size:13px;">
+            <b>${escapeHtml(t.method || t.type)}</b>
+            <span>${t.type === "withdraw" ? "-" : "+"}${t.amount_stars || 0} ★</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Статус: ${escapeHtml(t.status || "")}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderProfitChart(bets, totalProfit) {
+      const svg = document.getElementById("profitChartSvg");
+      const badge = document.getElementById("chartBadge");
+      const points = [0];
+      let acc = 0;
+
+      const settled = [...bets]
+        .filter((b) => b.status === "won" || b.status === "lost")
+        .reverse();
+
+      settled.forEach((b) => {
+        const sAmt = b.currency === "RUB" ? b.amount / STAR_RATE : b.amount;
+        if (b.status === "won") acc += sAmt * (b.odd - 1);
+        else acc -= sAmt;
+        points.push(acc);
+      });
+
+      if (points.length === 1) points.push(totalProfit || 0);
+
+      const minV = Math.min(...points, -1);
+      const maxV = Math.max(...points, 1);
+      const range = maxV - minV || 1;
+      const isPositive = points[points.length - 1] >= 0;
+      const strokeColor = isPositive ? "#22c55e" : "#ef4444";
+
+      badge.style.color = strokeColor;
+      badge.textContent = `${isPositive ? "+" : ""}${points[points.length - 1].toFixed(1)} ★`;
+
+      const coords = points.map((v, i) => {
+        const x = (i / (points.length - 1)) * 280 + 10;
+        const y = 78 - ((v - minV) / range) * 64;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      });
+
+      svg.innerHTML = `
+        <line x1="10" y1="45" x2="290" y2="45" stroke="rgba(255,255,255,0.08)" stroke-dasharray="4" />
+        <polyline fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(" ")}" />
+      `;
+    }
+
+    async function refreshProfile() {
+      const [initRes, betsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`),
+        fetch(`${API_BASE}/api/bets/${state.userId}`),
+      ]);
+      const data = await initRes.json();
+      const bets = await betsRes.json();
+      const u = data.user || {};
+
+      updateBalanceUI(u.balance);
+      const total = u.total_bets || bets.length || 0;
+      const won = u.won_bets || 0;
+      const wr = total ? Math.round((won / total) * 100) : 0;
+      const profit = Number(u.profit ?? u.net_profit ?? 0);
+
+      document.getElementById("statRefs").textContent = u.referrals || 0;
+      document.getElementById("statTotal").textContent = total;
+      document.getElementById("statWon").textContent = won;
+      document.getElementById("statWinrate").textContent = `${wr}%`;
+      document.getElementById("statProfit").textContent = formatMoney(profit);
+      renderProfitChart(bets, profit);
+    }
+
+    async function activatePromo() {
+      const code = document.getElementById("promoInput").value.trim();
+      if (!code) return showToast("Введите промокод");
+      const res = await fetch(`${API_BASE}/api/promo/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: state.userId, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showToast(data.detail || "Ошибка промокода");
+      updateBalanceUI(data.balance);
+      document.getElementById("promoInput").value = "";
+      showToast(`Промокод активирован! +${data.bonus} ★`);
+    }
+
+    function copyRefLink() {
+      const inp = document.getElementById("refLinkInput");
+      inp.select();
+      navigator.clipboard?.writeText(inp.value);
+      showToast("Реферальная ссылка скопирована");
+    }
+
     function appendChatMsg(box, m) {
-      const u = m.user || m.username || m.first_name || m.name || "Игрок";
-      const t = m.time || "";
-      const txt = m.text || m.message || "";
+      const u = escapeHtml(m.user || m.username || "Игрок");
+      const t = escapeHtml(m.time || "");
+      const txt = escapeHtml(m.text || m.message || "");
       box.innerHTML += `<div class="chat-msg"><b>${u}</b> <span style="color:var(--muted);font-size:11px;">${t}</span><div style="margin-top:3px;">${txt}</div></div>`;
     }
 
@@ -1155,8 +1428,8 @@
       document.getElementById("profileId").textContent = state.userId;
       const letter = state.userName[0]?.toUpperCase() || "W";
       if (tgUser.photo_url) {
-        document.getElementById("userAvatar").innerHTML = `<img src="${tgUser.photo_url}" />`;
-        document.getElementById("profileAvatar").innerHTML = `<img src="${tgUser.photo_url}" />`;
+        document.getElementById("userAvatar").innerHTML = `<img src="${escapeHtml(tgUser.photo_url)}" />`;
+        document.getElementById("profileAvatar").innerHTML = `<img src="${escapeHtml(tgUser.photo_url)}" />`;
       } else {
         document.getElementById("userAvatar").textContent = letter;
         document.getElementById("profileAvatar").textContent = letter;
@@ -1164,6 +1437,9 @@
 
       const res = await fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
       const data = await res.json();
+      state.botUsername = data.bot_username || "WinStarsPlaybot";
+      document.getElementById("refLinkInput").value = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
+
       updateBalanceUI(data.user?.balance || 0);
       state.live = data.live || [];
       state.prematch = data.prematch || [];
