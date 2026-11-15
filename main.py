@@ -21,7 +21,6 @@ from curl_cffi.requests import AsyncSession
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 load_dotenv()
@@ -32,7 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("WinStars")
 
-# ================= БОЕВАЯ КОНФИГУРАЦИЯ =================
+# ================= КОНФИГУРАЦИЯ =================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://starland-comics.github.io/winstarsbot/")
 FIREBASE_URL = os.getenv(
@@ -55,7 +54,7 @@ LINE_CACHE: Dict[str, Any] = {
 }
 
 
-# ================= FIREBASE REALTIME DB CLIENT =================
+# ================= FIREBASE REALTIME DB =================
 class FirebaseDB:
     def __init__(self, base_url: str, secret: str = ""):
         self.base_url = base_url
@@ -106,34 +105,66 @@ class FirebaseDB:
             logger.error(f"Firebase PUSH {path} error: {e}")
             return None
 
+    async def delete(self, path: str) -> bool:
+        try:
+            r = await self.client.delete(self._url(path))
+            r.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Firebase DELETE {path} error: {e}")
+            return False
+
 
 db = FirebaseDB(FIREBASE_URL, FIREBASE_SECRET)
 
 
 # ================= ПАРСЕР OLIMPBET =================
 def format_match_time(ev: dict, is_live: bool) -> str:
-    """Извлекает точные минуты матча или статус Перерыв / LIVE."""
+    """Точные минуты матча, 'Перерыв' или время старта прематча."""
     if not is_live:
-        start_ts = ev.get("startDate") or ev.get("startTime") or ev.get("time") or 0
+        start_ts = (
+            ev.get("startDate")
+            or ev.get("startTime")
+            or ev.get("beginTime")
+            or ev.get("time")
+            or 0
+        )
         if isinstance(start_ts, (int, float)) and start_ts > 1_000_000_000:
+            if start_ts > 10_000_000_000:
+                start_ts = start_ts / 1000
             dt = datetime.fromtimestamp(int(start_ts), tz=MSK_TZ)
             return dt.strftime("%d.%m %H:%M")
         return "Скоро"
 
     status_text = " ".join(
         str(ev.get(k, ""))
-        for k in ("periodName", "statusName", "stage", "timeText", "comment")
+        for k in (
+            "periodName",
+            "statusName",
+            "stage",
+            "timeText",
+            "comment",
+            "stateName",
+        )
     ).lower()
 
-    if any(w in status_text for w in ("перерыв", "half", "break", "ht")) or ev.get("isBreak"):
+    if (
+        any(w in status_text for w in ("перерыв", "half", "break", "ht"))
+        or ev.get("isBreak")
+        or ev.get("period") == 0
+    ):
         return "Перерыв"
 
     minute: Optional[int] = None
-    if ev.get("minute") is not None:
-        try:
-            minute = int(ev["minute"])
-        except (ValueError, TypeError):
-            minute = None
+    for key in ("minute", "minutes", "matchMinute"):
+        if ev.get(key) is not None:
+            try:
+                val = int(ev[key])
+                if val > 0:
+                    minute = val
+                    break
+            except (ValueError, TypeError):
+                pass
 
     if minute is None:
         raw_time = (
@@ -141,6 +172,7 @@ def format_match_time(ev: dict, is_live: bool) -> str:
             or ev.get("seconds")
             or ev.get("elapsed")
             or ev.get("timer")
+            or ev.get("timeSec")
         )
         if isinstance(raw_time, (int, float)) and raw_time > 0:
             minute = int(raw_time) // 60 if raw_time > 130 else int(raw_time)
@@ -158,52 +190,72 @@ def format_match_time(ev: dict, is_live: bool) -> str:
     return "LIVE"
 
 
+def _extract_odd_val(o: dict) -> float:
+    for k in ("value", "odd", "k", "coef", "coefficient", "price"):
+        v = o.get(k)
+        if v is not None:
+            try:
+                f = float(v)
+                if f > 1.0:
+                    return round(f, 2)
+            except (ValueError, TypeError):
+                pass
+    return 0.0
+
+
 def extract_1x2_and_markets(
     ev: dict,
 ) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
-    """Парсит 1X2 и все доступные доп. рынки события."""
     odds_1x2 = {"P1": 0.0, "X": 0.0, "P2": 0.0}
     markets_grouped: List[Dict[str, Any]] = []
 
     raw_outcomes = ev.get("outcomes") or []
-    raw_markets = ev.get("markets") or []
+    raw_markets = ev.get("markets") or ev.get("groups") or []
 
-    if raw_outcomes and not raw_markets:
+    # 1. Плоский список исходов в общей линии
+    if raw_outcomes:
         for o in raw_outcomes:
-            name = str(o.get("name") or o.get("shortName") or "").strip()
-            val = float(o.get("value") or o.get("odd") or o.get("k") or 0)
+            name = str(
+                o.get("shortName") or o.get("name") or o.get("title") or ""
+            ).strip()
+            val = _extract_odd_val(o)
             if val <= 1.0:
                 continue
-            if name in ("1", "П1"):
-                odds_1x2["P1"] = round(val, 2)
-            elif name in ("X", "Х", "Н"):
-                odds_1x2["X"] = round(val, 2)
-            elif name in ("2", "П2"):
-                odds_1x2["P2"] = round(val, 2)
+            t_type = str(o.get("tableType") or o.get("type") or "")
+            if name in ("1", "П1") or t_type == "1":
+                odds_1x2["P1"] = val
+            elif name in ("X", "Х", "Н") or t_type in ("X", "0"):
+                odds_1x2["X"] = val
+            elif name in ("2", "П2") or t_type == "2":
+                odds_1x2["P2"] = val
 
+    # 2. Структурированные рынки (полная роспись)
     for m in raw_markets:
         m_name = str(m.get("name") or m.get("title") or "Исходы").strip()
         items = []
         for o in m.get("outcomes") or m.get("items") or []:
-            o_name = str(o.get("name") or o.get("shortName") or "").strip()
-            val = float(o.get("value") or o.get("odd") or o.get("k") or 0)
+            o_name = str(
+                o.get("shortName") or o.get("name") or o.get("title") or ""
+            ).strip()
+            val = _extract_odd_val(o)
             if val <= 1.0 or not o_name:
                 continue
-            items.append({"label": o_name, "odd": round(val, 2)})
+            items.append({"label": o_name, "odd": val})
 
-            if m_name.lower() in ("исход матча", "основное время", "1x2"):
+            if m_name.lower() in ("исход матча", "основное время", "1x2", "исход"):
                 if o_name in ("1", "П1"):
-                    odds_1x2["P1"] = round(val, 2)
+                    odds_1x2["P1"] = val
                 elif o_name in ("X", "Х"):
-                    odds_1x2["X"] = round(val, 2)
+                    odds_1x2["X"] = val
                 elif o_name in ("2", "П2"):
-                    odds_1x2["P2"] = round(val, 2)
+                    odds_1x2["P2"] = val
 
         if items:
             markets_grouped.append({"title": m_name, "outcomes": items})
 
+    # 3. Базовая роспись из 1X2, если доп. рынки ещё не подгружены
     if not markets_grouped and odds_1x2["P1"] > 1.0 and odds_1x2["P2"] > 1.0:
-        p1, x, p2 = odds_1x2["P1"], odds_1x2["X"] or 3.2, odds_1x2["P2"]
+        p1, x, p2 = odds_1x2["P1"], odds_1x2["X"] or 3.25, odds_1x2["P2"]
         markets_grouped.append(
             {
                 "title": "Основные исходы",
@@ -284,48 +336,94 @@ class OlimpbetScraper:
         }
 
     async def fetch_events(self, is_live: bool) -> List[Dict[str, Any]]:
-        endpoint = (
-            f"{self.BASE}/live/sports-with-categories-with-events?v=1"
+        endpoints = (
+            [
+                f"{self.BASE}/live/sports-with-competitions-with-events?v=1",
+                f"{self.BASE}/live/sports-with-categories-with-events?v=1",
+            ]
             if is_live
-            else f"{self.BASE}/line/sports-with-categories-with-events?v=1"
+            else [
+                f"{self.BASE}/line/sports-with-competitions-with-events?v=1",
+                f"{self.BASE}/line/top/sports-with-competitions-with-events?v=1",
+                f"{self.BASE}/line/sports-with-categories-with-events?v=1",
+            ]
         )
-        matches: List[Dict[str, Any]] = []
+
+        data = None
         try:
             async with AsyncSession(impersonate="chrome124", timeout=15) as session:
-                resp = await session.get(endpoint, headers=self.headers)
-                if resp.status_code != 200:
-                    logger.warning(f"Olimpbet HTTP {resp.status_code} for {endpoint}")
-                    return []
-                data = resp.json()
+                for ep in endpoints:
+                    resp = await session.get(ep, headers=self.headers)
+                    if resp.status_code == 200:
+                        payload = resp.json()
+                        if payload:
+                            data = payload
+                            break
         except Exception as e:
             logger.error(f"Olimpbet fetch error ({'live' if is_live else 'line'}): {e}")
             return []
 
+        if not data:
+            return []
+
+        matches: List[Dict[str, Any]] = []
         sports = data if isinstance(data, list) else data.get("sports", [])
+
         for sport in sports:
             s_id = sport.get("id")
             s_name = str(sport.get("name", "")).lower()
             if s_id != 1 and "футбол" not in s_name:
                 continue
 
-            for cat in sport.get("categories") or sport.get("champs") or []:
-                country = str(cat.get("countryName") or cat.get("country") or "").strip()
-                league_raw = str(cat.get("name") or cat.get("title") or "Лига").strip()
+            # Olimpbet использует ключ competitions (иногда categories / champs)
+            comps = (
+                sport.get("competitions")
+                or sport.get("categories")
+                or sport.get("champs")
+                or []
+            )
+            for comp in comps:
+                country = str(
+                    comp.get("countryName") or comp.get("country") or ""
+                ).strip()
+                league_raw = str(
+                    comp.get("name") or comp.get("title") or "Лига"
+                ).strip()
                 league = (
                     f"{country}. {league_raw}"
                     if country and not league_raw.startswith(country)
                     else league_raw
                 )
 
-                for ev in cat.get("events") or []:
+                for ev in comp.get("events") or []:
                     m_id = str(ev.get("id") or "")
                     if not m_id:
                         continue
 
-                    team1 = str(ev.get("team1") or ev.get("homeName") or "Команда 1").strip()
-                    team2 = str(ev.get("team2") or ev.get("awayName") or "Команда 2").strip()
-                    logo1 = ev.get("team1Logo") or ev.get("homeLogo") or ""
-                    logo2 = ev.get("team2Logo") or ev.get("awayLogo") or ""
+                    team1 = str(
+                        ev.get("team1Name")
+                        or ev.get("team1")
+                        or ev.get("homeName")
+                        or "Команда 1"
+                    ).strip()
+                    team2 = str(
+                        ev.get("team2Name")
+                        or ev.get("team2")
+                        or ev.get("awayName")
+                        or "Команда 2"
+                    ).strip()
+                    logo1 = (
+                        ev.get("team1Logo")
+                        or ev.get("homeLogo")
+                        or ev.get("logo1")
+                        or ""
+                    )
+                    logo2 = (
+                        ev.get("team2Logo")
+                        or ev.get("awayLogo")
+                        or ev.get("logo2")
+                        or ""
+                    )
 
                     if logo1 and logo1.startswith("/"):
                         logo1 = f"https://www.olimp.bet{logo1}"
@@ -388,7 +486,6 @@ class OlimpbetScraper:
         return None
 
     async def fetch_finished_results(self) -> Dict[str, Tuple[int, int]]:
-        """Забирает архив завершённых матчей за сегодня и вчера для /recalc."""
         results_map: Dict[str, Tuple[int, int]] = {}
         now = datetime.now(MSK_TZ)
         dates = [
@@ -416,7 +513,56 @@ class OlimpbetScraper:
 scraper = OlimpbetScraper()
 
 
-# ================= ДВИЖОК РАСЧЁТА СТАВОК =================
+# ================= ДВИЖОК РАСЧЁТА СТАВОК (ПОД ТВОЮ СТРУКТУРУ FIREBASE) =================
+def normalize_bet(bet: dict) -> dict:
+    """Приводит старые (events[]) и новые купоны к единому виду."""
+    events = bet.get("events")
+    first_ev = events[0] if isinstance(events, list) and events else {}
+
+    match_id = str(bet.get("match_id") or first_ev.get("match_id") or "")
+    match_title = (
+        bet.get("match_title")
+        or first_ev.get("match_title")
+        or first_ev.get("match")
+        or "Событие"
+    )
+    league = bet.get("league") or first_ev.get("league") or ""
+    selection = (
+        bet.get("selection")
+        or bet.get("outcome")
+        or first_ev.get("outcome")
+        or first_ev.get("selection")
+        or "Исход"
+    )
+    odd = float(
+        bet.get("total_coefficient")
+        or bet.get("coefficient")
+        or bet.get("odd")
+        or bet.get("coef")
+        or first_ev.get("coefficient")
+        or first_ev.get("odd")
+        or 1.0
+    )
+    amount = float(bet.get("amount") or 0)
+    status = str(bet.get("status") or "active")
+    if status == "pending":
+        status = "active"
+    if status == "refund":
+        status = "void"
+
+    return {
+        "match_id": match_id,
+        "match_title": match_title,
+        "league": league,
+        "selection": selection,
+        "odd": round(odd, 2),
+        "amount": amount,
+        "status": status,
+        "final_score": bet.get("final_score", ""),
+        "created_at": bet.get("created_at") or bet.get("timestamp") or 0,
+    }
+
+
 def evaluate_outcome(selection: str, s1: int, s2: int) -> str:
     sel = selection.strip().upper()
     total = s1 + s2
@@ -435,39 +581,41 @@ def evaluate_outcome(selection: str, s1: int, s2: int) -> str:
     if sel == "X2":
         return "won" if s2 >= s1 else "lost"
 
-    if sel in ("ОЗ ДА", "ОБЕ ЗАБЬЮТ - ДА"):
+    if sel in ("ОЗ ДА", "ОБЕ ЗАБЬЮТ - ДА", "ДА"):
         return "won" if (s1 > 0 and s2 > 0) else "lost"
-    if sel in ("ОЗ НЕТ", "ОБЕ ЗАБЬЮТ - НЕТ"):
+    if sel in ("ОЗ НЕТ", "ОБЕ ЗАБЬЮТ - НЕТ", "НЕТ"):
         return "won" if (s1 == 0 or s2 == 0) else "lost"
 
     m_tot = re.match(r"^(ТБ|ТМ)\s*(\d+(?:\.\d+)?)$", sel)
     if m_tot:
-        direction, line_str = m_tot.group(1), m_tot.group(2)
-        line = float(line_str)
+        direction, line = m_tot.group(1), float(m_tot.group(2))
         if total == line:
-            return "refund"
-        if direction == "ТБ":
-            return "won" if total > line else "lost"
-        return "won" if total < line else "lost"
+            return "void"
+        return (
+            ("won" if total > line else "lost")
+            if direction == "ТБ"
+            else ("won" if total < line else "lost")
+        )
 
     m_hand = re.match(r"^Ф([12])\s*\(?([+-]?\d+(?:\.\d+)?)\)?$", sel)
     if m_hand:
-        team_num, h_str = m_hand.group(1), m_hand.group(2)
-        h_val = float(h_str)
+        team_num, h_val = m_hand.group(1), float(m_hand.group(2))
         diff = (s1 + h_val - s2) if team_num == "1" else (s2 + h_val - s1)
         if diff == 0:
-            return "refund"
+            return "void"
         return "won" if diff > 0 else "lost"
 
-    return "pending"
+    return "active"
 
 
-async def collect_all_pending_bets() -> List[Tuple[str, str, Dict[str, Any]]]:
+async def collect_all_active_bets() -> List[Tuple[str, str, str, Dict[str, Any]]]:
     """
-    Собирает все нерассчитанные ставки из users/{uid}/bets и корневого узла bets.
-    Возвращает список кортежей (firebase_path, user_id, bet_dict).
+    Собирает все активные ставки (status == 'active' или 'pending')
+    из users/{uid}/bets/{bet_id} и active_bets/{bet_id}.
+    Возвращает список (firebase_path, bet_id, user_id, normalized_bet).
     """
-    found: List[Tuple[str, str, Dict[str, Any]]] = []
+    found: List[Tuple[str, str, str, Dict[str, Any]]] = []
+    seen_ids = set()
 
     users = await db.get("users")
     if isinstance(users, dict):
@@ -476,54 +624,66 @@ async def collect_all_pending_bets() -> List[Tuple[str, str, Dict[str, Any]]]:
                 continue
             ubets = udata.get("bets")
             if isinstance(ubets, dict):
-                for b_id, bet in ubets.items():
-                    if isinstance(bet, dict) and bet.get("status") == "pending":
-                        found.append((f"users/{uid}/bets/{b_id}", str(uid), bet))
+                for b_id, raw_bet in ubets.items():
+                    if not isinstance(raw_bet, dict):
+                        continue
+                    norm = normalize_bet(raw_bet)
+                    if norm["status"] == "active":
+                        found.append((f"users/{uid}/bets/{b_id}", b_id, str(uid), norm))
+                        seen_ids.add(b_id)
 
-    root_bets = await db.get("bets")
-    if isinstance(root_bets, dict):
-        for b_id, bet in root_bets.items():
-            if isinstance(bet, dict) and bet.get("status") == "pending":
-                uid = str(bet.get("user_id", ""))
-                found.append((f"bets/{b_id}", uid, bet))
+    active_node = await db.get("active_bets")
+    if isinstance(active_node, dict):
+        for b_id, raw_bet in active_node.items():
+            if b_id in seen_ids or not isinstance(raw_bet, dict):
+                continue
+            norm = normalize_bet(raw_bet)
+            if norm["status"] == "active":
+                uid = str(raw_bet.get("user_id", ""))
+                path = f"users/{uid}/bets/{b_id}" if uid else f"active_bets/{b_id}"
+                found.append((path, b_id, uid, norm))
 
     return found
 
 
 async def settle_match_bets(
-    match_id: str, s1: int, s2: int, notify_bot: Optional[Bot] = None
+    target_query: str, s1: int, s2: int, notify_bot: Optional[Bot] = None
 ) -> int:
-    """Рассчитывает все pending-ставки по match_id и начисляет выигрыши."""
-    pending = await collect_all_pending_bets()
+    """
+    Рассчитывает ставки по match_id ИЛИ по части названия команды (например, 'Албания').
+    """
+    active_list = await collect_all_active_bets()
+    q_low = target_query.strip().lower()
     settled_count = 0
 
-    for bet_path, user_id, bet in pending:
-        if str(bet.get("match_id")) != str(match_id):
+    for bet_path, b_id, user_id, norm in active_list:
+        by_id = norm["match_id"] == target_query.strip()
+        by_name = len(q_low) >= 3 and q_low in norm["match_title"].lower()
+        if not (by_id or by_name):
             continue
 
-        selection = bet.get("selection") or bet.get("outcome") or ""
-        result = evaluate_outcome(selection, s1, s2)
-        if result == "pending":
+        result = evaluate_outcome(norm["selection"], s1, s2)
+        if result == "active":
             continue
 
-        amount = float(bet.get("amount", 0))
-        odd = float(bet.get("odd") or bet.get("coef") or 1.0)
-
-        payout = 0.0
-        if result == "won":
-            payout = round(amount * odd, 2)
-        elif result == "refund":
-            payout = round(amount, 2)
-
-        await db.patch(
-            bet_path,
-            {
-                "status": result,
-                "final_score": f"{s1}:{s2}",
-                "payout": payout,
-                "settled_at": int(time.time()),
-            },
+        amount = norm["amount"]
+        odd = norm["odd"]
+        payout = (
+            round(amount * odd, 2)
+            if result == "won"
+            else (round(amount, 2) if result == "void" else 0.0)
         )
+
+        patch_payload = {
+            "status": result,
+            "final_score": f"{s1}:{s2}",
+            "payout": payout,
+            "settled_at": int(time.time()),
+        }
+        await db.patch(bet_path, patch_payload)
+        if user_id:
+            await db.patch(f"users/{user_id}/bets/{b_id}", patch_payload)
+        await db.delete(f"active_bets/{b_id}")
 
         if user_id:
             user = await db.get(f"users/{user_id}") or {}
@@ -545,33 +705,34 @@ async def settle_match_bets(
                     await notify_bot.send_message(
                         int(user_id),
                         f"Ставка сыграла! +{payout:.2f} ₽\n"
-                        f"{bet.get('match_title')} ({s1}:{s2}) — {selection} @ {odd}",
+                        f"{norm['match_title']} ({s1}:{s2}) — {norm['selection']} @ {odd}",
                     )
                 except Exception:
                     pass
 
         settled_count += 1
 
-    await db.patch(
-        f"match_archive/{match_id}",
-        {
-            "score1": s1,
-            "score2": s2,
-            "status": "finished",
-            "finished_at": int(time.time()),
-        },
-    )
+    if target_query.isdigit():
+        await db.patch(
+            f"match_archive/{target_query}",
+            {
+                "score1": s1,
+                "score2": s2,
+                "status": "finished",
+                "finished_at": int(time.time()),
+            },
+        )
     return settled_count
 
 
 async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
-    pending = await collect_all_pending_bets()
+    active_list = await collect_all_active_bets()
     pending_matches: Dict[str, str] = {}
 
-    for _, _, bet in pending:
-        m_id = str(bet.get("match_id", ""))
-        if m_id:
-            pending_matches[m_id] = bet.get("match_title", f"Матч #{m_id}")
+    for _, _, _, norm in active_list:
+        key = norm["match_id"] or norm["match_title"]
+        if key:
+            pending_matches[key] = norm["match_title"]
 
     if not pending_matches:
         return {"checked": 0, "settled": 0, "unresolved": {}}
@@ -582,18 +743,18 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
     total_settled = 0
     unresolved: Dict[str, str] = {}
 
-    for m_id, title in pending_matches.items():
-        if m_id in results_api:
-            s1, s2 = results_api[m_id]
-            total_settled += await settle_match_bets(m_id, s1, s2, notify_bot)
+    for key, title in pending_matches.items():
+        if key in results_api:
+            s1, s2 = results_api[key]
+            total_settled += await settle_match_bets(key, s1, s2, notify_bot)
             continue
 
-        arch_item = archive.get(m_id) if isinstance(archive, dict) else None
+        arch_item = archive.get(key) if isinstance(archive, dict) else None
         if isinstance(arch_item, dict):
             if arch_item.get("status") == "finished":
                 s1 = int(arch_item.get("score1", 0))
                 s2 = int(arch_item.get("score2", 0))
-                total_settled += await settle_match_bets(m_id, s1, s2, notify_bot)
+                total_settled += await settle_match_bets(key, s1, s2, notify_bot)
                 continue
 
             last_seen = int(arch_item.get("updated_at", 0))
@@ -603,10 +764,10 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
             if last_min >= 85 and (time.time() - last_seen) > 1500:
                 s1 = int(arch_item.get("score1", 0))
                 s2 = int(arch_item.get("score2", 0))
-                total_settled += await settle_match_bets(m_id, s1, s2, notify_bot)
+                total_settled += await settle_match_bets(key, s1, s2, notify_bot)
                 continue
 
-        unresolved[m_id] = title
+        unresolved[key] = title
 
     return {
         "checked": len(pending_matches),
@@ -615,7 +776,7 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
     }
 
 
-# ================= ФОНОВЫЙ СИНХРОНИЗАТОР ЛИНИИ =================
+# ================= ФОНОВЫЙ ПАРСЕР =================
 async def scraper_loop(bot: Bot):
     prev_live_ids: set[str] = set()
     while True:
@@ -659,7 +820,7 @@ async def scraper_loop(bot: Bot):
         await asyncio.sleep(12)
 
 
-# ================= TELEGRAM БОТ (AIOGRAM 3) =================
+# ================= TELEGRAM БОТ =================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
@@ -714,28 +875,28 @@ async def cmd_pending_matches(message: Message):
     if not message.from_user or not is_admin(message.from_user.id):
         return
 
-    pending = await collect_all_pending_bets()
-    if not pending:
+    active_list = await collect_all_active_bets()
+    if not active_list:
         await message.answer("Все ставки рассчитаны, зависших матчей нет.")
         return
 
     grouped: Dict[str, Dict[str, Any]] = {}
-    for _, _, bet in pending:
-        m_id = str(bet.get("match_id", ""))
-        if m_id not in grouped:
-            grouped[m_id] = {
-                "title": bet.get("match_title", "Неизвестный матч"),
+    for _, _, _, norm in active_list:
+        key = norm["match_id"] or norm["match_title"].split()[0]
+        if key not in grouped:
+            grouped[key] = {
+                "title": norm["match_title"],
                 "count": 0,
                 "sum": 0.0,
             }
-        grouped[m_id]["count"] += 1
-        grouped[m_id]["sum"] += float(bet.get("amount", 0))
+        grouped[key]["count"] += 1
+        grouped[key]["sum"] += norm["amount"]
 
-    lines = ["**Нерассчитанные матчи:**\n"]
-    for m_id, info in grouped.items():
+    lines = ["**Активные нерассчитанные матчи:**\n"]
+    for key, info in grouped.items():
         lines.append(
-            f"• `{m_id}` — {info['title']} ({info['count']} ст. на {info['sum']:.0f} ₽)\n"
-            f"  Закрыть: `/settle {m_id} 0:0`"
+            f"• {info['title']} ({info['count']} ст. на {info['sum']:.0f} ₽)\n"
+            f"  Закрыть: `/settle {key} 0:0`"
         )
     await message.answer("\n".join(lines), parse_mode="Markdown")
 
@@ -756,40 +917,43 @@ async def cmd_recalc(message: Message):
         f"Рассчитано ставок: {res['settled']}"
     )
     if res["unresolved"]:
-        text += "\n\n**Не найдены в архиве (закройте вручную через `/settle`):**\n"
-        for m_id, title in res["unresolved"].items():
-            text += f"• `{m_id}` — {title}\n"
+        text += "\n\n**Закройте вручную командой `/settle <слово_или_id> <счёт>`:**\n"
+        for key, title in res["unresolved"].items():
+            text += f"• `{key}` — {title}\n"
 
     await status_msg.edit_text(text, parse_mode="Markdown")
 
 
 @router.message(Command("settle", "settle_bet"))
 async def cmd_settle(message: Message):
-    """Ручной расчёт любого зависшего матча: /settle 849201 2:1"""
+    """Работает и по ID, и по названию команды: /settle Албания 1:3"""
     if not message.from_user or not is_admin(message.from_user.id):
         return
 
     parts = (message.text or "").split()
-    if len(parts) != 3 or ":" not in parts[2]:
+    if len(parts) < 3 or ":" not in parts[-1]:
         await message.answer(
-            "Формат: `/settle <match_id> <счёт1>:<счёт2>`\nПример: `/settle 849201 2:1`",
+            "Формат: `/settle <команда_или_id> <счёт1>:<счёт2>`\n"
+            "Пример для Албании: `/settle Албания 1:3`",
             parse_mode="Markdown",
         )
         return
 
-    match_id = parts[1].strip()
+    score_part = parts[-1].strip()
+    query = " ".join(parts[1:-1]).strip()
+
     try:
-        s1_str, s2_str = parts[2].split(":")
+        s1_str, s2_str = score_part.split(":")
         s1, s2 = int(s1_str.strip()), int(s2_str.strip())
     except ValueError:
         await message.answer(
-            "Счёт должен быть целыми числами, например `1:0`.", parse_mode="Markdown"
+            "Счёт должен быть целыми числами, например `1:3`.", parse_mode="Markdown"
         )
         return
 
-    count = await settle_match_bets(match_id, s1, s2, bot)
+    count = await settle_match_bets(query, s1, s2, bot)
     await message.answer(
-        f"Матч `{match_id}` закрыт со счётом **{s1}:{s2}**.\nРассчитано ставок: **{count}**.",
+        f"Матч **{query}** закрыт со счётом **{s1}:{s2}**.\nРассчитано ставок: **{count}**.",
         parse_mode="Markdown",
     )
 
@@ -863,7 +1027,8 @@ async def health_check():
     return {
         "status": "ok",
         "service": "WinStars API",
-        "webapp": WEBAPP_URL,
+        "live_count": len(LINE_CACHE["live"]),
+        "prematch_count": len(LINE_CACHE["prematch"]),
         "updated_at": LINE_CACHE["updated_at"],
     }
 
@@ -945,17 +1110,22 @@ async def api_place_bet(req: BetRequest):
     bet_data = {
         "user_id": req.user_id,
         "match_id": req.match_id,
-        "match_title": f"{match['team1']} — {match['team2']}",
+        "match_title": f"{match['team1']} - {match['team2']}",
         "league": match["league"],
         "selection": req.selection,
+        "outcome": req.selection,
+        "total_coefficient": round(req.odd, 2),
         "odd": round(req.odd, 2),
         "amount": round(req.amount, 2),
         "potential_win": round(req.amount * req.odd, 2),
-        "status": "pending",
+        "status": "active",
         "created_at": int(time.time()),
     }
 
     bet_id = await db.push(f"users/{req.user_id}/bets", bet_data)
+    if bet_id:
+        await db.put(f"active_bets/{bet_id}", bet_data)
+
     await db.patch(
         f"users/{req.user_id}",
         {"balance": new_balance, "total_bets": total_bets},
@@ -967,20 +1137,26 @@ async def api_place_bet(req: BetRequest):
 @app.get("/api/bets/{user_id}")
 async def api_user_bets(user_id: str):
     res = []
+    seen = set()
 
     ubets = await db.get(f"users/{user_id}/bets")
     if isinstance(ubets, dict):
-        for b_id, b in ubets.items():
-            if isinstance(b, dict):
-                item = dict(b)
+        for b_id, raw in ubets.items():
+            if isinstance(raw, dict):
+                item = normalize_bet(raw)
                 item["id"] = b_id
                 res.append(item)
+                seen.add(b_id)
 
     root_bets = await db.get("bets")
     if isinstance(root_bets, dict):
-        for b_id, b in root_bets.items():
-            if isinstance(b, dict) and str(b.get("user_id")) == str(user_id):
-                item = dict(b)
+        for b_id, raw in root_bets.items():
+            if (
+                b_id not in seen
+                and isinstance(raw, dict)
+                and str(raw.get("user_id")) == str(user_id)
+            ):
+                item = normalize_bet(raw)
                 item["id"] = b_id
                 res.append(item)
 
@@ -1045,13 +1221,28 @@ async def api_cashier_withdraw(req: CashierRequest):
     return {"ok": True, "tx_id": tx_id, "balance": new_bal}
 
 
+def normalize_chat_msg(m: dict) -> dict:
+    user = m.get("user") or m.get("username") or m.get("first_name") or m.get("name") or "Игрок"
+    text = m.get("text") or m.get("message") or ""
+    raw_t = m.get("time") or m.get("timestamp") or m.get("created_at") or ""
+    if isinstance(raw_t, (int, float)) and raw_t > 1_000_000_000:
+        t_str = datetime.fromtimestamp(int(raw_t), tz=MSK_TZ).strftime("%H:%M")
+    else:
+        t_str = str(raw_t)
+    return {"user": str(user), "text": str(text), "time": t_str}
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     await chat_manager.connect(ws)
     try:
         history = await db.get("chat_messages")
         if isinstance(history, dict):
-            msgs = list(history.values())[-30:]
+            msgs = [
+                normalize_chat_msg(v)
+                for v in list(history.values())[-30:]
+                if isinstance(v, dict)
+            ]
             await ws.send_json({"type": "history", "messages": msgs})
 
         while True:
@@ -1060,13 +1251,22 @@ async def ws_chat(ws: WebSocket):
             text = str(data.get("text", "")).strip()[:300]
             if not text:
                 continue
+            now_str = datetime.now(MSK_TZ).strftime("%H:%M")
+            user_str = str(data.get("user", "Игрок"))[:24]
             msg_obj = {
-                "user": str(data.get("user", "Игрок"))[:24],
+                "user": user_str,
+                "username": user_str,
                 "text": text,
-                "time": datetime.now(MSK_TZ).strftime("%H:%M"),
+                "time": now_str,
+                "timestamp": int(time.time()),
             }
             await db.push("chat_messages", msg_obj)
-            await chat_manager.broadcast({"type": "message", "message": msg_obj})
+            await chat_manager.broadcast(
+                {
+                    "type": "message",
+                    "message": {"user": user_str, "text": text, "time": now_str},
+                }
+            )
     except WebSocketDisconnect:
         chat_manager.disconnect(ws)
     except Exception:
