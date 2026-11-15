@@ -299,7 +299,7 @@ def _parse_telegram_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
                 secret_key, data_check_string.encode("utf-8"), hashlib.sha256
             ).hexdigest()
             if not hmac.compare_digest(calculated_hash, received_hash):
-                logger.warning("Несовпадение подписи initData, пробуем извлечь user напрямую")
+                logger.warning("Несовпадение подписи initData, извлекаем user напрямую")
 
         user_json = flat.get("user")
         if user_json:
@@ -346,6 +346,24 @@ async def _extract_request_user(request: Request, body: Dict[str, Any]) -> Dict[
         "photo_url": str(body.get("photo_url") or ""),
         "start_param": str(body.get("ref_id") or ""),
     }
+
+
+def _collect_user_bets(user_data: Dict[str, Any], fallback_bets: Any = None) -> List[Dict[str, Any]]:
+    raw_bets = user_data.get("bets")
+    if not isinstance(raw_bets, dict):
+        raw_bets = fallback_bets if isinstance(fallback_bets, dict) else {}
+
+    bets_list: List[Dict[str, Any]] = []
+    for k, v in raw_bets.items():
+        if isinstance(v, dict):
+            item = {"id": k, **v}
+            bets_list.append(item)
+
+    bets_list.sort(
+        key=lambda x: int(x.get("timestamp") or x.get("created_at") or 0),
+        reverse=True,
+    )
+    return bets_list
 
 
 # =====================================================================
@@ -875,10 +893,11 @@ async def _ensure_user_in_db(
     if not isinstance(user_data, dict):
         user_data = {
             "id": user_id,
+            "user_id": uid,
             "username": username,
             "first_name": first_name,
             "photo_url": photo_url,
-            "balance": 0,
+            "balance": 0.0,
             "referrals": 0,
             "referred_by": None,
             "total_bets": 0,
@@ -957,10 +976,10 @@ async def on_successful_payment(message: Message) -> None:
     if not sp or not user:
         return
 
-    amount = int(sp.total_amount)
+    amount = round(float(sp.total_amount), 2)
     uid = str(user.id)
     user_data = await _ensure_user_in_db(user.id, user.username or "", user.first_name or "")
-    new_balance = int(user_data.get("balance", 0)) + amount
+    new_balance = round(float(user_data.get("balance", 0.0)) + amount, 2)
 
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
     tx_id = str(uuid.uuid4())[:8]
@@ -1033,7 +1052,6 @@ app.add_middleware(
 )
 
 
-
 @app.get("/")
 @app.get("/health")
 async def health() -> Dict[str, Any]:
@@ -1068,24 +1086,34 @@ async def sync_user(request: Request) -> Dict[str, Any]:
         ref_id=ref_id,
     )
 
-    bets_raw = await firebase_get(f"bets/{uid_int}") or {}
-    bets_list = list(bets_raw.values()) if isinstance(bets_raw, dict) else []
-    bets_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    fallback_bets = None
+    if not isinstance(user_data.get("bets"), dict):
+        fallback_bets = await firebase_get(f"bets/{uid_int}")
 
+    bets_list = _collect_user_bets(user_data, fallback_bets)
     total_bets = len(bets_list)
     won_bets = sum(1 for b in bets_list if b.get("status") == "won")
-    winrate = int(round((won_bets / total_bets) * 100)) if total_bets > 0 else 0
+    winrate = (
+        int(round((won_bets / total_bets) * 100))
+        if total_bets > 0
+        else int(user_data.get("winrate", 0))
+    )
+    bal = round(float(user_data.get("balance", 0.0)), 2)
 
+    user_data["balance"] = bal
+    user_data["stars"] = bal
     user_data["total_bets"] = total_bets
     user_data["won_bets"] = won_bets
+    user_data["wins"] = won_bets
     user_data["winrate"] = winrate
 
     return {
         "ok": True,
         "user": user_data,
         "id": uid_int,
-        "balance": user_data.get("balance", 0),
-        "referrals": user_data.get("referrals", 0),
+        "balance": bal,
+        "stars": bal,
+        "referrals": int(user_data.get("referrals", 0)),
         "winrate": winrate,
         "total_bets": total_bets,
         "won_bets": won_bets,
@@ -1105,15 +1133,16 @@ async def get_matches() -> Dict[str, Any]:
 
 @app.get("/api/match/{match_id}/markets")
 async def get_match_markets(match_id: str) -> Dict[str, Any]:
-    match_obj = (latest_matches_cache.get("by_id") or {}).get(match_id)
+    clean_id = match_id.replace("fonbet_", "").replace("fon_", "")
+    match_obj = (latest_matches_cache.get("by_id") or {}).get(clean_id)
     if not match_obj:
-        match_obj = await firebase_get(f"matches/{match_id}") or {}
+        match_obj = await firebase_get(f"matches/{clean_id}") or {}
 
-    full_payload = await _fetch_fonbet_event_full(int(match_id)) if match_id.isdigit() else None
+    full_payload = await _fetch_fonbet_event_full(int(clean_id)) if clean_id.isdigit() else None
     extra_markets: Dict[str, Any] = dict(match_obj.get("markets") or {})
     if full_payload:
         for cf in full_payload.get("customFactors") or []:
-            if str(cf.get("e")) == str(match_id):
+            if str(cf.get("e")) == str(clean_id):
                 extra_markets.update(_extract_extra_markets(cf.get("factors") or []))
 
     return {
@@ -1128,9 +1157,9 @@ async def get_match_markets(match_id: str) -> Dict[str, Any]:
 async def get_user_bets(request: Request) -> Dict[str, Any]:
     tg_info = await _extract_request_user(request, {})
     uid = str(tg_info["id"])
-    bets_raw = await firebase_get(f"bets/{uid}") or {}
-    bets_list = list(bets_raw.values()) if isinstance(bets_raw, dict) else []
-    bets_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    user_data = await firebase_get(f"users/{uid}") or {}
+    fallback_bets = None if isinstance(user_data.get("bets"), dict) else await firebase_get(f"bets/{uid}")
+    bets_list = _collect_user_bets(user_data if isinstance(user_data, dict) else {}, fallback_bets)
     return {"ok": True, "bets": bets_list}
 
 
@@ -1149,43 +1178,61 @@ async def place_bet(request: Request) -> Dict[str, Any]:
     body = await request.json()
     tg_info = await _extract_request_user(request, body)
     uid = str(tg_info["id"])
+
+    amount = round(float(body.get("amount") or 0), 2)
+    events = body.get("events")
+    bet_type = str(body.get("type") or ("express" if isinstance(events, list) and len(events) > 1 else "single"))
+
     match_id = str(body.get("match_id") or "")
     outcome = str(body.get("outcome") or body.get("pick") or "")
-    amount = int(body.get("amount") or 0)
-    odd = float(body.get("odd") or body.get("coef") or 0)
+    odd = round(float(body.get("total_coefficient") or body.get("odd") or body.get("coef") or 0), 2)
 
-    if not match_id or not outcome or amount <= 0 or odd <= 1.0:
-        raise HTTPException(status_code=400, detail="Некорректные параметры ставки")
+    if amount <= 0 or odd <= 1.0:
+        raise HTTPException(status_code=400, detail="Некорректная сумма или коэффициент")
 
     user_data = await firebase_get(f"users/{uid}")
     if not isinstance(user_data, dict):
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    balance = int(user_data.get("balance", 0))
+    balance = round(float(user_data.get("balance", 0.0)), 2)
     if balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно звёзд на балансе")
 
-    match_info = (latest_matches_cache.get("by_id") or {}).get(match_id) or await firebase_get(f"matches/{match_id}") or {}
-    new_balance = balance - amount
+    clean_id = match_id.replace("fonbet_", "").replace("fon_", "")
+    match_info = (latest_matches_cache.get("by_id") or {}).get(clean_id) or await firebase_get(f"matches/{clean_id}") or {}
+
+    t1 = match_info.get("team1", body.get("team1", ""))
+    t2 = match_info.get("team2", body.get("team2", ""))
+    match_title = body.get("match_title") or (f"{t1} - {t2}" if t1 and t2 else "")
+
+    new_balance = round(balance - amount, 2)
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
 
-    bet_id = str(uuid.uuid4())[:10]
-    bet_obj = {
+    now_ts = int(time.time())
+    bet_id = f"-W{uuid.uuid4().hex[:14]}"
+    bet_obj: Dict[str, Any] = {
         "id": bet_id,
-        "user_id": int(uid),
+        "user_id": uid,
+        "type": bet_type,
         "match_id": match_id,
-        "team1": match_info.get("team1", body.get("team1", "")),
-        "team2": match_info.get("team2", body.get("team2", "")),
+        "match_title": match_title,
+        "team1": t1,
+        "team2": t2,
         "league": match_info.get("league", body.get("league", "")),
         "outcome": outcome,
-        "odd": round(odd, 2),
+        "coefficient": odd,
+        "total_coefficient": odd,
         "amount": amount,
-        "potential_win": int(round(amount * odd)),
-        "status": "pending",
-        "created_at": int(time.time()),
+        "potential_win": round(amount * odd, 2),
+        "status": "active",
+        "timestamp": now_ts,
+        "created_at": now_ts,
     }
-    await firebase_put(f"bets/{uid}/{bet_id}", bet_obj)
-    return {"ok": True, "balance": new_balance, "bet": bet_obj}
+    if isinstance(events, list) and events:
+        bet_obj["events"] = events
+
+    await firebase_put(f"users/{uid}/bets/{bet_id}", bet_obj)
+    return {"ok": True, "balance": new_balance, "stars": new_balance, "bet": bet_obj}
 
 
 @app.post("/api/cashier/invoice")
@@ -1195,7 +1242,7 @@ async def create_stars_invoice(request: Request) -> Dict[str, Any]:
     body = await request.json()
     tg_info = await _extract_request_user(request, body)
     uid = str(tg_info["id"])
-    amount = int(body.get("amount") or 0)
+    amount = int(round(float(body.get("amount") or 0)))
     if amount < 1:
         raise HTTPException(status_code=400, detail="Некорректная сумма")
 
@@ -1215,7 +1262,7 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
     body = await request.json()
     tg_info = await _extract_request_user(request, body)
     uid = str(tg_info["id"])
-    amount = int(body.get("amount") or 0)
+    amount = round(float(body.get("amount") or 0), 2)
     if amount < 1000:
         raise HTTPException(status_code=400, detail="Минимальный вывод — 1000 звёзд")
 
@@ -1226,12 +1273,12 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
     if int(user_data.get("referrals", 0)) < 5:
         raise HTTPException(status_code=400, detail="Для вывода нужно пригласить минимум 5 друзей")
 
-    balance = int(user_data.get("balance", 0))
+    balance = round(float(user_data.get("balance", 0.0)), 2)
     if balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно средств")
 
-    new_balance = balance - amount
-    payout = int(round(amount * 0.95))
+    new_balance = round(balance - amount, 2)
+    payout = round(amount * 0.95, 2)
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
 
     req_id = str(uuid.uuid4())[:8]
@@ -1257,7 +1304,7 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
             "created_at": int(time.time()),
         },
     )
-    return {"ok": True, "balance": new_balance, "payout": payout}
+    return {"ok": True, "balance": new_balance, "stars": new_balance, "payout": payout}
 
 
 @app.post("/api/cashier/promo")
@@ -1278,14 +1325,14 @@ async def activate_promo(request: Request) -> Dict[str, Any]:
     if used:
         raise HTTPException(status_code=400, detail="Вы уже активировали этот промокод")
 
-    bonus = int(promo.get("bonus", 0))
+    bonus = round(float(promo.get("bonus", 0)), 2)
     user_data = await _ensure_user_in_db(int(uid))
-    new_balance = int(user_data.get("balance", 0)) + bonus
+    new_balance = round(float(user_data.get("balance", 0.0)) + bonus, 2)
 
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
     await firebase_patch(f"promos/{code}", {"uses": int(promo.get("uses", 1)) - 1})
     await firebase_put(f"promo_used/{uid}/{code}", int(time.time()))
-    return {"ok": True, "bonus": bonus, "balance": new_balance}
+    return {"ok": True, "bonus": bonus, "balance": new_balance, "stars": new_balance}
 
 
 @app.get("/api/chat/history")
