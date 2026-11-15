@@ -1045,6 +1045,196 @@ async def fonbet_scraper_worker() -> None:
 
 bot_router = Router()
 
+from aiogram.filters import Command
+from aiogram.types import CallbackQuery
+
+ADMIN_IDS = {
+    int(x.strip())
+    for x in os.getenv("ADMIN_IDS", "").split(",")
+    if x.strip().isdigit()
+}
+
+
+def _is_admin(user_id: int) -> bool:
+    return not ADMIN_IDS or user_id in ADMIN_IDS
+
+
+@bot_router.message(Command("admin"))
+async def cmd_admin(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    raw_wd = await firebase_get("withdrawals") or {}
+    pending = [
+        v for v in (raw_wd.values() if isinstance(raw_wd, dict) else [])
+        if isinstance(v, dict) and v.get("status") == "pending"
+    ]
+    if not pending:
+        await message.answer("Активных заявок на вывод нет.")
+        return
+
+    for req in pending[:15]:
+        rid = req.get("id")
+        uid = req.get("user_id")
+        uname = req.get("username") or str(uid)
+        amt = req.get("amount", 0)
+        payout = req.get("payout", 0)
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="Одобрить", callback_data=f"wd_ok:{rid}"),
+                    InlineKeyboardButton(text="Отклонить", callback_data=f"wd_no:{rid}"),
+                ]
+            ]
+        )
+        await message.answer(
+            f"Заявка <b>#{rid}</b>\n"
+            f"Игрок: @{uname} (<code>{uid}</code>)\n"
+            f"Сумма: <b>{amt}</b> | К выплате (-5%): <b>{payout}</b>",
+            parse_mode="HTML",
+            reply_markup=kb,
+        )
+
+
+@bot_router.callback_query(F.data.startswith("wd_"))
+async def on_withdraw_action(cb: CallbackQuery) -> None:
+    if not cb.from_user or not _is_admin(cb.from_user.id):
+        await cb.answer("Нет доступа", show_alert=True)
+        return
+    action, rid = cb.data.split(":", 1)
+    req = await firebase_get(f"withdrawals/{rid}")
+    if not isinstance(req, dict) or req.get("status") != "pending":
+        await cb.answer("Заявка уже обработана", show_alert=True)
+        return
+
+    uid = str(req.get("user_id"))
+    amt = float(req.get("amount", 0))
+    if action == "wd_ok":
+        await firebase_patch(f"withdrawals/{rid}", {"status": "approved", "processed_at": int(time.time())})
+        await cb.message.edit_text(f"✅ Заявка #{rid} одобрена (выплата {req.get('payout')} звёзд).")
+    else:
+        await firebase_patch(f"withdrawals/{rid}", {"status": "rejected", "processed_at": int(time.time())})
+        u = await firebase_get(f"users/{uid}") or {}
+        new_bal = round(float(u.get("balance", 0)) + amt, 2)
+        await firebase_patch(f"users/{uid}", {"balance": new_bal})
+        await firebase_put(
+            f"transactions/{uid}/ref_{rid}",
+            {"id": f"ref_{rid}", "type": "refund", "title": "Возврат отклоненного вывода", "amount": amt, "created_at": int(time.time())},
+        )
+        await cb.message.edit_text(f"❌ Заявка #{rid} отклонена, {amt} звёзд возвращено на баланс.")
+    await cb.answer()
+
+
+@bot_router.message(Command("promo_create"))
+async def cmd_promo_create(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 4:
+        await message.answer("Формат: <code>/promo_create КОД БОНУС ИСПОЛЬЗОВАНИЙ</code>", parse_mode="HTML")
+        return
+    code = parts[1].upper()
+    bonus = float(parts[2])
+    uses = int(parts[3])
+    await firebase_put(f"promos/{code}", {"code": code, "bonus": bonus, "uses": uses, "created_at": int(time.time())})
+    await message.answer(f"Промокод <b>{code}</b> создан: +{bonus} звёзд ({uses} активаций).", parse_mode="HTML")
+
+
+@bot_router.message(Command("promo_list"))
+async def cmd_promo_list(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    promos = await firebase_get("promos") or {}
+    if not isinstance(promos, dict) or not promos:
+        await message.answer("Активных промокодов нет.")
+        return
+    lines = [f"• <b>{k}</b>: +{v.get('bonus')} звёзд (осталось {v.get('uses')})" for k, v in promos.items() if isinstance(v, dict)]
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@bot_router.message(Command("promo_delete"))
+async def cmd_promo_delete(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer("Формат: <code>/promo_delete КОД</code>", parse_mode="HTML")
+        return
+    code = parts[1].upper()
+    await firebase_delete(f"promos/{code}")
+    await message.answer(f"Промокод <b>{code}</b> удалён.", parse_mode="HTML")
+
+
+@bot_router.message(Command("refund"))
+async def cmd_refund(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer("Формат: <code>/refund USER_ID BET_ID</code>", parse_mode="HTML")
+        return
+    uid, bet_id = parts[1], parts[2]
+    bet = await firebase_get(f"users/{uid}/bets/{bet_id}")
+    if not isinstance(bet, dict):
+        await message.answer("Ставка не найдена.")
+        return
+    amt = float(bet.get("amount", 0))
+    await firebase_patch(f"users/{uid}/bets/{bet_id}", {"status": "refund"})
+    u = await firebase_get(f"users/{uid}") or {}
+    new_bal = round(float(u.get("balance", 0)) + amt, 2)
+    await firebase_patch(f"users/{uid}", {"balance": new_bal})
+    await message.answer(f"Возврат по ставке <code>{bet_id}</code> выполнен (+{amt} звёзд).", parse_mode="HTML")
+
+
+@bot_router.message(Command("add_balance"))
+async def cmd_add_balance(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer("Формат: <code>/add_balance USER_ID СУММА</code>", parse_mode="HTML")
+        return
+    uid, delta = parts[1], float(parts[2])
+    u = await _ensure_user_in_db(int(uid))
+    new_bal = round(float(u.get("balance", 0)) + delta, 2)
+    await firebase_patch(f"users/{uid}", {"balance": new_bal})
+    await message.answer(f"Баланс игрока <code>{uid}</code> обновлён: <b>{new_bal}</b>", parse_mode="HTML")
+
+
+@bot_router.message(Command("set_balance"))
+async def cmd_set_balance(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer("Формат: <code>/set_balance USER_ID СУММА</code>", parse_mode="HTML")
+        return
+    uid, val = parts[1], round(float(parts[2]), 2)
+    await _ensure_user_in_db(int(uid))
+    await firebase_patch(f"users/{uid}", {"balance": val})
+    await message.answer(f"Баланс игрока <code>{uid}</code> установлен на <b>{val}</b>", parse_mode="HTML")
+
+
+@bot_router.message(Command("broadcast"))
+async def cmd_broadcast(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Формат: <code>/broadcast Текст сообщения</code>", parse_mode="HTML")
+        return
+    text = parts[1]
+    users = await firebase_get("users") or {}
+    sent = 0
+    if isinstance(users, dict) and bot_instance:
+        for uid in users.keys():
+            if str(uid).isdigit():
+                try:
+                    await bot_instance.send_message(int(uid), text, parse_mode="HTML")
+                    sent += 1
+                    await asyncio.sleep(0.05)
+                except Exception:
+                    continue
+    await message.answer(f"Рассылка завершена. Доставлено: <b>{sent}</b>.", parse_mode="HTML")
 
 async def _ensure_user_in_db(
     user_id: int,
