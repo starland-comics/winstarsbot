@@ -72,7 +72,7 @@ HEADERS = {
 }
 
 # =====================================================================
-# ФИЛЬТРЫ ЛИГ И КОМАНД (СТРОГО ПО УТВЕРЖДЁННОМУ СПИСКУ)
+# ФИЛЬТРЫ ЛИГ И КОМАНД
 # =====================================================================
 
 ALLOWED_LEAGUE_PATTERNS = [
@@ -84,8 +84,8 @@ ALLOWED_LEAGUE_PATTERNS = [
     # 2. Англия (АПЛ, Чемпионшип, Кубок Англии, Кубок лиги, Суперкубок)
     r"^англия\.\s*(премьер(-|\s|\.|$)|чемпионшип|championship|кубок англии|fa cup|кубок лиги|кубок футбольной лиги|efl cup|carabao|суперкубок|community shield)",
 
-    # 3. Испания (Ла Лига/Примера, Сегунда, Кубок, Суперкубок)
-    r"^испания\.\s*(ла лига|примера|сегунда|segunda|кубок|copa|суперкубок|supercopa)",
+    # 3. Испания (Только Ла Лига / Примера Дивизион, Сегунда Дивизион, Кубок и Суперкубок — без RFEF)
+    r"^испания\.\s*(ла лига|примера(?:\s+дивизион|\s*$|\.)|сегунда(?:\s+дивизион|\s*$|\.)|segunda(?:\s+divisi[oó]n|\s*$|\.)|кубок|copa|суперкубок|supercopa)",
 
     # 4. Италия (Серия А, Кубок Италии, Суперкубок Италии)
     r"^италия\.\s*(серия а(?:\s|$|\.)|serie a(?:\s|$|\.)|кубок|coppa|суперкубок|supercoppa)",
@@ -116,7 +116,7 @@ ALLOWED_LEAGUE_PATTERNS = [
     r"^золотой кубок\s*конкакаф",
     r"^concacaf",
 
-    # 9. Товарищеские матчи (сборных и клубов, если на них есть коэффициенты)
+    # 9. Товарищеские матчи (сборных и клубов при наличии коэффициентов)
     r"^товарищеск",
 
     # 10. Саудовская Аравия, США, Турция, Португалия, Нидерланды (+ их кубки и суперкубки)
@@ -156,12 +156,13 @@ FORBIDDEN_LEAGUE_WORDS = [
     "третий дивизион", "третья лига", "лфк", "amateur", "любител", "лига трофи",
     "региональная лига", "regional league",
 
-    # Неразрешённые низшие дивизионы в разрешённых странах
+    # Низшие дивизионы, включая испанские RFEF и Терсеру
+    "rfef", "терсера", "tercera", "федерасьон", "federaci",
     "серия b", "серия б", "serie b", "серия c", "серия с", "serie c",
     "2. бундеслига", "2-я бундеслига", "вторая бундеслига", "3. лига", "3-я лига",
     "лига 2", "ligue 2", "национальная лига", "лига 1. англия", "первая лига. англия",
     "вторая лига. англия", "первая лига. украина", "первая лига. беларусь", "первая лига. казахстан",
-    "первый дивизион", "второй дивизион. португалия", "сегунда б", "примера рфеф",
+    "первый дивизион", "второй дивизион. португалия", "сегунда б",
 
     # Долгосрочные аутрайты и спецставки
     "кто выше", "победитель", "призер", "вылет", "квалификация (кто", "кто попадет",
@@ -175,6 +176,27 @@ TEAM_BLACKLIST_RE = re.compile(
     r"(?:^|\s|\()(?:u-?1[5-9]|u-?2[0-3]|до\s*1[5-9]|до\s*2[0-3]|мол|дубль|резерв|жен|ii|iii|b)(?:\s|\)|$)",
     re.IGNORECASE,
 )
+
+# Блокировка фейковых/статистических матчей типа "Хозяева - Гости"
+SPECIAL_TEAM_NAMES = {
+    "хозяева", "гости", "хозяева поля", "гости поля",
+    "home", "away", "home teams", "away teams",
+    "итоги", "статистика", "специальные ставки",
+}
+
+
+def _is_special_dummy_match(t1: str, t2: str) -> bool:
+    low1 = t1.lower().strip()
+    low2 = t2.lower().strip()
+    if low1 in SPECIAL_TEAM_NAMES or low2 in SPECIAL_TEAM_NAMES:
+        return True
+    if low1.startswith("хозяева") or low2.startswith("гости"):
+        return True
+    for bad_sub in ("угловые", "желтые карточки", "жёлтые карточки", "фолы", "удары в створ", "офсайды", "игровой день"):
+        if bad_sub in low1 or bad_sub in low2:
+            return True
+    return False
+
 
 # =====================================================================
 # СЛОВАРИ И АВТОЗАГРУЗКА ЛОГОТИПОВ С УЧЁТОМ СТРАНЫ
@@ -752,19 +774,46 @@ def _parse_live_status_and_score(
         if parts[0].strip().isdigit() and parts[1].strip().isdigit():
             score1, score2 = int(parts[0].strip()), int(parts[1].strip())
 
-    timer_sec = misc.get("timerSeconds")
-    timer_dir = misc.get("timerDirection", 1)
-    comment = (misc.get("comment") or "").strip()
+    comment = (misc.get("comment") or event.get("comment") or "").strip()
+    low_comment = comment.lower()
 
-    if "перерыв" in comment.lower() or "ht" in comment.lower():
+    # Проверяем оба возможных поля секундомера Fonbet (timerSeconds и timer)
+    raw_sec = None
+    for key in ("timerSeconds", "timer"):
+        val = misc.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            raw_sec = float(val)
+            break
+
+    if "перерыв" in low_comment or low_comment in ("ht", "half time", "перерыв."):
         status_str = "LIVE · HT"
-    elif isinstance(timer_sec, (int, float)) and timer_sec >= 0 and timer_dir != 0:
-        mins = int(timer_sec // 60) + 1
+    elif "завершен" in low_comment or "завершён" in low_comment or low_comment == "ft":
+        status_str = "LIVE · FT"
+    elif raw_sec is not None and raw_sec > 0:
+        mins = max(1, int(raw_sec // 60) + 1)
         status_str = f"LIVE · {mins}'"
-    elif comment:
-        status_str = f"LIVE · {comment}"
     else:
-        status_str = "LIVE"
+        # Ищем минуту в комментарии или вычисляем по реальному startTime матча
+        m_min = re.search(r"(\d{1,3})\s*(?:'|мин)", low_comment)
+        if m_min:
+            status_str = f"LIVE · {int(m_min.group(1))}'"
+        else:
+            start_ts = int(event.get("startTime") or 0)
+            now_ts = int(time.time())
+            if start_ts > 0 and now_ts >= start_ts:
+                elapsed = int((now_ts - start_ts) // 60)
+                if elapsed <= 45:
+                    status_str = f"LIVE · {max(1, elapsed)}'"
+                elif elapsed <= 60:
+                    status_str = "LIVE · HT"
+                elif elapsed <= 105:
+                    status_str = f"LIVE · {elapsed - 15}'"
+                else:
+                    status_str = "LIVE · 90+"
+            elif comment:
+                status_str = f"LIVE · {comment}"
+            else:
+                status_str = "LIVE"
 
     return score1, score2, status_str
 
@@ -820,6 +869,9 @@ async def scrape_once() -> Dict[str, Any]:
         if not t1 or not t2:
             continue
 
+        if _is_special_dummy_match(t1, t2):
+            continue
+
         if TEAM_BLACKLIST_RE.search(t1) or TEAM_BLACKLIST_RE.search(t2):
             continue
 
@@ -828,12 +880,16 @@ async def scrape_once() -> Dict[str, Any]:
 
     filtered_events.sort(key=lambda x: (0 if x[4] else 1, x[0].get("startTime") or 0))
 
+    # Для Live-матчей всегда подгружаем полную карточку, чтобы получить точный timerSeconds, если в listBase он 0
     events_needing_full_line: List[int] = []
-    for ev, _, _, _, _ in filtered_events:
+    for ev, _, _, _, is_live in filtered_events:
         eid = ev["id"]
         factors = base_factors_by_event.get(eid, [])
         p1, px, p2 = _extract_1x2_odds(factors)
-        if not (p1 and px and p2) and len(events_needing_full_line) < FULL_LINE_MAX_PER_CYCLE:
+        misc = misc_by_event.get(eid, {})
+        has_timer = isinstance(misc.get("timerSeconds"), (int, float)) and misc.get("timerSeconds", 0) > 0
+        need_live_timer = is_live and not has_timer
+        if (need_live_timer or not (p1 and px and p2)) and len(events_needing_full_line) < FULL_LINE_MAX_PER_CYCLE:
             events_needing_full_line.append(eid)
 
     if events_needing_full_line:
