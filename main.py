@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -261,6 +262,7 @@ latest_matches_cache: Dict[str, Any] = {
     "prematch": [],
     "updated_at": 0,
 }
+previous_live_matches: Dict[str, Dict[str, Any]] = {}
 active_websockets: set = set()
 chat_websockets: set = set()
 force_refresh_event = asyncio.Event()
@@ -580,7 +582,7 @@ async def cleanup_broken_logos() -> int:
 
 
 # =====================================================================
-# ПАРСИНГ ЛИНИЙ И LIVE-ДАННЫХ FONBET
+# ПАРСИНГ ЛИНИЙ, LIVE-ДАННЫХ И АВТОРАСЧЁТ СТАВОК
 # =====================================================================
 
 def _is_allowed_league(league_name: str) -> bool:
@@ -793,7 +795,194 @@ def _parse_live_status_and_score(
     return score1, score2, status_str
 
 
+def _evaluate_leg_outcome(outcome_label: str, s1: int, s2: int) -> Optional[str]:
+    clean = (outcome_label or "").strip()
+    if ":" in clean and not clean.startswith(("П", "Х", "X", "1", "2", "Т", "Ф", "Д", "Н")):
+        clean = clean.split(":", 1)[1].strip()
+    up = clean.upper().replace("X", "Х")
+    total = s1 + s2
+
+    if up in ("П1", "1"):
+        return "won" if s1 > s2 else "lost"
+    if up == "Х":
+        return "won" if s1 == s2 else "lost"
+    if up in ("П2", "2"):
+        return "won" if s2 > s1 else "lost"
+    if up == "1Х":
+        return "won" if s1 >= s2 else "lost"
+    if up == "12":
+        return "won" if s1 != s2 else "lost"
+    if up == "Х2":
+        return "won" if s2 >= s1 else "lost"
+    if up == "ДА":
+        return "won" if (s1 > 0 and s2 > 0) else "lost"
+    if up == "НЕТ":
+        return "won" if (s1 == 0 or s2 == 0) else "lost"
+
+    m_tot = re.match(r"^Т([БМ])\s*([+-]?\d+(?:\.\d+)?)$", up)
+    if m_tot:
+        kind, line_str = m_tot.group(1), m_tot.group(2)
+        line = float(line_str)
+        if total == line:
+            return "refund"
+        if kind == "Б":
+            return "won" if total > line else "lost"
+        return "won" if total < line else "lost"
+
+    m_hcap = re.match(r"^Ф([12])\s*\(([+-]?\d+(?:\.\d+)?)\)$", up)
+    if m_hcap:
+        side, line_str = m_hcap.group(1), m_hcap.group(2)
+        line = float(line_str)
+        diff = (s1 + line - s2) if side == "1" else (s2 + line - s1)
+        if abs(diff) < 1e-9:
+            return "refund"
+        return "won" if diff > 0 else "lost"
+
+    return None
+
+
+async def _apply_bet_settlement(
+    uid: str,
+    bet_id: str,
+    bet: Dict[str, Any],
+    new_status: str,
+    payout_amount: float,
+    updated_events: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    patch_data: Dict[str, Any] = {
+        "status": new_status,
+        "settled_at": int(time.time()),
+    }
+    if updated_events is not None:
+        patch_data["events"] = updated_events
+    if new_status == "won":
+        patch_data["potential_win"] = round(payout_amount, 2)
+
+    await firebase_patch(f"users/{uid}/bets/{bet_id}", patch_data)
+
+    user_data = await firebase_get(f"users/{uid}")
+    if not isinstance(user_data, dict):
+        return
+
+    cur_bal = float(user_data.get("balance", 0.0))
+    new_bal = round(cur_bal + payout_amount, 2) if payout_amount > 0 else cur_bal
+
+    all_bets = _collect_user_bets(user_data)
+    for item in all_bets:
+        if str(item.get("id")) == str(bet_id):
+            item["status"] = new_status
+
+    total_bets = len(all_bets)
+    won_bets = sum(1 for b in all_bets if b.get("status") == "won")
+    winrate = int(round((won_bets / total_bets) * 100)) if total_bets > 0 else 0
+
+    await firebase_patch(
+        f"users/{uid}",
+        {
+            "balance": new_bal,
+            "total_bets": total_bets,
+            "won_bets": won_bets,
+            "wins": won_bets,
+            "winrate": winrate,
+        },
+    )
+
+    if payout_amount > 0:
+        tx_title = "Выигрыш по ставке" if new_status == "won" else "Возврат по ставке"
+        await firebase_put(
+            f"transactions/{uid}/settle_{bet_id}",
+            {
+                "id": f"settle_{bet_id}",
+                "type": "win" if new_status == "won" else "refund",
+                "title": tx_title,
+                "amount": round(payout_amount, 2),
+                "created_at": int(time.time()),
+            },
+        )
+    logger.info(f"Авторасчёт ставки {bet_id} (user={uid}): status={new_status}, payout={payout_amount}")
+
+
+async def settle_active_bets(finished_map: Dict[str, Dict[str, Any]]) -> None:
+    if not finished_map:
+        return
+    users_raw = await firebase_get("users")
+    if not isinstance(users_raw, dict):
+        return
+
+    for uid, udata in users_raw.items():
+        if not isinstance(udata, dict):
+            continue
+        bets_dict = udata.get("bets")
+        if not isinstance(bets_dict, dict):
+            continue
+
+        for bet_id, bet in bets_dict.items():
+            if not isinstance(bet, dict) or bet.get("status") != "active":
+                continue
+
+            events = bet.get("events")
+            amount = float(bet.get("amount") or 0)
+            if amount <= 0:
+                continue
+
+            if isinstance(events, list) and len(events) > 0:
+                leg_results: List[Optional[str]] = []
+                updated_events: List[Dict[str, Any]] = []
+                eff_coef = 1.0
+
+                for ev in events:
+                    ev_copy = dict(ev)
+                    mid = str(ev_copy.get("matchId") or "")
+                    if not mid.startswith("fonbet_") and mid:
+                        mid = f"fonbet_{mid.replace('fon_', '')}"
+                    fin = finished_map.get(mid)
+                    if fin and isinstance(fin.get("score1"), int) and isinstance(fin.get("score2"), int):
+                        res = _evaluate_leg_outcome(
+                            str(ev_copy.get("outcomeLabel") or ev_copy.get("outcome") or ""),
+                            fin["score1"],
+                            fin["score2"],
+                        )
+                    else:
+                        res = ev_copy.get("status") if ev_copy.get("status") in ("won", "lost", "refund") else None
+
+                    if res:
+                        ev_copy["status"] = res
+                    leg_results.append(res)
+                    updated_events.append(ev_copy)
+
+                    if res == "won":
+                        eff_coef *= float(ev_copy.get("coeff") or 1.0)
+                    elif res == "refund":
+                        eff_coef *= 1.0
+
+                if "lost" in leg_results:
+                    await _apply_bet_settlement(uid, bet_id, bet, "lost", 0.0, updated_events)
+                elif all(r in ("won", "refund") for r in leg_results):
+                    if all(r == "refund" for r in leg_results):
+                        await _apply_bet_settlement(uid, bet_id, bet, "refund", amount, updated_events)
+                    else:
+                        payout = round(amount * eff_coef, 2)
+                        await _apply_bet_settlement(uid, bet_id, bet, "won", payout, updated_events)
+            else:
+                mid = str(bet.get("match_id") or "")
+                if not mid.startswith("fonbet_") and mid:
+                    mid = f"fonbet_{mid.replace('fon_', '')}"
+                fin = finished_map.get(mid)
+                if not fin or not isinstance(fin.get("score1"), int) or not isinstance(fin.get("score2"), int):
+                    continue
+                res = _evaluate_leg_outcome(str(bet.get("outcome") or ""), fin["score1"], fin["score2"])
+                if res == "lost":
+                    await _apply_bet_settlement(uid, bet_id, bet, "lost", 0.0)
+                elif res == "refund":
+                    await _apply_bet_settlement(uid, bet_id, bet, "refund", amount)
+                elif res == "won":
+                    coef = float(bet.get("total_coefficient") or bet.get("coefficient") or bet.get("odd") or 1.0)
+                    payout = round(amount * coef, 2)
+                    await _apply_bet_settlement(uid, bet_id, bet, "won", payout)
+
+
 async def scrape_once() -> Dict[str, Any]:
+    global previous_live_matches
     raw_data = await _fetch_fonbet_list_base()
     if not raw_data:
         logger.warning("Не удалось получить listBase от Fonbet")
@@ -890,6 +1079,8 @@ async def scrape_once() -> Dict[str, Any]:
     live_matches: List[Dict[str, Any]] = []
     prematch_matches: List[Dict[str, Any]] = []
     matches_by_id: Dict[str, Dict[str, Any]] = {}
+    newly_finished: Dict[str, Dict[str, Any]] = {}
+    current_live_snapshot: Dict[str, Dict[str, Any]] = {}
 
     for ev, league_name, t1, t2, is_live in filtered_events:
         eid = ev["id"]
@@ -897,10 +1088,21 @@ async def scrape_once() -> Dict[str, Any]:
         factors = base_factors_by_event.get(eid, [])
         p1, px, p2 = _extract_1x2_odds(factors)
 
+        misc = misc_by_event.get(eid, {})
+        if is_live:
+            s1, s2, status_str = _parse_live_status_and_score(ev, misc)
+            score_str = f"{s1}:{s2}"
+            current_live_snapshot[full_id] = {"raw_id": eid, "score1": s1, "score2": s2, "status": status_str}
+            if status_str == "LIVE · FT":
+                newly_finished[full_id] = {"score1": s1, "score2": s2, "finished_at": int(time.time())}
+        else:
+            s1, s2 = 0, 0
+            status_str = "PREMATCH"
+            score_str = "VS"
+
         if not (p1 or px or p2):
             continue
 
-        misc = misc_by_event.get(eid, {})
         h_logo = _get_team_logo(t1, league_name, exact_logo_idx, fallback_logo_idx)
         a_logo = _get_team_logo(t2, league_name, exact_logo_idx, fallback_logo_idx)
 
@@ -912,14 +1114,6 @@ async def scrape_once() -> Dict[str, Any]:
             missing_logos.append((t2, league_name))
 
         start_ts = int(ev.get("startTime") or 0)
-        if is_live:
-            s1, s2, status_str = _parse_live_status_and_score(ev, misc)
-            score_str = f"{s1}:{s2}"
-        else:
-            s1, s2 = 0, 0
-            status_str = "PREMATCH"
-            score_str = "VS"
-
         safe_t1 = t1.replace("'", "’")
         safe_t2 = t2.replace("'", "’")
         safe_league = league_name.replace("'", "’")
@@ -959,6 +1153,35 @@ async def scrape_once() -> Dict[str, Any]:
             live_matches.append(match_obj)
         else:
             prematch_matches.append(match_obj)
+
+    # Проверяем матчи, которые были в Live на прошлом цикле, но уже исчезли после завершения
+    for prev_id, prev_info in previous_live_matches.items():
+        if prev_id not in current_live_snapshot and prev_id not in newly_finished:
+            raw_id = prev_info.get("raw_id")
+            if isinstance(raw_id, int):
+                full_ev = await _fetch_fonbet_event_full(raw_id)
+                if full_ev:
+                    for em in full_ev.get("eventMiscs") or []:
+                        if em.get("id") == raw_id:
+                            comm = (em.get("comment") or "").lower()
+                            if "завершен" in comm or "завершён" in comm or comm == "ft":
+                                sc1 = em.get("score1", prev_info.get("score1", 0))
+                                sc2 = em.get("score2", prev_info.get("score2", 0))
+                                if isinstance(sc1, int) and isinstance(sc2, int):
+                                    newly_finished[prev_id] = {
+                                        "score1": sc1,
+                                        "score2": sc2,
+                                        "finished_at": int(time.time()),
+                                    }
+
+    previous_live_matches = current_live_snapshot
+
+    if newly_finished:
+        await firebase_patch("finished_matches", newly_finished)
+
+    finished_cache = await firebase_get("finished_matches")
+    if isinstance(finished_cache, dict) and finished_cache:
+        await settle_active_bets(finished_cache)
 
     for t, lg in missing_logos:
         asyncio.create_task(_resolve_and_cache_logo(t, lg))
@@ -1014,14 +1237,24 @@ async def fonbet_scraper_worker() -> None:
 
 
 # =====================================================================
-# TELEGRAM БОТ (AIOGRAM 3: /start, TELEGRAM STARS И АДМИН-КОМАНДЫ)
+# TELEGRAM БОТ (AIOGRAM 3: /start, TELEGRAM STARS, ОПОВЕЩЕНИЯ И АДМИНКА)
 # =====================================================================
 
 bot_router = Router()
 
 
 def _is_admin(user_id: int) -> bool:
-    return not ADMIN_IDS or user_id in ADMIN_IDS
+    return bool(ADMIN_IDS) and user_id in ADMIN_IDS
+
+
+async def _notify_admins(text: str) -> None:
+    if not bot_instance or not ADMIN_IDS:
+        return
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot_instance.send_message(admin_id, text, parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"Не удалось отправить уведомление админу {admin_id}: {e}")
 
 
 async def _ensure_user_in_db(
@@ -1103,8 +1336,9 @@ async def cmd_start(message: Message) -> None:
             ]
         ]
     )
+    safe_name = html.escape(user.first_name or "Игрок")
     await message.answer(
-        f"Привет, <b>{user.first_name}</b>!\n\n"
+        f"Привет, <b>{safe_name}</b>!\n\n"
         "Добро пожаловать в <b>WinStars</b> — спортивные прогнозы на Telegram Stars.\n"
         "Нажми кнопку ниже, чтобы открыть линию матчей:",
         parse_mode="HTML",
@@ -1128,7 +1362,7 @@ async def cmd_admin(message: Message) -> None:
     for req in pending[:15]:
         rid = req.get("id")
         uid = req.get("user_id")
-        uname = req.get("username") or str(uid)
+        uname = html.escape(str(req.get("username") or uid))
         amt = req.get("amount", 0)
         payout = req.get("payout", 0)
         kb = InlineKeyboardMarkup(
@@ -1142,7 +1376,7 @@ async def cmd_admin(message: Message) -> None:
         await message.answer(
             f"Заявка <b>#{rid}</b>\n"
             f"Игрок: @{uname} (<code>{uid}</code>)\n"
-            f"Сумма: <b>{amt}</b> | К выплате (-5%): <b>{payout}</b>",
+            f"Сумма: <b>{amt}⭐</b> | К выплате (-5%): <b>{payout}⭐</b>",
             parse_mode="HTML",
             reply_markup=kb,
         )
@@ -1164,7 +1398,7 @@ async def on_withdraw_action(cb: CallbackQuery) -> None:
     if action == "wd_ok":
         await firebase_patch(f"withdrawals/{rid}", {"status": "approved", "processed_at": int(time.time())})
         if cb.message:
-            await cb.message.edit_text(f"Заявка #{rid} одобрена (выплата {req.get('payout')} звёзд).")
+            await cb.message.edit_text(f"Заявка #{rid} одобрена (выплата {req.get('payout')}⭐).")
     else:
         await firebase_patch(f"withdrawals/{rid}", {"status": "rejected", "processed_at": int(time.time())})
         u = await firebase_get(f"users/{uid}") or {}
@@ -1181,7 +1415,7 @@ async def on_withdraw_action(cb: CallbackQuery) -> None:
             },
         )
         if cb.message:
-            await cb.message.edit_text(f"Заявка #{rid} отклонена, {amt} звёзд возвращено на баланс.")
+            await cb.message.edit_text(f"Заявка #{rid} отклонена, {amt}⭐ возвращено на баланс.")
     await cb.answer()
 
 
@@ -1197,7 +1431,7 @@ async def cmd_promo_create(message: Message) -> None:
     bonus = float(parts[2])
     uses = int(parts[3])
     await firebase_put(f"promos/{code}", {"code": code, "bonus": bonus, "uses": uses, "created_at": int(time.time())})
-    await message.answer(f"Промокод <b>{code}</b> создан: +{bonus} звёзд ({uses} активаций).", parse_mode="HTML")
+    await message.answer(f"Промокод <b>{code}</b> создан: +{bonus}⭐ ({uses} активаций).", parse_mode="HTML")
 
 
 @bot_router.message(Command("promo_list"))
@@ -1209,7 +1443,7 @@ async def cmd_promo_list(message: Message) -> None:
         await message.answer("Активных промокодов нет.")
         return
     lines = [
-        f"• <b>{k}</b>: +{v.get('bonus')} звёзд (осталось {v.get('uses')})"
+        f"• <b>{k}</b>: +{v.get('bonus')}⭐ (осталось {v.get('uses')})"
         for k, v in promos.items()
         if isinstance(v, dict)
     ]
@@ -1243,11 +1477,31 @@ async def cmd_refund(message: Message) -> None:
         await message.answer("Ставка не найдена.")
         return
     amt = float(bet.get("amount", 0))
-    await firebase_patch(f"users/{uid}/bets/{bet_id}", {"status": "refund"})
-    u = await firebase_get(f"users/{uid}") or {}
-    new_bal = round(float(u.get("balance", 0)) + amt, 2)
-    await firebase_patch(f"users/{uid}", {"balance": new_bal})
-    await message.answer(f"Возврат по ставке <code>{bet_id}</code> выполнен (+{amt} звёзд).", parse_mode="HTML")
+    await _apply_bet_settlement(uid, bet_id, bet, "refund", amt)
+    await message.answer(f"Возврат по ставке <code>{bet_id}</code> выполнен (+{amt}⭐).", parse_mode="HTML")
+
+
+@bot_router.message(Command("settle_bet"))
+async def cmd_settle_bet(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 4 or parts[3].lower() not in ("won", "lost", "refund"):
+        await message.answer("Формат: <code>/settle_bet USER_ID BET_ID won|lost|refund</code>", parse_mode="HTML")
+        return
+    uid, bet_id, status = parts[1], parts[2], parts[3].lower()
+    bet = await firebase_get(f"users/{uid}/bets/{bet_id}")
+    if not isinstance(bet, dict):
+        await message.answer("Ставка не найдена.")
+        return
+    amt = float(bet.get("amount", 0))
+    coef = float(bet.get("total_coefficient") or bet.get("coefficient") or bet.get("odd") or 1.0)
+    payout = round(amt * coef, 2) if status == "won" else (amt if status == "refund" else 0.0)
+    await _apply_bet_settlement(uid, bet_id, bet, status, payout)
+    await message.answer(
+        f"Ставка <code>{bet_id}</code> рассчитана как <b>{status}</b> (выплата: <b>{payout}⭐</b>).",
+        parse_mode="HTML",
+    )
 
 
 @bot_router.message(Command("add_balance"))
@@ -1262,7 +1516,7 @@ async def cmd_add_balance(message: Message) -> None:
     u = await _ensure_user_in_db(int(uid))
     new_bal = round(float(u.get("balance", 0)) + delta, 2)
     await firebase_patch(f"users/{uid}", {"balance": new_bal})
-    await message.answer(f"Баланс игрока <code>{uid}</code> обновлён: <b>{new_bal}</b>", parse_mode="HTML")
+    await message.answer(f"Баланс игрока <code>{uid}</code> обновлён: <b>{new_bal}⭐</b>", parse_mode="HTML")
 
 
 @bot_router.message(Command("set_balance"))
@@ -1276,7 +1530,7 @@ async def cmd_set_balance(message: Message) -> None:
     uid, val = parts[1], round(float(parts[2]), 2)
     await _ensure_user_in_db(int(uid))
     await firebase_patch(f"users/{uid}", {"balance": val})
-    await message.answer(f"Баланс игрока <code>{uid}</code> установлен на <b>{val}</b>", parse_mode="HTML")
+    await message.answer(f"Баланс игрока <code>{uid}</code> установлен на <b>{val}⭐</b>", parse_mode="HTML")
 
 
 @bot_router.message(Command("add_refs"))
@@ -1353,7 +1607,15 @@ async def on_successful_payment(message: Message) -> None:
         },
     )
     logger.info(f"Пополнение Stars: user={uid}, +{amount} XTR, баланс={new_balance}")
-    await message.answer(f"Баланс пополнен на <b>{amount}</b> звёзд!", parse_mode="HTML")
+
+    amt_fmt = int(amount) if amount.is_integer() else amount
+    uname_str = f"@{html.escape(user.username)}" if user.username else html.escape(user.first_name or "Игрок")
+    await _notify_admins(
+        f"Пользователь {uname_str}, <code>{uid}</code>\n"
+        f"Пополнил свой баланс на <b>{amt_fmt}⭐</b>"
+    )
+
+    await message.answer(f"Баланс пополнен на <b>{amt_fmt}⭐</b>!", parse_mode="HTML")
 
 
 async def run_telegram_bot() -> None:
@@ -1507,7 +1769,9 @@ async def get_match_markets(match_id: str) -> Dict[str, Any]:
                     factors = cf.get("factors") or []
 
     grouped_markets = _build_grouped_markets(factors)
-    if not grouped_markets and isinstance(match_obj.get("odds"), dict):
+    if grouped_markets and isinstance(match_obj.get("odds"), dict):
+        pass
+    elif not grouped_markets and isinstance(match_obj.get("odds"), dict):
         odds = match_obj["odds"]
         fallback_outcomes = []
         for k, label in (("1", "П1"), ("X", "Х"), ("2", "П2")):
@@ -1569,7 +1833,7 @@ async def place_bet(request: Request) -> Dict[str, Any]:
 
     balance = round(float(user_data.get("balance", 0.0)), 2)
     if balance < amount:
-        raise HTTPException(status_code=400, detail="Недостаточно звёзд на балансе")
+        raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
 
     match_info = (latest_matches_cache.get("matches") or {}).get(full_id) or await firebase_get(f"matches/{full_id}") or {}
 
@@ -1636,7 +1900,7 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
     uid = str(tg_info["id"])
     amount = round(float(body.get("amount") or 0), 2)
     if amount < 1000:
-        raise HTTPException(status_code=400, detail="Минимальный вывод — 1000 звёзд")
+        raise HTTPException(status_code=400, detail="Минимальный вывод — 1000 звёзд (1500 ₽)")
 
     user_data = await firebase_get(f"users/{uid}")
     if not isinstance(user_data, dict):
@@ -1676,6 +1940,17 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
             "created_at": int(time.time()),
         },
     )
+
+    uname_raw = str(user_data.get("username") or "")
+    uname_str = f"@{html.escape(uname_raw)}" if uname_raw else html.escape(str(user_data.get("first_name") or "Игрок"))
+    amt_fmt = int(amount) if amount.is_integer() else amount
+    payout_fmt = int(payout) if payout.is_integer() else payout
+    await _notify_admins(
+        f"Пользователь {uname_str}, <code>{uid}</code>\n"
+        f"Подал заявку на вывод <b>{amt_fmt}⭐</b> (к выплате <b>{payout_fmt}⭐</b>).\n"
+        f"Проверьте заявку введя /admin"
+    )
+
     return {"status": "ok", "ok": True, "balance": new_balance, "stars": new_balance, "payout": payout}
 
 
@@ -1780,10 +2055,18 @@ async def websocket_chat(ws: WebSocket) -> None:
                 msg = json.loads(raw)
             except Exception:
                 continue
-            msg["ts"] = int(time.time())
-            msg_id = f"{msg['ts']}_{uuid.uuid4().hex[:6]}"
-            await firebase_put(f"chat_messages/{msg_id}", msg)
-            await _broadcast_ws(chat_websockets, {"type": "chat_message", "data": msg})
+            text_clean = str(msg.get("text") or "").strip()[:300]
+            if not text_clean:
+                continue
+            clean_msg = {
+                "user_id": int(msg.get("user_id") or 0),
+                "author": str(msg.get("author") or "Игрок").strip()[:40],
+                "text": text_clean,
+                "ts": int(time.time()),
+            }
+            msg_id = f"{clean_msg['ts']}_{uuid.uuid4().hex[:6]}"
+            await firebase_put(f"chat_messages/{msg_id}", clean_msg)
+            await _broadcast_ws(chat_websockets, {"type": "chat_message", "data": clean_msg})
     except WebSocketDisconnect:
         pass
     finally:
