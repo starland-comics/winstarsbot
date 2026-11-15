@@ -6,10 +6,21 @@ import os
 import re
 import time
 import urllib.parse
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.filters import CommandStart
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LabeledPrice,
+    Message,
+    PreCheckoutQuery,
+    WebAppInfo,
+)
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,6 +40,7 @@ FIREBASE_URL = os.getenv(
 ).rstrip("/")
 FIREBASE_SECRET = os.getenv("FIREBASE_SECRET", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://winstars-app.onrender.com")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "winstars_admin")
 
 LIVE_POLL_SEC = 20
@@ -58,7 +70,7 @@ HEADERS = {
 }
 
 # =====================================================================
-# ФИЛЬТРЫ ЛИГ И КОМАНД (ИСПРАВЛЕНЫ ЛИГА НАЦИЙ И СБОРНЫЕ)
+# ФИЛЬТРЫ ЛИГ И КОМАНД
 # =====================================================================
 
 ALLOWED_LEAGUE_PATTERNS = [
@@ -191,12 +203,16 @@ _LOGO_MISS_CACHE: Dict[Tuple[str, str], float] = {}
 # =====================================================================
 
 http_client: Optional[httpx.AsyncClient] = None
+bot_instance: Optional[Bot] = None
+
 latest_matches_cache: Dict[str, Any] = {
     "live": [],
     "prematch": [],
+    "matches": {},
     "updated_at": 0,
 }
 active_websockets: set = set()
+chat_websockets: set = set()
 force_refresh_event = asyncio.Event()
 
 
@@ -403,7 +419,6 @@ async def _resolve_and_cache_logo(team: str, league: str) -> None:
 
 
 async def cleanup_broken_logos() -> int:
-    """Удаляет из Firebase кривые записи (например, Алания -> Alanyaspor)."""
     raw_cache = await firebase_get("team_logos")
     if not isinstance(raw_cache, dict):
         return 0
@@ -641,6 +656,7 @@ async def scrape_once() -> Dict[str, Any]:
 
     live_matches: List[Dict[str, Any]] = []
     prematch_matches: List[Dict[str, Any]] = []
+    matches_by_id: Dict[str, Dict[str, Any]] = {}
 
     for ev, league_name, t1, t2, is_live in filtered_events:
         eid = ev["id"]
@@ -663,35 +679,45 @@ async def scrape_once() -> Dict[str, Any]:
             seen_missing.add((t2, league_name))
             missing_logos.append((t2, league_name))
 
+        if is_live:
+            s1, s2, minute_str, status_str = _parse_live_timer_and_score(ev, misc)
+        else:
+            s1, s2, minute_str, status_str = 0, 0, "", "PREMATCH"
+
         match_obj: Dict[str, Any] = {
             "id": eid,
             "league": league_name,
+            "team1": t1,
+            "team2": t2,
+            "logo1": h_logo,
+            "logo2": a_logo,
+            "p1": p1,
+            "px": px,
+            "p2": p2,
             "home": t1,
             "away": t2,
             "home_logo": h_logo,
             "away_logo": a_logo,
-            "start_time": ev.get("startTime") or 0,
-            "is_live": is_live,
             "odds": {
                 "1": p1,
                 "X": px,
                 "2": p2,
                 **extra_markets,
             },
+            "markets": extra_markets,
+            "start_time": ev.get("startTime") or 0,
+            "is_live": is_live,
+            "score1": s1,
+            "score2": s2,
+            "score": f"{s1}:{s2}" if is_live else "",
+            "minute": minute_str,
+            "status": status_str,
         }
 
+        matches_by_id[str(eid)] = match_obj
         if is_live:
-            s1, s2, minute_str, status_str = _parse_live_timer_and_score(ev, misc)
-            match_obj["score1"] = s1
-            match_obj["score2"] = s2
-            match_obj["minute"] = minute_str
-            match_obj["status"] = status_str
             live_matches.append(match_obj)
         else:
-            match_obj["score1"] = 0
-            match_obj["score2"] = 0
-            match_obj["minute"] = ""
-            match_obj["status"] = "PREMATCH"
             prematch_matches.append(match_obj)
 
     for t, lg in missing_logos:
@@ -700,12 +726,14 @@ async def scrape_once() -> Dict[str, Any]:
     payload = {
         "live": live_matches,
         "prematch": prematch_matches,
+        "matches": matches_by_id,
         "updated_at": int(time.time()),
     }
 
     latest_matches_cache.update(payload)
+    await firebase_put("matches", matches_by_id)
     await firebase_put("matches_feed", payload)
-    await _broadcast_ws({"type": "matches_update", "data": payload})
+    await _broadcast_ws(active_websockets, {"type": "matches_update", "data": payload})
 
     logger.info(
         f"Цикл завершён: Live={len(live_matches)}, Prematch={len(prematch_matches)}, "
@@ -714,18 +742,18 @@ async def scrape_once() -> Dict[str, Any]:
     return payload
 
 
-async def _broadcast_ws(message: Dict[str, Any]) -> None:
-    if not active_websockets:
+async def _broadcast_ws(pool: set, message: Dict[str, Any]) -> None:
+    if not pool:
         return
     dead = []
     text = json.dumps(message, ensure_ascii=False)
-    for ws in list(active_websockets):
+    for ws in list(pool):
         try:
             await ws.send_text(text)
         except Exception:
             dead.append(ws)
     for ws in dead:
-        active_websockets.discard(ws)
+        pool.discard(ws)
 
 
 async def fonbet_scraper_worker() -> None:
@@ -744,19 +772,160 @@ async def fonbet_scraper_worker() -> None:
 
 
 # =====================================================================
-# FASTAPI ПРИЛОЖЕНИЕ И ЭНДПОИНТЫ
+# TELEGRAM БОТ (AIOGRAM 3: /start И TELEGRAM STARS)
+# =====================================================================
+
+bot_router = Router()
+
+
+async def _ensure_user_in_db(
+    user_id: int,
+    username: str = "",
+    first_name: str = "",
+    ref_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    uid = str(user_id)
+    user_data = await firebase_get(f"users/{uid}")
+    now = int(time.time())
+
+    if not isinstance(user_data, dict):
+        user_data = {
+            "id": user_id,
+            "username": username,
+            "first_name": first_name,
+            "balance": 0,
+            "referrals": 0,
+            "referred_by": None,
+            "created_at": now,
+            "last_seen": now,
+        }
+        if ref_id and ref_id != user_id:
+            ref_user = await firebase_get(f"users/{ref_id}")
+            if isinstance(ref_user, dict):
+                user_data["referred_by"] = ref_id
+                new_refs = int(ref_user.get("referrals", 0)) + 1
+                await firebase_patch(f"users/{ref_id}", {"referrals": new_refs})
+        await firebase_put(f"users/{uid}", user_data)
+    else:
+        updates: Dict[str, Any] = {"last_seen": now}
+        if username:
+            updates["username"] = username
+        if first_name:
+            updates["first_name"] = first_name
+        user_data.update(updates)
+        await firebase_patch(f"users/{uid}", updates)
+
+    return user_data
+
+
+@bot_router.message(CommandStart())
+async def cmd_start(message: Message) -> None:
+    user = message.from_user
+    if not user:
+        return
+
+    ref_id: Optional[int] = None
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) > 1 and parts[1].isdigit():
+        ref_id = int(parts[1])
+
+    await _ensure_user_in_db(
+        user_id=user.id,
+        username=user.username or "",
+        first_name=user.first_name or "",
+        ref_id=ref_id,
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚽ Открыть WinStars",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        f"Привет, <b>{user.first_name}</b>!\n\n"
+        "Добро пожаловать в <b>WinStars</b> — виртуальные спортивные прогнозы на Telegram Stars.\n"
+        "Нажми кнопку ниже, чтобы открыть линию матчей:",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@bot_router.pre_checkout_query()
+async def on_pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
+    await pre_checkout_query.answer(ok=True)
+
+
+@bot_router.message(F.successful_payment)
+async def on_successful_payment(message: Message) -> None:
+    sp = message.successful_payment
+    user = message.from_user
+    if not sp or not user:
+        return
+
+    amount = int(sp.total_amount)
+    uid = str(user.id)
+    user_data = await _ensure_user_in_db(user.id, user.username or "", user.first_name or "")
+    new_balance = int(user_data.get("balance", 0)) + amount
+
+    await firebase_patch(f"users/{uid}", {"balance": new_balance})
+    tx_id = str(uuid.uuid4())[:8]
+    await firebase_put(
+        f"transactions/{uid}/{tx_id}",
+        {
+            "type": "deposit",
+            "amount": amount,
+            "currency": sp.currency,
+            "payload": sp.invoice_payload,
+            "created_at": int(time.time()),
+        },
+    )
+    logger.info(f"Пополнение Stars: user={uid}, +{amount} XTR, баланс={new_balance}")
+    await message.answer(f"✅ Баланс пополнен на <b>{amount} ⭐</b>!", parse_mode="HTML")
+
+
+async def run_telegram_bot() -> None:
+    global bot_instance
+    if not BOT_TOKEN:
+        logger.warning("BOT_TOKEN не задан — Telegram-бот не запущен!")
+        return
+
+    bot_instance = Bot(token=BOT_TOKEN)
+    dp = Dispatcher()
+    dp.include_router(bot_router)
+    try:
+        await bot_instance.delete_webhook(drop_pending_updates=False)
+        logger.info("Telegram-бот (polling) запущен")
+        await dp.start_polling(bot_instance, handle_signals=False)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.exception(f"Ошибка в Telegram-боте: {e}")
+    finally:
+        if bot_instance:
+            await bot_instance.session.close()
+
+
+# =====================================================================
+# FASTAPI ПРИЛОЖЕНИЕ И ЭНДПОИНТЫ MINI APP
 # =====================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global http_client
     http_client = httpx.AsyncClient(headers=HEADERS, follow_redirects=True)
-    worker_task = asyncio.create_task(fonbet_scraper_worker())
+    scraper_task = asyncio.create_task(fonbet_scraper_worker())
+    bot_task = asyncio.create_task(run_telegram_bot())
     logger.info("WinStars backend запущен")
     try:
         yield
     finally:
-        worker_task.cancel()
+        scraper_task.cancel()
+        bot_task.cancel()
         if http_client:
             await http_client.aclose()
 
@@ -776,9 +945,48 @@ app.add_middleware(
 async def health() -> Dict[str, Any]:
     return {
         "ok": True,
+        "bot_active": bot_instance is not None,
         "live_count": len(latest_matches_cache.get("live", [])),
         "prematch_count": len(latest_matches_cache.get("prematch", [])),
         "updated_at": latest_matches_cache.get("updated_at", 0),
+    }
+
+
+@app.api_route("/api/user/sync", methods=["GET", "POST"])
+async def sync_user(request: Request) -> Dict[str, Any]:
+    body: Dict[str, Any] = {}
+    if request.method == "POST":
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+    raw_uid = (
+        body.get("user_id")
+        or body.get("id")
+        or request.query_params.get("user_id")
+        or request.query_params.get("id")
+    )
+    if not raw_uid:
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    uid_int = int(raw_uid)
+    user_data = await _ensure_user_in_db(
+        user_id=uid_int,
+        username=str(body.get("username") or ""),
+        first_name=str(body.get("first_name") or ""),
+        ref_id=int(body["ref_id"]) if str(body.get("ref_id", "")).isdigit() else None,
+    )
+    bets_raw = await firebase_get(f"bets/{uid_int}") or {}
+    bets_list = list(bets_raw.values()) if isinstance(bets_raw, dict) else []
+    bets_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+
+    return {
+        "ok": True,
+        "user": user_data,
+        "balance": user_data.get("balance", 0),
+        "referrals": user_data.get("referrals", 0),
+        "bets": bets_list,
     }
 
 
@@ -790,6 +998,134 @@ async def get_matches() -> Dict[str, Any]:
     if isinstance(fb_data, dict):
         return fb_data
     return latest_matches_cache
+
+
+@app.post("/api/bets/place")
+async def place_bet(request: Request) -> Dict[str, Any]:
+    body = await request.json()
+    uid = str(body.get("user_id") or "")
+    match_id = str(body.get("match_id") or "")
+    outcome = str(body.get("outcome") or body.get("pick") or "")
+    amount = int(body.get("amount") or 0)
+    odd = float(body.get("odd") or body.get("coef") or 0)
+
+    if not uid or not match_id or not outcome or amount <= 0 or odd <= 1.0:
+        raise HTTPException(status_code=400, detail="Некорректные параметры ставки")
+
+    user_data = await firebase_get(f"users/{uid}")
+    if not isinstance(user_data, dict):
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    balance = int(user_data.get("balance", 0))
+    if balance < amount:
+        raise HTTPException(status_code=400, detail="Недостаточно звёзд на балансе")
+
+    match_info = (latest_matches_cache.get("matches") or {}).get(match_id) or await firebase_get(f"matches/{match_id}") or {}
+    new_balance = balance - amount
+    await firebase_patch(f"users/{uid}", {"balance": new_balance})
+
+    bet_id = str(uuid.uuid4())[:10]
+    bet_obj = {
+        "id": bet_id,
+        "user_id": int(uid),
+        "match_id": match_id,
+        "team1": match_info.get("team1", body.get("team1", "")),
+        "team2": match_info.get("team2", body.get("team2", "")),
+        "league": match_info.get("league", body.get("league", "")),
+        "outcome": outcome,
+        "odd": round(odd, 2),
+        "amount": amount,
+        "potential_win": int(round(amount * odd)),
+        "status": "pending",
+        "created_at": int(time.time()),
+    }
+    await firebase_put(f"bets/{uid}/{bet_id}", bet_obj)
+    return {"ok": True, "balance": new_balance, "bet": bet_obj}
+
+
+@app.post("/api/cashier/invoice")
+async def create_stars_invoice(request: Request) -> Dict[str, Any]:
+    if not bot_instance:
+        raise HTTPException(status_code=503, detail="Бот не инициализирован (проверьте BOT_TOKEN)")
+    body = await request.json()
+    uid = str(body.get("user_id") or "")
+    amount = int(body.get("amount") or 0)
+    if not uid or amount < 1:
+        raise HTTPException(status_code=400, detail="Некорректная сумма")
+
+    link = await bot_instance.create_invoice_link(
+        title=f"Пополнение баланса WinStars ({amount} ⭐)",
+        description=f"Зачисление {amount} Telegram Stars на игровой баланс",
+        payload=f"topup_{uid}_{amount}_{int(time.time())}",
+        currency="XTR",
+        prices=[LabeledPrice(label=f"{amount} Stars", amount=amount)],
+    )
+    return {"ok": True, "invoice_link": link, "url": link}
+
+
+@app.post("/api/cashier/withdraw")
+async def withdraw_stars(request: Request) -> Dict[str, Any]:
+    body = await request.json()
+    uid = str(body.get("user_id") or "")
+    amount = int(body.get("amount") or 0)
+    if not uid or amount < 1000:
+        raise HTTPException(status_code=400, detail="Минимальный вывод — 1000 звёзд")
+
+    user_data = await firebase_get(f"users/{uid}")
+    if not isinstance(user_data, dict):
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    if int(user_data.get("referrals", 0)) < 5:
+        raise HTTPException(status_code=400, detail="Для вывода нужно пригласить минимум 5 друзей")
+
+    balance = int(user_data.get("balance", 0))
+    if balance < amount:
+        raise HTTPException(status_code=400, detail="Недостаточно средств")
+
+    new_balance = balance - amount
+    payout = int(round(amount * 0.95))
+    await firebase_patch(f"users/{uid}", {"balance": new_balance})
+
+    req_id = str(uuid.uuid4())[:8]
+    await firebase_put(
+        f"withdrawals/{req_id}",
+        {
+            "id": req_id,
+            "user_id": int(uid),
+            "username": user_data.get("username", ""),
+            "amount": amount,
+            "payout": payout,
+            "status": "pending",
+            "created_at": int(time.time()),
+        },
+    )
+    return {"ok": True, "balance": new_balance, "payout": payout}
+
+
+@app.post("/api/promo/activate")
+async def activate_promo(request: Request) -> Dict[str, Any]:
+    body = await request.json()
+    uid = str(body.get("user_id") or "")
+    code = (body.get("code") or "").strip().upper()
+    if not uid or not code:
+        raise HTTPException(status_code=400, detail="Введите промокод")
+
+    promo = await firebase_get(f"promos/{code}")
+    if not isinstance(promo, dict) or int(promo.get("uses", 0)) <= 0:
+        raise HTTPException(status_code=400, detail="Промокод недействителен или закончился")
+
+    used = await firebase_get(f"promo_used/{uid}/{code}")
+    if used:
+        raise HTTPException(status_code=400, detail="Вы уже активировали этот промокод")
+
+    bonus = int(promo.get("bonus", 0))
+    user_data = await _ensure_user_in_db(int(uid))
+    new_balance = int(user_data.get("balance", 0)) + bonus
+
+    await firebase_patch(f"users/{uid}", {"balance": new_balance})
+    await firebase_patch(f"promos/{code}", {"uses": int(promo.get("uses", 1)) - 1})
+    await firebase_put(f"promo_used/{uid}/{code}", int(time.time()))
+    return {"ok": True, "bonus": bonus, "balance": new_balance}
 
 
 @app.post("/api/admin/force-refresh")
@@ -834,6 +1170,25 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         active_websockets.discard(ws)
+
+
+@app.websocket("/ws/chat")
+async def websocket_chat(ws: WebSocket) -> None:
+    await ws.accept()
+    chat_websockets.add(ws)
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+            msg["ts"] = int(time.time())
+            await _broadcast_ws(chat_websockets, {"type": "chat_message", "data": msg})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        chat_websockets.discard(ws)
 
 
 if __name__ == "__main__":
