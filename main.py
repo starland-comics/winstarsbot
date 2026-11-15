@@ -1,5 +1,7 @@
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -208,7 +210,8 @@ bot_instance: Optional[Bot] = None
 latest_matches_cache: Dict[str, Any] = {
     "live": [],
     "prematch": [],
-    "matches": {},
+    "matches": [],
+    "by_id": {},
     "updated_at": 0,
 }
 active_websockets: set = set()
@@ -271,6 +274,78 @@ async def firebase_delete(path: str) -> bool:
     except Exception as e:
         logger.warning(f"firebase_delete({path}) error: {e}")
         return False
+
+
+# =====================================================================
+# АВТОРИЗАЦИЯ TELEGRAM WEBAPP (INITDATA)
+# =====================================================================
+
+def _parse_telegram_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
+    if not init_data_raw:
+        return None
+    try:
+        parsed = urllib.parse.parse_qs(init_data_raw, keep_blank_values=True)
+        flat = {k: v[0] for k, v in parsed.items() if v}
+
+        if BOT_TOKEN and "hash" in flat:
+            received_hash = flat.pop("hash")
+            data_check_string = "\n".join(
+                f"{k}={flat[k]}" for k in sorted(flat.keys())
+            )
+            secret_key = hmac.new(
+                b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256
+            ).digest()
+            calculated_hash = hmac.new(
+                secret_key, data_check_string.encode("utf-8"), hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(calculated_hash, received_hash):
+                logger.warning("Несовпадение подписи initData, пробуем извлечь user напрямую")
+
+        user_json = flat.get("user")
+        if user_json:
+            user_obj = json.loads(user_json)
+            if isinstance(user_obj, dict) and user_obj.get("id"):
+                user_obj["start_param"] = flat.get("start_param", "")
+                return user_obj
+    except Exception as e:
+        logger.warning(f"Ошибка разбора initData: {e}")
+    return None
+
+
+async def _extract_request_user(request: Request, body: Dict[str, Any]) -> Dict[str, Any]:
+    init_data = (
+        body.get("initData")
+        or body.get("init_data")
+        or request.headers.get("X-Telegram-Init-Data")
+        or request.query_params.get("initData")
+        or ""
+    )
+    tg_user = _parse_telegram_init_data(str(init_data))
+    if tg_user:
+        return {
+            "id": int(tg_user["id"]),
+            "username": str(tg_user.get("username") or ""),
+            "first_name": str(tg_user.get("first_name") or ""),
+            "photo_url": str(tg_user.get("photo_url") or ""),
+            "start_param": str(tg_user.get("start_param") or ""),
+        }
+
+    raw_uid = (
+        body.get("user_id")
+        or body.get("id")
+        or request.query_params.get("user_id")
+        or request.query_params.get("id")
+    )
+    if not raw_uid or not str(raw_uid).isdigit():
+        raise HTTPException(status_code=400, detail="Не передан user_id или initData")
+
+    return {
+        "id": int(raw_uid),
+        "username": str(body.get("username") or ""),
+        "first_name": str(body.get("first_name") or ""),
+        "photo_url": str(body.get("photo_url") or ""),
+        "start_param": str(body.get("ref_id") or ""),
+    }
 
 
 # =====================================================================
@@ -471,7 +546,7 @@ def _extract_1x2_odds(factors: List[Dict[str, Any]]) -> Tuple[Optional[float], O
     return p1, px, p2
 
 
-def _extract_totals_and_btts(factors: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _extract_extra_markets(factors: List[Dict[str, Any]]) -> Dict[str, Any]:
     markets: Dict[str, Any] = {}
     for f in factors:
         fid = f.get("f")
@@ -487,6 +562,12 @@ def _extract_totals_and_btts(factors: List[Dict[str, Any]]) -> Dict[str, Any]:
             markets["btts_yes"] = round(float(val), 2)
         elif fid == 1572:
             markets["btts_no"] = round(float(val), 2)
+        elif fid == 924:
+            markets["1x"] = round(float(val), 2)
+        elif fid == 925:
+            markets["12"] = round(float(val), 2)
+        elif fid == 926:
+            markets["x2"] = round(float(val), 2)
     return markets
 
 
@@ -666,7 +747,7 @@ async def scrape_once() -> Dict[str, Any]:
         if not (p1 or px or p2):
             continue
 
-        extra_markets = _extract_totals_and_btts(factors)
+        extra_markets = _extract_extra_markets(factors)
         misc = misc_by_event.get(eid, {})
 
         h_logo = _get_team_logo(t1, league_name, exact_logo_idx, fallback_logo_idx)
@@ -723,10 +804,12 @@ async def scrape_once() -> Dict[str, Any]:
     for t, lg in missing_logos:
         asyncio.create_task(_resolve_and_cache_logo(t, lg))
 
+    all_matches = live_matches + prematch_matches
     payload = {
         "live": live_matches,
         "prematch": prematch_matches,
-        "matches": matches_by_id,
+        "matches": all_matches,
+        "by_id": matches_by_id,
         "updated_at": int(time.time()),
     }
 
@@ -782,6 +865,7 @@ async def _ensure_user_in_db(
     user_id: int,
     username: str = "",
     first_name: str = "",
+    photo_url: str = "",
     ref_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     uid = str(user_id)
@@ -793,9 +877,13 @@ async def _ensure_user_in_db(
             "id": user_id,
             "username": username,
             "first_name": first_name,
+            "photo_url": photo_url,
             "balance": 0,
             "referrals": 0,
             "referred_by": None,
+            "total_bets": 0,
+            "won_bets": 0,
+            "winrate": 0,
             "created_at": now,
             "last_seen": now,
         }
@@ -812,6 +900,8 @@ async def _ensure_user_in_db(
             updates["username"] = username
         if first_name:
             updates["first_name"] = first_name
+        if photo_url:
+            updates["photo_url"] = photo_url
         user_data.update(updates)
         await firebase_patch(f"users/{uid}", updates)
 
@@ -877,7 +967,9 @@ async def on_successful_payment(message: Message) -> None:
     await firebase_put(
         f"transactions/{uid}/{tx_id}",
         {
+            "id": tx_id,
             "type": "deposit",
+            "title": "Пополнение Telegram Stars",
             "amount": amount,
             "currency": sp.currency,
             "payload": sp.invoice_payload,
@@ -941,6 +1033,7 @@ app.add_middleware(
 )
 
 
+@app.get("/")
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     return {
@@ -961,31 +1054,40 @@ async def sync_user(request: Request) -> Dict[str, Any]:
         except Exception:
             body = {}
 
-    raw_uid = (
-        body.get("user_id")
-        or body.get("id")
-        or request.query_params.get("user_id")
-        or request.query_params.get("id")
-    )
-    if not raw_uid:
-        raise HTTPException(status_code=400, detail="user_id is required")
+    tg_info = await _extract_request_user(request, body)
+    uid_int = tg_info["id"]
+    ref_raw = tg_info.get("start_param", "")
+    ref_id = int(ref_raw) if ref_raw.isdigit() else None
 
-    uid_int = int(raw_uid)
     user_data = await _ensure_user_in_db(
         user_id=uid_int,
-        username=str(body.get("username") or ""),
-        first_name=str(body.get("first_name") or ""),
-        ref_id=int(body["ref_id"]) if str(body.get("ref_id", "")).isdigit() else None,
+        username=tg_info["username"],
+        first_name=tg_info["first_name"],
+        photo_url=tg_info["photo_url"],
+        ref_id=ref_id,
     )
+
     bets_raw = await firebase_get(f"bets/{uid_int}") or {}
     bets_list = list(bets_raw.values()) if isinstance(bets_raw, dict) else []
     bets_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
 
+    total_bets = len(bets_list)
+    won_bets = sum(1 for b in bets_list if b.get("status") == "won")
+    winrate = int(round((won_bets / total_bets) * 100)) if total_bets > 0 else 0
+
+    user_data["total_bets"] = total_bets
+    user_data["won_bets"] = won_bets
+    user_data["winrate"] = winrate
+
     return {
         "ok": True,
         "user": user_data,
+        "id": uid_int,
         "balance": user_data.get("balance", 0),
         "referrals": user_data.get("referrals", 0),
+        "winrate": winrate,
+        "total_bets": total_bets,
+        "won_bets": won_bets,
         "bets": bets_list,
     }
 
@@ -1000,16 +1102,58 @@ async def get_matches() -> Dict[str, Any]:
     return latest_matches_cache
 
 
+@app.get("/api/match/{match_id}/markets")
+async def get_match_markets(match_id: str) -> Dict[str, Any]:
+    match_obj = (latest_matches_cache.get("by_id") or {}).get(match_id)
+    if not match_obj:
+        match_obj = await firebase_get(f"matches/{match_id}") or {}
+
+    full_payload = await _fetch_fonbet_event_full(int(match_id)) if match_id.isdigit() else None
+    extra_markets: Dict[str, Any] = dict(match_obj.get("markets") or {})
+    if full_payload:
+        for cf in full_payload.get("customFactors") or []:
+            if str(cf.get("e")) == str(match_id):
+                extra_markets.update(_extract_extra_markets(cf.get("factors") or []))
+
+    return {
+        "ok": True,
+        "match_id": match_id,
+        "match": match_obj,
+        "markets": extra_markets,
+    }
+
+
+@app.get("/api/user/bets")
+async def get_user_bets(request: Request) -> Dict[str, Any]:
+    tg_info = await _extract_request_user(request, {})
+    uid = str(tg_info["id"])
+    bets_raw = await firebase_get(f"bets/{uid}") or {}
+    bets_list = list(bets_raw.values()) if isinstance(bets_raw, dict) else []
+    bets_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return {"ok": True, "bets": bets_list}
+
+
+@app.get("/api/user/transactions")
+async def get_user_transactions(request: Request) -> Dict[str, Any]:
+    tg_info = await _extract_request_user(request, {})
+    uid = str(tg_info["id"])
+    tx_raw = await firebase_get(f"transactions/{uid}") or {}
+    tx_list = list(tx_raw.values()) if isinstance(tx_raw, dict) else []
+    tx_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return {"ok": True, "transactions": tx_list}
+
+
 @app.post("/api/bets/place")
 async def place_bet(request: Request) -> Dict[str, Any]:
     body = await request.json()
-    uid = str(body.get("user_id") or "")
+    tg_info = await _extract_request_user(request, body)
+    uid = str(tg_info["id"])
     match_id = str(body.get("match_id") or "")
     outcome = str(body.get("outcome") or body.get("pick") or "")
     amount = int(body.get("amount") or 0)
     odd = float(body.get("odd") or body.get("coef") or 0)
 
-    if not uid or not match_id or not outcome or amount <= 0 or odd <= 1.0:
+    if not match_id or not outcome or amount <= 0 or odd <= 1.0:
         raise HTTPException(status_code=400, detail="Некорректные параметры ставки")
 
     user_data = await firebase_get(f"users/{uid}")
@@ -1020,7 +1164,7 @@ async def place_bet(request: Request) -> Dict[str, Any]:
     if balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно звёзд на балансе")
 
-    match_info = (latest_matches_cache.get("matches") or {}).get(match_id) or await firebase_get(f"matches/{match_id}") or {}
+    match_info = (latest_matches_cache.get("by_id") or {}).get(match_id) or await firebase_get(f"matches/{match_id}") or {}
     new_balance = balance - amount
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
 
@@ -1048,9 +1192,10 @@ async def create_stars_invoice(request: Request) -> Dict[str, Any]:
     if not bot_instance:
         raise HTTPException(status_code=503, detail="Бот не инициализирован (проверьте BOT_TOKEN)")
     body = await request.json()
-    uid = str(body.get("user_id") or "")
+    tg_info = await _extract_request_user(request, body)
+    uid = str(tg_info["id"])
     amount = int(body.get("amount") or 0)
-    if not uid or amount < 1:
+    if amount < 1:
         raise HTTPException(status_code=400, detail="Некорректная сумма")
 
     link = await bot_instance.create_invoice_link(
@@ -1063,12 +1208,14 @@ async def create_stars_invoice(request: Request) -> Dict[str, Any]:
     return {"ok": True, "invoice_link": link, "url": link}
 
 
+@app.post("/api/withdraw/request")
 @app.post("/api/cashier/withdraw")
 async def withdraw_stars(request: Request) -> Dict[str, Any]:
     body = await request.json()
-    uid = str(body.get("user_id") or "")
+    tg_info = await _extract_request_user(request, body)
+    uid = str(tg_info["id"])
     amount = int(body.get("amount") or 0)
-    if not uid or amount < 1000:
+    if amount < 1000:
         raise HTTPException(status_code=400, detail="Минимальный вывод — 1000 звёзд")
 
     user_data = await firebase_get(f"users/{uid}")
@@ -1099,15 +1246,27 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
             "created_at": int(time.time()),
         },
     )
+    await firebase_put(
+        f"transactions/{uid}/{req_id}",
+        {
+            "id": req_id,
+            "type": "withdraw",
+            "title": "Заявка на вывод Stars",
+            "amount": -amount,
+            "created_at": int(time.time()),
+        },
+    )
     return {"ok": True, "balance": new_balance, "payout": payout}
 
 
+@app.post("/api/cashier/promo")
 @app.post("/api/promo/activate")
 async def activate_promo(request: Request) -> Dict[str, Any]:
     body = await request.json()
-    uid = str(body.get("user_id") or "")
+    tg_info = await _extract_request_user(request, body)
+    uid = str(tg_info["id"])
     code = (body.get("code") or "").strip().upper()
-    if not uid or not code:
+    if not code:
         raise HTTPException(status_code=400, detail="Введите промокод")
 
     promo = await firebase_get(f"promos/{code}")
@@ -1126,6 +1285,14 @@ async def activate_promo(request: Request) -> Dict[str, Any]:
     await firebase_patch(f"promos/{code}", {"uses": int(promo.get("uses", 1)) - 1})
     await firebase_put(f"promo_used/{uid}/{code}", int(time.time()))
     return {"ok": True, "bonus": bonus, "balance": new_balance}
+
+
+@app.get("/api/chat/history")
+async def get_chat_history() -> Dict[str, Any]:
+    raw = await firebase_get("chat_messages") or {}
+    msgs = list(raw.values()) if isinstance(raw, dict) else []
+    msgs.sort(key=lambda x: x.get("ts", 0))
+    return {"ok": True, "messages": msgs[-50:]}
 
 
 @app.post("/api/admin/force-refresh")
@@ -1184,6 +1351,8 @@ async def websocket_chat(ws: WebSocket) -> None:
             except Exception:
                 continue
             msg["ts"] = int(time.time())
+            msg_id = f"{msg['ts']}_{uuid.uuid4().hex[:6]}"
+            await firebase_put(f"chat_messages/{msg_id}", msg)
             await _broadcast_ws(chat_websockets, {"type": "chat_message", "data": msg})
     except WebSocketDisconnect:
         pass
