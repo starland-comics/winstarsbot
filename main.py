@@ -25,7 +25,7 @@ logger = logging.getLogger("winstars")
 
 FIREBASE_URL = os.getenv(
     "FIREBASE_URL",
-    "https://winstars-default-rtdb.europe-west1.firebasedatabase.app",
+    "https://winstars-435f1-default-rtdb.firebaseio.com",
 ).rstrip("/")
 FIREBASE_SECRET = os.getenv("FIREBASE_SECRET", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -92,7 +92,6 @@ ALLOWED_LEAGUE_PATTERNS = [
 
 ALLOWED_LEAGUE_RES = [re.compile(p, re.IGNORECASE) for p in ALLOWED_LEAGUE_PATTERNS]
 
-# Убраны короткие куски вроде "a1", "b2", "c3", которые вырезали Лигу наций
 FORBIDDEN_LEAGUE_WORDS = [
     "гандбол", "handball", "теннис", "tennis", "баскетбол", "basketball",
     "хоккей", "hockey", "волейбол", "volleyball", "регби", "rugby",
@@ -113,7 +112,6 @@ FORBIDDEN_LEAGUE_WORDS = [
     "статистические показатели", "лучший клуб",
 ]
 
-# Проверка строго по границам слов, чтобы "мол" не банил Молдову, а "жен" — Женеву
 TEAM_BLACKLIST_RE = re.compile(
     r"(?:^|\s|\()(?:u-?1[5-9]|u-?2[0-3]|до\s*1[5-9]|до\s*2[0-3]|мол|дубль|резерв|жен|ii|iii|b)(?:\s|\)|$)",
     re.IGNORECASE,
@@ -305,7 +303,6 @@ def _build_logo_index(
         if not team:
             continue
 
-        # Игнорируем ошибочную привязку турецкого Alanyaspor к российской Алании
         if (
             team.lower().startswith("алания")
             and "россия" in league.lower()
@@ -565,14 +562,12 @@ async def scrape_once() -> Dict[str, Any]:
         if sp.get("kind") == "segment":
             sports_map[sp["id"]] = sp
 
-    # Индекс базовых факторов из listBase
     base_factors_by_event: Dict[int, List[Dict[str, Any]]] = {}
     for cf in raw_data.get("customFactors") or []:
         eid = cf.get("e")
         if eid is not None:
             base_factors_by_event[eid] = cf.get("factors") or []
 
-    # Индекс live-состояний (счёт, таймер, комментарий)
     misc_by_event: Dict[int, Dict[str, Any]] = {}
     for em in raw_data.get("eventMiscs") or []:
         eid = em.get("id")
@@ -587,7 +582,6 @@ async def scrape_once() -> Dict[str, Any]:
     filtered_events: List[Tuple[Dict[str, Any], str, str, str, bool]] = []
 
     for ev in raw_data.get("events") or []:
-        # Только основные матчи (level == 1), без угловых/жёлтых карточек/статистики
         if ev.get("level") != 1:
             continue
 
@@ -596,7 +590,6 @@ async def scrape_once() -> Dict[str, Any]:
         if not sport_obj:
             continue
 
-        # Проверяем, что вид спорта — футбол (parentId == 1)
         if sport_obj.get("parentId") != 1:
             continue
 
@@ -615,10 +608,8 @@ async def scrape_once() -> Dict[str, Any]:
         is_live = (ev.get("place") == "live")
         filtered_events.append((ev, league_name, t1, t2, is_live))
 
-    # Сортируем: сначала Live, затем ближайшие по времени старта
     filtered_events.sort(key=lambda x: (0 if x[4] else 1, x[0].get("startTime") or 0))
 
-    # Определяем, для каких событий нужно догрузить полную линию (если в listBase нет 1X2)
     events_needing_full_line: List[int] = []
     for ev, _, _, _, _ in filtered_events:
         eid = ev["id"]
@@ -656,7 +647,6 @@ async def scrape_once() -> Dict[str, Any]:
         factors = base_factors_by_event.get(eid, [])
         p1, px, p2 = _extract_1x2_odds(factors)
 
-        # Пропускаем матчи без котировок даже после догрузки полной линии
         if not (p1 or px or p2):
             continue
 
@@ -704,10 +694,8 @@ async def scrape_once() -> Dict[str, Any]:
             match_obj["status"] = "PREMATCH"
             prematch_matches.append(match_obj)
 
-    if missing_logos:
-        asyncio.create_task(
-            asyncio.gather(*[_resolve_and_cache_logo(t, lg) for t, lg in missing_logos])
-        )
+    for t, lg in missing_logos:
+        asyncio.create_task(_resolve_and_cache_logo(t, lg))
 
     payload = {
         "live": live_matches,
@@ -816,7 +804,6 @@ async def admin_force_refresh(request: Request) -> Dict[str, Any]:
 
 @app.post("/api/admin/set-logo")
 async def admin_set_logo(request: Request) -> Dict[str, Any]:
-    """Ручная установка/перезапись логотипа: {"team": "Алания", "league": "Россия. 2-й дивизион", "url": "https://..."}"""
     secret = request.headers.get("X-Admin-Secret") or request.query_params.get("secret")
     if ADMIN_SECRET and secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -853,4 +840,4 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("main1:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
