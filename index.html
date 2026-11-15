@@ -1516,7 +1516,6 @@
     let currentLeague = 'all';
     let betsFilter = 'active';
     let lastTransactionsCache = [];
-    window.matchTimers = {};
 
     function getRate() {
       return displayCurrency === 'rub' ? RUB_RATE : 1;
@@ -1590,7 +1589,6 @@
       displayCurrency = cur === 'rub' ? 'rub' : 'stars';
       localStorage.setItem('ws_currency', displayCurrency);
 
-      // Конвертируем введённое значение в купоне при переключении валюты
       const betInp = document.getElementById('bet-amount-input');
       if (betInp && betInp.value && prevCur !== displayCurrency) {
         const raw = Number(betInp.value || 0);
@@ -1601,7 +1599,6 @@
         }
       }
 
-      // Очищаем поле вывода, чтобы не перепутать порог 1000 ★ и 1500 ₽
       const wdInp = document.getElementById('withdraw-amount');
       if (wdInp && prevCur !== displayCurrency) {
         wdInp.value = '';
@@ -1658,14 +1655,20 @@
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById(`tab-${tabName}`).classList.add('active');
       document.getElementById(`nav-${tabName}`).classList.add('active');
-      if (tabName === 'bets') renderUserBets();
+      if (tabName === 'bets') {
+        syncUserProfile();
+        renderUserBets();
+      }
       if (tabName === 'chat') loadChatHistory();
       if (tabName === 'cashier') {
         updateDepositHint();
         updateWithdrawCalc();
         loadTransactionsHistory();
       }
-      if (tabName === 'profile') drawProfitChart();
+      if (tabName === 'profile') {
+        syncUserProfile();
+        drawProfitChart();
+      }
     }
 
     async function syncUserProfile() {
@@ -1914,23 +1917,10 @@
     }
 
     function getLiveDisplayStatus(match) {
-      if (!match.status || !match.status.startsWith('LIVE')) return match.status || '';
-      let originalStatus = match.status.replace('LIVE', '').trim().replace('·', '').trim();
-      if (originalStatus === 'HT' || originalStatus === 'FT') return originalStatus;
-      const matchMinute = originalStatus.match(/(\d+)/);
-      if (!matchMinute) return 'LIVE';
-      const baseMinute = parseInt(matchMinute[1], 10);
-      const now = Date.now();
-      const cached = window.matchTimers[match.id];
-      if (!cached || cached.baseMinute !== baseMinute) {
-        window.matchTimers[match.id] = { baseMinute, timestamp: now };
-      }
-      const timer = window.matchTimers[match.id];
-      const elapsedMin = Math.floor((now - timer.timestamp) / 60000);
-      const displayMinute = timer.baseMinute + elapsedMin;
-      if (timer.baseMinute === 45 && elapsedMin >= 3 && elapsedMin <= 17) return 'HT';
-      if (displayMinute >= 90) return '90+';
-      return `${displayMinute}'`;
+      if (!match.status) return 'LIVE';
+      if (!match.status.startsWith('LIVE')) return match.status;
+      const clean = match.status.replace('LIVE', '').replace('·', '').trim();
+      return clean || 'LIVE';
     }
 
     function renderMatches() {
@@ -2249,10 +2239,12 @@
         }
         if (!outcomeText) outcomeText = 'Основной исход';
 
+        const scoreTag = b.final_score ? ` · Счёт ${escapeHtml(b.final_score)}` : '';
+
         container.innerHTML += `
           <div class="bet-item-card" onclick="openBetDetailModal('${escAttr(b.id)}')">
             <div class="bet-item-top">
-              <span>${escapeHtml(b.league || 'Футбол')}</span>
+              <span>${escapeHtml(b.league || 'Футбол')}${scoreTag}</span>
               <span class="bet-status-badge ${cls}">${statusMap[b.status] || escapeHtml(b.status)}</span>
             </div>
             <div style="font-weight:800; font-size:0.92rem; margin-bottom:4px;">${escapeHtml(titleText)}</div>
@@ -2329,7 +2321,8 @@
             matchTitle: bet.match_title || (bet.team1 && bet.team2 ? `${bet.team1} - ${bet.team2}` : 'Матч'),
             outcomeLabel: bet.outcome || bet.pick || 'Исход',
             groupName: 'Исход',
-            coeff: Number(bet.total_coefficient || bet.coefficient || bet.odd || 1)
+            coeff: Number(bet.total_coefficient || bet.coefficient || bet.odd || 1),
+            final_score: bet.final_score || ''
           }];
 
       const ts = Number(bet.timestamp || bet.created_at || 0);
@@ -2350,10 +2343,12 @@
         else if (legStatus === 'lost') legColor = 'var(--red)';
         else if (legStatus === 'refund') legColor = 'var(--text-muted)';
 
+        const scSuffix = ev.final_score ? ` · ${escapeHtml(ev.final_score)}` : '';
+
         listEl.innerHTML += `
           <div class="receipt-event-box">
             <div>
-              <div class="receipt-event-title">${escapeHtml(ev.matchTitle || 'Матч')}</div>
+              <div class="receipt-event-title">${escapeHtml(ev.matchTitle || 'Матч')}${scSuffix}</div>
               <div class="receipt-event-pick">${escapeHtml(ev.outcomeLabel || ev.outcome || '')} <span>(${escapeHtml(ev.groupName || 'Исход')})</span></div>
             </div>
             <div class="receipt-event-odd" style="color:${legColor};">${Number(ev.coeff || 1).toFixed(2)}</div>
@@ -2630,13 +2625,7 @@
     loadMatches();
     connectLiveWebSocket();
     setInterval(loadMatches, 20000);
-    setInterval(() => {
-      document.querySelectorAll('.live-tag-text').forEach(el => {
-        const mid = el.getAttribute('data-match-id');
-        const m = allMatchesRaw.find(x => x.id === mid);
-        if (m) el.innerText = getLiveDisplayStatus(m);
-      });
-    }, 15000);
+    setInterval(syncUserProfile, 30000);
   </script>
 </body>
 </html>
