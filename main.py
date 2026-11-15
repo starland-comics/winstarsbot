@@ -14,8 +14,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
+    CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     LabeledPrice,
@@ -44,6 +45,11 @@ FIREBASE_SECRET = os.getenv("FIREBASE_SECRET", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://starland-comics.github.io/winstarsbot/")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "winstars_admin")
+ADMIN_IDS = {
+    int(x.strip())
+    for x in os.getenv("ADMIN_IDS", "").split(",")
+    if x.strip().isdigit()
+}
 
 LIVE_POLL_SEC = 20
 FULL_LINE_MAX_PER_CYCLE = 150
@@ -76,33 +82,18 @@ HEADERS = {
 # =====================================================================
 
 ALLOWED_LEAGUE_PATTERNS = [
-    # 1. Россия (РПЛ, ФНЛ/1-я лига, 2-я лига/дивизион А и Б + все стадии Кубка и Суперкубка)
     r"^россия\.\s*(премьер|рпл|фнл|1-я|1 я|первая|2-я|2 я|вторая|второй дивизион|дивизион|кубок|суперкубок)",
     r"^(?:фонбет\s*)?кубок\s*россии",
     r"^суперкубок\s*россии",
-
-    # 2. Англия (АПЛ, Чемпионшип, Кубок Англии, Кубок лиги, Суперкубок)
     r"^англия\.\s*(премьер(-|\s|\.|$)|чемпионшип|championship|кубок англии|fa cup|кубок лиги|кубок футбольной лиги|efl cup|carabao|суперкубок|community shield)",
-
-    # 3. Испания (Только Ла Лига / Примера Дивизион, Сегунда Дивизион, Кубок и Суперкубок — без RFEF)
     r"^испания\.\s*(ла лига|примера(?:\s+дивизион|\s*$|\.)|сегунда(?:\s+дивизион|\s*$|\.)|segunda(?:\s+divisi[oó]n|\s*$|\.)|кубок|copa|суперкубок|supercopa)",
-
-    # 4. Италия (Серия А, Кубок Италии, Суперкубок Италии)
     r"^италия\.\s*(серия а(?:\s|$|\.)|serie a(?:\s|$|\.)|кубок|coppa|суперкубок|supercoppa)",
-
-    # 5. Германия (Бундеслига, Кубок Германии, Суперкубок Германии)
     r"^германия\.\s*(бундеслига(?:\s|$|\.)|bundesliga(?:\s|$|\.)|кубок|dfb|суперкубок)",
-
-    # 6. Франция (Лига 1, Кубок Франции, Суперкубок Франции)
     r"^франция\.\s*(лига 1(?:\s|$|\.)|ligue 1(?:\s|$|\.)|кубок|coupe|суперкубок|troph[eé]e)",
-
-    # 7. Еврокубки
     r"^лига чемпионов",
     r"^лига европы",
     r"^лига конференций",
     r"^суперкубок уефа",
-
-    # 8. Сборные (ЧМ, ЧЕ, Лига наций, Отборы, Копа Америка/КОНМЕБОЛ, Азия/АФК, КОНКАКАФ)
     r"^чемпионат мира",
     r"^чемпионат европы",
     r"^лига наций",
@@ -115,19 +106,13 @@ ALLOWED_LEAGUE_PATTERNS = [
     r"^(?:кубок|лига наций)\s*конкакаф",
     r"^золотой кубок\s*конкакаф",
     r"^concacaf",
-
-    # 9. Товарищеские матчи (сборных и клубов при наличии коэффициентов)
     r"^товарищеск",
-
-    # 10. Саудовская Аравия, США, Турция, Португалия, Нидерланды (+ их кубки и суперкубки)
     r"^саудовская аравия\.\s*(про|премьер|саудовская про|кубок|суперкубок)",
     r"^сша\.\s*(mls|major league soccer|открытый кубок|кубок|суперкубок)",
     r"^кубок лиг(?:\s|$|\.)",
     r"^турция\.\s*(суперлига|s[uü]per|кубок|суперкубок)",
     r"^португалия\.\s*(примейра|primeira|лига португал|кубок|суперкубок|ta[cç]a)",
     r"^(?:нидерланды|голландия)\.\s*(премьер|эредивизи|eredivisie|кубок|суперкубок|knvb)",
-
-    # 11. Беларусь, Казахстан, Украина, Бразилия (+ их кубки и суперкубки) и Кубок Либертадорес
     r"^беларусь\.\s*(высшая|кубок|суперкубок)",
     r"^казахстан\.\s*(премьер|кубок|суперкубок)",
     r"^украина\.\s*(премьер|упл|кубок|суперкубок)",
@@ -139,7 +124,6 @@ ALLOWED_LEAGUE_PATTERNS = [
 ALLOWED_LEAGUE_RES = [re.compile(p, re.IGNORECASE) for p in ALLOWED_LEAGUE_PATTERNS]
 
 FORBIDDEN_LEAGUE_WORDS = [
-    # Другие виды спорта и киберспорт
     "гандбол", "handball", "теннис", "tennis", "баскетбол", "basketball",
     "хоккей", "hockey", "волейбол", "volleyball", "регби", "rugby",
     "крикет", "cricket", "американский футбол", "american football", "бейсбол", "baseball",
@@ -147,24 +131,18 @@ FORBIDDEN_LEAGUE_WORDS = [
     "virtua", "виртуальн", "virtual", "лига про", "h2h",
     "fc 27", "fc27", "fc 26", "fc26", "fc 25", "fc25",
     "futsal", "мини-футбол", "мини футбол",
-
-    # Женские, молодёжные, любительские турниры
     "ncaa", "ncaab", "ncaaf", "женщин", "women", "ladies", "fem", "vrouwen", "дамы", "девуш",
     "юнош", "молодеж", "молодёж", "дубл", "reserve", "academy", "академ",
     "до 15", "до 16", "до 17", "до 18", "до 19", "до 20", "до 21", "до 23",
     "u15", "u16", "u17", "u18", "u19", "u20", "u21", "u23",
     "третий дивизион", "третья лига", "лфк", "amateur", "любител", "лига трофи",
     "региональная лига", "regional league",
-
-    # Низшие дивизионы, включая испанские RFEF и Терсеру
     "rfef", "терсера", "tercera", "федерасьон", "federaci",
     "серия b", "серия б", "serie b", "серия c", "серия с", "serie c",
     "2. бундеслига", "2-я бундеслига", "вторая бундеслига", "3. лига", "3-я лига",
     "лига 2", "ligue 2", "национальная лига", "лига 1. англия", "первая лига. англия",
     "вторая лига. англия", "первая лига. украина", "первая лига. беларусь", "первая лига. казахстан",
     "первый дивизион", "второй дивизион. португалия", "сегунда б",
-
-    # Долгосрочные аутрайты и спецставки
     "кто выше", "победитель", "призер", "вылет", "квалификация (кто", "кто попадет",
     "выход в", "чемпионство", "выиграет лигу", "финал (кто", "лучший бомбардир",
     "голы за", "регулярный сезон", "плей-офф (кто",
@@ -177,7 +155,6 @@ TEAM_BLACKLIST_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Блокировка фейковых/статистических матчей типа "Хозяева - Гости"
 SPECIAL_TEAM_NAMES = {
     "хозяева", "гости", "хозяева поля", "гости поля",
     "home", "away", "home teams", "away teams",
@@ -199,7 +176,7 @@ def _is_special_dummy_match(t1: str, t2: str) -> bool:
 
 
 # =====================================================================
-# СЛОВАРИ И АВТОЗАГРУЗКА ЛОГОТИПОВ С УЧЁТОМ СТРАНЫ
+# СЛОВАРИ И АВТОЗАГРУЗКА ЛОГОТИПОВ
 # =====================================================================
 
 LOGO_SEARCH_OVERRIDES = {
@@ -777,7 +754,6 @@ def _parse_live_status_and_score(
     comment = (misc.get("comment") or event.get("comment") or "").strip()
     low_comment = comment.lower()
 
-    # Проверяем оба возможных поля секундомера Fonbet (timerSeconds и timer)
     raw_sec = None
     for key in ("timerSeconds", "timer"):
         val = misc.get(key)
@@ -793,7 +769,6 @@ def _parse_live_status_and_score(
         mins = max(1, int(raw_sec // 60) + 1)
         status_str = f"LIVE · {mins}'"
     else:
-        # Ищем минуту в комментарии или вычисляем по реальному startTime матча
         m_min = re.search(r"(\d{1,3})\s*(?:'|мин)", low_comment)
         if m_min:
             status_str = f"LIVE · {int(m_min.group(1))}'"
@@ -880,7 +855,6 @@ async def scrape_once() -> Dict[str, Any]:
 
     filtered_events.sort(key=lambda x: (0 if x[4] else 1, x[0].get("startTime") or 0))
 
-    # Для Live-матчей всегда подгружаем полную карточку, чтобы получить точный timerSeconds, если в listBase он 0
     events_needing_full_line: List[int] = []
     for ev, _, _, _, is_live in filtered_events:
         eid = ev["id"]
@@ -1040,23 +1014,102 @@ async def fonbet_scraper_worker() -> None:
 
 
 # =====================================================================
-# TELEGRAM БОТ (AIOGRAM 3: /start И TELEGRAM STARS)
+# TELEGRAM БОТ (AIOGRAM 3: /start, TELEGRAM STARS И АДМИН-КОМАНДЫ)
 # =====================================================================
 
 bot_router = Router()
 
-from aiogram.filters import Command
-from aiogram.types import CallbackQuery
-
-ADMIN_IDS = {
-    int(x.strip())
-    for x in os.getenv("ADMIN_IDS", "").split(",")
-    if x.strip().isdigit()
-}
-
 
 def _is_admin(user_id: int) -> bool:
     return not ADMIN_IDS or user_id in ADMIN_IDS
+
+
+async def _ensure_user_in_db(
+    user_id: int,
+    username: str = "",
+    first_name: str = "",
+    photo_url: str = "",
+    ref_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    uid = str(user_id)
+    user_data = await firebase_get(f"users/{uid}")
+    now = int(time.time())
+
+    if not isinstance(user_data, dict):
+        user_data = {
+            "id": user_id,
+            "user_id": uid,
+            "username": username,
+            "first_name": first_name,
+            "photo_url": photo_url,
+            "balance": 0.0,
+            "referrals": 0,
+            "referred_by": None,
+            "total_bets": 0,
+            "won_bets": 0,
+            "wins": 0,
+            "winrate": 0,
+            "profit": 0.0,
+            "subscribed": True,
+            "created_at": now,
+            "last_seen": now,
+        }
+        if ref_id and ref_id != user_id:
+            ref_user = await firebase_get(f"users/{ref_id}")
+            if isinstance(ref_user, dict):
+                user_data["referred_by"] = ref_id
+                new_refs = int(ref_user.get("referrals", 0)) + 1
+                await firebase_patch(f"users/{ref_id}", {"referrals": new_refs})
+        await firebase_put(f"users/{uid}", user_data)
+    else:
+        updates: Dict[str, Any] = {"last_seen": now}
+        if username:
+            updates["username"] = username
+        if first_name:
+            updates["first_name"] = first_name
+        if photo_url:
+            updates["photo_url"] = photo_url
+        user_data.update(updates)
+        await firebase_patch(f"users/{uid}", updates)
+
+    return user_data
+
+
+@bot_router.message(CommandStart())
+async def cmd_start(message: Message) -> None:
+    user = message.from_user
+    if not user:
+        return
+
+    ref_id: Optional[int] = None
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) > 1 and parts[1].isdigit():
+        ref_id = int(parts[1])
+
+    await _ensure_user_in_db(
+        user_id=user.id,
+        username=user.username or "",
+        first_name=user.first_name or "",
+        ref_id=ref_id,
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Открыть WinStars",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        f"Привет, <b>{user.first_name}</b>!\n\n"
+        "Добро пожаловать в <b>WinStars</b> — спортивные прогнозы на Telegram Stars.\n"
+        "Нажми кнопку ниже, чтобы открыть линию матчей:",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
 
 
 @bot_router.message(Command("admin"))
@@ -1110,7 +1163,8 @@ async def on_withdraw_action(cb: CallbackQuery) -> None:
     amt = float(req.get("amount", 0))
     if action == "wd_ok":
         await firebase_patch(f"withdrawals/{rid}", {"status": "approved", "processed_at": int(time.time())})
-        await cb.message.edit_text(f"✅ Заявка #{rid} одобрена (выплата {req.get('payout')} звёзд).")
+        if cb.message:
+            await cb.message.edit_text(f"Заявка #{rid} одобрена (выплата {req.get('payout')} звёзд).")
     else:
         await firebase_patch(f"withdrawals/{rid}", {"status": "rejected", "processed_at": int(time.time())})
         u = await firebase_get(f"users/{uid}") or {}
@@ -1118,9 +1172,16 @@ async def on_withdraw_action(cb: CallbackQuery) -> None:
         await firebase_patch(f"users/{uid}", {"balance": new_bal})
         await firebase_put(
             f"transactions/{uid}/ref_{rid}",
-            {"id": f"ref_{rid}", "type": "refund", "title": "Возврат отклоненного вывода", "amount": amt, "created_at": int(time.time())},
+            {
+                "id": f"ref_{rid}",
+                "type": "refund",
+                "title": "Возврат отклонённого вывода",
+                "amount": amt,
+                "created_at": int(time.time()),
+            },
         )
-        await cb.message.edit_text(f"❌ Заявка #{rid} отклонена, {amt} звёзд возвращено на баланс.")
+        if cb.message:
+            await cb.message.edit_text(f"Заявка #{rid} отклонена, {amt} звёзд возвращено на баланс.")
     await cb.answer()
 
 
@@ -1147,7 +1208,11 @@ async def cmd_promo_list(message: Message) -> None:
     if not isinstance(promos, dict) or not promos:
         await message.answer("Активных промокодов нет.")
         return
-    lines = [f"• <b>{k}</b>: +{v.get('bonus')} звёзд (осталось {v.get('uses')})" for k, v in promos.items() if isinstance(v, dict)]
+    lines = [
+        f"• <b>{k}</b>: +{v.get('bonus')} звёзд (осталось {v.get('uses')})"
+        for k, v in promos.items()
+        if isinstance(v, dict)
+    ]
     await message.answer("\n".join(lines), parse_mode="HTML")
 
 
@@ -1236,93 +1301,6 @@ async def cmd_broadcast(message: Message) -> None:
                     continue
     await message.answer(f"Рассылка завершена. Доставлено: <b>{sent}</b>.", parse_mode="HTML")
 
-async def _ensure_user_in_db(
-    user_id: int,
-    username: str = "",
-    first_name: str = "",
-    photo_url: str = "",
-    ref_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    uid = str(user_id)
-    user_data = await firebase_get(f"users/{uid}")
-    now = int(time.time())
-
-    if not isinstance(user_data, dict):
-        user_data = {
-            "id": user_id,
-            "user_id": uid,
-            "username": username,
-            "first_name": first_name,
-            "photo_url": photo_url,
-            "balance": 0.0,
-            "referrals": 0,
-            "referred_by": None,
-            "total_bets": 0,
-            "won_bets": 0,
-            "wins": 0,
-            "winrate": 0,
-            "profit": 0.0,
-            "subscribed": True,
-            "created_at": now,
-            "last_seen": now,
-        }
-        if ref_id and ref_id != user_id:
-            ref_user = await firebase_get(f"users/{ref_id}")
-            if isinstance(ref_user, dict):
-                user_data["referred_by"] = ref_id
-                new_refs = int(ref_user.get("referrals", 0)) + 1
-                await firebase_patch(f"users/{ref_id}", {"referrals": new_refs})
-        await firebase_put(f"users/{uid}", user_data)
-    else:
-        updates: Dict[str, Any] = {"last_seen": now}
-        if username:
-            updates["username"] = username
-        if first_name:
-            updates["first_name"] = first_name
-        if photo_url:
-            updates["photo_url"] = photo_url
-        user_data.update(updates)
-        await firebase_patch(f"users/{uid}", updates)
-
-    return user_data
-
-
-@bot_router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
-    user = message.from_user
-    if not user:
-        return
-
-    ref_id: Optional[int] = None
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) > 1 and parts[1].isdigit():
-        ref_id = int(parts[1])
-
-    await _ensure_user_in_db(
-        user_id=user.id,
-        username=user.username or "",
-        first_name=user.first_name or "",
-        ref_id=ref_id,
-    )
-
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="⚽ Открыть WinStars",
-                    web_app=WebAppInfo(url=WEBAPP_URL),
-                )
-            ]
-        ]
-    )
-    await message.answer(
-        f"Привет, <b>{user.first_name}</b>!\n\n"
-        "Добро пожаловать в <b>WinStars</b> — виртуальные спортивные прогнозы на Telegram Stars.\n"
-        "Нажми кнопку ниже, чтобы открыть линию матчей:",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
-
 
 @bot_router.pre_checkout_query()
 async def on_pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
@@ -1356,7 +1334,7 @@ async def on_successful_payment(message: Message) -> None:
         },
     )
     logger.info(f"Пополнение Stars: user={uid}, +{amount} XTR, баланс={new_balance}")
-    await message.answer(f"✅ Баланс пополнен на <b>{amount} ⭐</b>!", parse_mode="HTML")
+    await message.answer(f"Баланс пополнен на <b>{amount}</b> звёзд!", parse_mode="HTML")
 
 
 async def run_telegram_bot() -> None:
@@ -1622,7 +1600,7 @@ async def create_stars_invoice(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Некорректная сумма")
 
     link = await bot_instance.create_invoice_link(
-        title=f"Пополнение баланса WinStars ({amount} ⭐)",
+        title=f"Пополнение баланса WinStars ({amount} Stars)",
         description=f"Зачисление {amount} Telegram Stars на игровой баланс",
         payload=f"topup_{uid}_{amount}_{int(time.time())}",
         currency="XTR",
@@ -1707,6 +1685,16 @@ async def activate_promo(request: Request) -> Dict[str, Any]:
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
     await firebase_patch(f"promos/{code}", {"uses": int(promo.get("uses", 1)) - 1})
     await firebase_put(f"promo_used/{uid}/{code}", int(time.time()))
+    await firebase_put(
+        f"transactions/{uid}/promo_{code}",
+        {
+            "id": f"promo_{code}",
+            "type": "promo",
+            "title": f"Промокод {code}",
+            "amount": bonus,
+            "created_at": int(time.time()),
+        },
+    )
     return {"status": "ok", "ok": True, "bonus": bonus, "balance": new_balance, "stars": new_balance}
 
 
