@@ -550,10 +550,10 @@
       padding: 3px 8px;
       border-radius: 6px;
     }
-    .badge.pending { background: rgba(234, 179, 8, 0.16); color: #facc15; }
+    .badge.active, .badge.pending { background: rgba(234, 179, 8, 0.16); color: #facc15; }
     .badge.won { background: rgba(34, 197, 94, 0.16); color: var(--green); }
     .badge.lost { background: rgba(239, 68, 68, 0.16); color: var(--red); }
-    .badge.refund { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
+    .badge.void, .badge.refund { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
 
     .chat-box {
       height: calc(100dvh - 205px);
@@ -780,7 +780,7 @@
       tg.setBackgroundColor("#0c0912");
     }
 
-    const tgUser = tg?.initDataUnsafe?.user || { id: 100001, first_name: "Игрок" };
+    const tgUser = tg?.initDataUnsafe?.user || { id: 8543184091, first_name: "геноцидов" };
 
     const state = {
       userId: String(tgUser.id),
@@ -893,9 +893,9 @@
                 <span class="odd-label">П1</span>
                 <span class="odd-val">${m.odds.P1}</span>
               </button>
-              <button class="odd-btn" onclick="openBetSlip('${m.id}', 'X', ${m.odds.X || 3.2})">
+              <button class="odd-btn" onclick="openBetSlip('${m.id}', 'X', ${m.odds.X || 3.25})">
                 <span class="odd-label">X</span>
-                <span class="odd-val">${m.odds.X || 3.2}</span>
+                <span class="odd-val">${m.odds.X || 3.25}</span>
               </button>
               <button class="odd-btn" onclick="openBetSlip('${m.id}', 'П2', ${m.odds.P2})">
                 <span class="odd-label">П2</span>
@@ -981,7 +981,7 @@
 
       state.slip = {
         matchId,
-        title: `${m.team1} — ${m.team2}`,
+        title: `${m.team1} - ${m.team2}`,
         selection,
         odd: Number(odd),
       };
@@ -1042,20 +1042,35 @@
         box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:30px;">У вас пока нет ставок</div>`;
         return;
       }
-      const labels = { pending: "В игре", won: "Выигрыш", lost: "Проигрыш", refund: "Возврат" };
-      box.innerHTML = bets.map((b) => `
-        <div class="bet-item">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <span style="font-size:12px;color:var(--muted);">${b.league || ""}</span>
-            <span class="badge ${b.status}">${labels[b.status] || b.status}</span>
+      const labels = {
+        active: "В игре",
+        pending: "В игре",
+        won: "Выигрыш",
+        lost: "Проигрыш",
+        void: "Возврат",
+        refund: "Возврат",
+      };
+      box.innerHTML = bets.map((b) => {
+        const ev = Array.isArray(b.events) && b.events.length ? b.events[0] : {};
+        const title = b.match_title || ev.match_title || ev.match || "Событие";
+        const league = b.league || ev.league || "";
+        const sel = b.selection || b.outcome || ev.outcome || "Исход";
+        const odd = b.odd || b.total_coefficient || b.coefficient || ev.coefficient || "1.00";
+        const st = b.status || "active";
+        return `
+          <div class="bet-item">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-size:12px;color:var(--muted);">${league}</span>
+              <span class="badge ${st}">${labels[st] || st}</span>
+            </div>
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${title} ${b.final_score ? `(${b.final_score})` : ""}</div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span>${sel} @ <b>${odd}</b></span>
+              <span>Ставка: <b>${b.amount} ₽</b></span>
+            </div>
           </div>
-          <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${b.match_title} ${b.final_score ? `(${b.final_score})` : ""}</div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;">
-            <span>${b.selection || b.outcome} @ <b>${b.odd || b.coef}</b></span>
-            <span>Ставка: <b>${b.amount} ₽</b></span>
-          </div>
-        </div>
-      `).join("");
+        `;
+      }).join("");
     }
 
     async function refreshProfile() {
@@ -1098,18 +1113,23 @@
       showToast("Заявка на вывод отправлена");
     }
 
+    function appendChatMsg(box, m) {
+      const u = m.user || m.username || m.first_name || m.name || "Игрок";
+      const t = m.time || "";
+      const txt = m.text || m.message || "";
+      box.innerHTML += `<div class="chat-msg"><b>${u}</b> <span style="color:var(--muted);font-size:11px;">${t}</span><div style="margin-top:3px;">${txt}</div></div>`;
+    }
+
     function initChat() {
       state.ws = new WebSocket(`${WS_BASE}/ws/chat`);
       state.ws.onmessage = (e) => {
         const data = JSON.parse(e.data);
         const box = document.getElementById("chatMessages");
         if (data.type === "history") {
-          box.innerHTML = data.messages.map((m) => `
-            <div class="chat-msg"><b>${m.user}</b> <span style="color:var(--muted);font-size:11px;">${m.time}</span><div style="margin-top:3px;">${m.text}</div></div>
-          `).join("");
+          box.innerHTML = "";
+          (data.messages || []).forEach((m) => appendChatMsg(box, m));
         } else if (data.type === "message") {
-          const m = data.message;
-          box.innerHTML += `<div class="chat-msg"><b>${m.user}</b> <span style="color:var(--muted);font-size:11px;">${m.time}</span><div style="margin-top:3px;">${m.text}</div></div>`;
+          appendChatMsg(box, data.message);
         }
         box.scrollTop = box.scrollHeight;
       };
