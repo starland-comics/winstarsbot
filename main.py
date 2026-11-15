@@ -1279,6 +1279,25 @@ async def cmd_set_balance(message: Message) -> None:
     await message.answer(f"Баланс игрока <code>{uid}</code> установлен на <b>{val}</b>", parse_mode="HTML")
 
 
+@bot_router.message(Command("add_refs"))
+async def cmd_add_refs(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3 or not parts[1].isdigit():
+        await message.answer("Формат: <code>/add_refs USER_ID КОЛИЧЕСТВО</code>", parse_mode="HTML")
+        return
+    uid = parts[1]
+    delta = int(parts[2])
+    u = await _ensure_user_in_db(int(uid))
+    new_refs = max(0, int(u.get("referrals", 0)) + delta)
+    await firebase_patch(f"users/{uid}", {"referrals": new_refs})
+    await message.answer(
+        f"Рефералы игрока <code>{uid}</code> обновлены: <b>{new_refs}</b>.",
+        parse_mode="HTML",
+    )
+
+
 @bot_router.message(Command("broadcast"))
 async def cmd_broadcast(message: Message) -> None:
     if not message.from_user or not _is_admin(message.from_user.id):
