@@ -4,22 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>WinStars</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg-main: #0d0e12;
-      --bg-card: #161821;
-      --bg-card-hover: #1e212d;
-      --bg-input: #1f222e;
-      --accent: #8b5cf6;
-      --accent-glow: rgba(139, 92, 246, 0.35);
-      --accent-soft: rgba(139, 92, 246, 0.16);
+      --bg-dark: #09070f;
+      --bg-card: #130f1e;
+      --bg-card-hover: #1b162a;
+      --accent: #9d4edd;
+      --accent-glow: rgba(157, 78, 221, 0.4);
+      --accent-soft: rgba(157, 78, 221, 0.16);
       --gold: #fbbf24;
       --green: #10b981;
       --red: #ef4444;
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --border: rgba(255, 255, 255, 0.08);
+      --text-main: #f3f0f8;
+      --text-muted: #8a819b;
+      --border: rgba(157, 78, 221, 0.14);
     }
 
     * {
@@ -27,15 +29,26 @@
       margin: 0;
       padding: 0;
       -webkit-tap-highlight-color: transparent;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
     body {
-      background: var(--bg-main);
+      background-color: var(--bg-dark);
       color: var(--text-main);
       min-height: 100vh;
       padding-bottom: 84px;
       overflow-x: hidden;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bg-noise {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      opacity: 0.032;
+      z-index: 999;
     }
 
     /* HEADER */
@@ -47,18 +60,16 @@
       align-items: center;
       justify-content: space-between;
       padding: 12px 16px;
-      background: rgba(13, 14, 18, 0.92);
-      backdrop-filter: blur(12px);
+      background: rgba(9, 7, 15, 0.9);
+      backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
     }
 
     .brand-title {
-      font-size: 19px;
+      font-size: 1.15rem;
       font-weight: 800;
-      letter-spacing: 0.8px;
-      background: linear-gradient(90deg, #fff, #c4b5fd);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      letter-spacing: 1px;
+      color: var(--text-main);
     }
 
     .header-right {
@@ -71,13 +82,13 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 12px;
+      padding: 6px 13px;
       border-radius: 999px;
       background: var(--bg-card);
-      border: 1px solid rgba(139, 92, 246, 0.4);
+      border: 1px solid rgba(157, 78, 221, 0.35);
       font-weight: 700;
-      font-size: 14px;
-      color: #fff;
+      font-size: 0.88rem;
+      color: var(--text-main);
       cursor: pointer;
     }
 
@@ -92,7 +103,8 @@
       align-items: center;
       justify-content: center;
       font-weight: 700;
-      font-size: 13px;
+      font-size: 0.78rem;
+      color: var(--text-main);
       cursor: pointer;
     }
 
@@ -116,7 +128,7 @@
     .controls-bar {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       margin-bottom: 14px;
     }
 
@@ -132,9 +144,9 @@
       border: none;
       background: transparent;
       color: var(--text-muted);
-      padding: 7px 14px;
+      padding: 7px 15px;
       border-radius: 9px;
-      font-size: 13px;
+      font-size: 0.84rem;
       font-weight: 700;
       cursor: pointer;
       transition: 0.2s;
@@ -143,7 +155,7 @@
     .mode-btn.active {
       background: var(--accent);
       color: #fff;
-      box-shadow: 0 2px 10px var(--accent-glow);
+      box-shadow: 0 2px 12px var(--accent-glow);
     }
 
     .league-filter-btn {
@@ -151,19 +163,19 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
+      gap: 8px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       color: var(--text-main);
-      padding: 9px 12px;
+      padding: 9px 13px;
       border-radius: 12px;
-      font-size: 13px;
+      font-size: 0.84rem;
       font-weight: 600;
       cursor: pointer;
       overflow: hidden;
     }
 
-    .league-filter-btn span {
+    .league-filter-btn span:first-child {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -174,7 +186,7 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 13px;
+      padding: 14px;
       margin-bottom: 12px;
       cursor: pointer;
       transition: border-color 0.2s, transform 0.15s;
@@ -189,9 +201,10 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      font-size: 11.5px;
+      font-size: 0.78rem;
+      font-weight: 500;
       color: var(--text-muted);
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .match-header span:last-child {
@@ -208,6 +221,7 @@
       gap: 6px;
       color: var(--green);
       font-weight: 700;
+      font-size: 0.82rem;
     }
 
     .live-dot {
@@ -229,7 +243,7 @@
       grid-template-columns: 1fr auto 1fr;
       align-items: center;
       gap: 10px;
-      margin-bottom: 13px;
+      margin-bottom: 14px;
     }
 
     .team {
@@ -237,47 +251,44 @@
       flex-direction: column;
       align-items: center;
       text-align: center;
-      gap: 7px;
+      gap: 8px;
     }
 
     .team-logo-img {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       object-fit: contain;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.04);
-      padding: 3px;
     }
 
     .team-logo {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #2a2d3d, #1c1e29);
-      border: 1px solid var(--border);
+      background: linear-gradient(135deg, #2b1d47, #1b132e);
+      border: 1px solid rgba(157, 78, 221, 0.3);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
+      font-size: 0.85rem;
       font-weight: 800;
-      color: #c4b5fd;
+      color: #d8b4fe;
     }
 
     .team-name {
-      font-size: 13px;
+      font-size: 0.86rem;
       font-weight: 700;
       line-height: 1.25;
       color: var(--text-main);
     }
 
     .score {
-      font-size: 19px;
-      font-weight: 900;
+      font-size: 1.4rem;
+      font-weight: 800;
       letter-spacing: 1px;
-      color: #a78bfa;
-      padding: 4px 10px;
-      border-radius: 10px;
-      background: rgba(139, 92, 246, 0.1);
+      color: #a855f7;
+      text-align: center;
+      min-width: 54px;
     }
 
     .odds-grid {
@@ -287,14 +298,14 @@
     }
 
     .odd-btn {
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 11px;
+      background: var(--bg-card-hover);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
       padding: 8px 6px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+      gap: 3px;
       cursor: pointer;
       transition: 0.15s;
     }
@@ -306,15 +317,15 @@
     }
 
     .odd-name {
-      font-size: 11px;
+      font-size: 0.7rem;
       color: var(--text-muted);
       font-weight: 600;
     }
 
     .odd-val {
-      font-size: 14px;
+      font-size: 0.9rem;
       font-weight: 800;
-      color: #fff;
+      color: var(--text-main);
     }
 
     /* BETS TAB */
@@ -332,7 +343,7 @@
       background: var(--bg-card);
       color: var(--text-muted);
       font-weight: 700;
-      font-size: 13px;
+      font-size: 0.84rem;
       cursor: pointer;
     }
 
@@ -345,8 +356,8 @@
     .bet-item-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 13px;
+      border-radius: 16px;
+      padding: 14px;
       margin-bottom: 10px;
     }
 
@@ -355,7 +366,7 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 6px;
-      font-size: 12px;
+      font-size: 0.76rem;
       color: var(--text-muted);
     }
 
@@ -363,7 +374,7 @@
       padding: 3px 8px;
       border-radius: 7px;
       font-weight: 700;
-      font-size: 11px;
+      font-size: 0.72rem;
     }
 
     .bet-status-active { background: rgba(251, 191, 36, 0.16); color: var(--gold); }
@@ -391,7 +402,7 @@
     }
 
     .chat-msg {
-      background: var(--bg-input);
+      background: var(--bg-card-hover);
       padding: 9px 12px;
       border-radius: 12px;
       max-width: 85%;
@@ -400,18 +411,18 @@
     .chat-msg.mine {
       align-self: flex-end;
       background: var(--accent-soft);
-      border: 1px solid rgba(139, 92, 246, 0.35);
+      border: 1px solid rgba(157, 78, 221, 0.35);
     }
 
     .chat-msg-author {
-      font-size: 11px;
+      font-size: 0.72rem;
       font-weight: 700;
-      color: #a78bfa;
+      color: #c084fc;
       margin-bottom: 3px;
     }
 
     .chat-msg-text {
-      font-size: 13.5px;
+      font-size: 0.85rem;
       line-height: 1.35;
       word-break: break-word;
     }
@@ -421,17 +432,17 @@
       gap: 8px;
       padding: 10px;
       border-top: 1px solid var(--border);
-      background: var(--bg-main);
+      background: var(--bg-dark);
     }
 
     .chat-input {
       flex: 1;
-      background: var(--bg-input);
+      background: var(--bg-card-hover);
       border: 1px solid var(--border);
       border-radius: 11px;
       padding: 10px 12px;
-      color: #fff;
-      font-size: 14px;
+      color: var(--text-main);
+      font-size: 0.88rem;
       outline: none;
     }
 
@@ -445,7 +456,7 @@
     }
 
     .panel-title {
-      font-size: 15px;
+      font-size: 0.95rem;
       font-weight: 800;
       margin-bottom: 10px;
     }
@@ -458,13 +469,13 @@
     }
 
     .preset-btn {
-      background: var(--bg-input);
+      background: var(--bg-card-hover);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 9px 4px;
-      color: #fff;
+      color: var(--text-main);
       font-weight: 700;
-      font-size: 13px;
+      font-size: 0.82rem;
       cursor: pointer;
     }
 
@@ -474,12 +485,12 @@
 
     .field-input {
       width: 100%;
-      background: var(--bg-input);
+      background: var(--bg-card-hover);
       border: 1px solid var(--border);
       border-radius: 11px;
       padding: 11px 12px;
-      color: #fff;
-      font-size: 14px;
+      color: var(--text-main);
+      font-size: 0.88rem;
       margin-bottom: 10px;
       outline: none;
     }
@@ -491,7 +502,7 @@
       border: none;
       border-radius: 12px;
       padding: 12px;
-      font-size: 14px;
+      font-size: 0.88rem;
       font-weight: 800;
       cursor: pointer;
       box-shadow: 0 4px 14px var(--accent-glow);
@@ -506,26 +517,35 @@
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 10px;
-      margin-top: 10px;
+      margin-top: 12px;
     }
 
     .stat-box {
-      background: var(--bg-input);
+      background: var(--bg-card-hover);
       border-radius: 12px;
       padding: 12px;
       text-align: center;
     }
 
     .stat-val {
-      font-size: 18px;
+      font-size: 1.12rem;
       font-weight: 800;
-      color: #fff;
+      color: var(--text-main);
     }
 
     .stat-lbl {
-      font-size: 11.5px;
+      font-size: 0.74rem;
       color: var(--text-muted);
       margin-top: 3px;
+    }
+
+    .profit-canvas {
+      width: 100%;
+      height: 120px;
+      display: block;
+      margin-top: 8px;
+      border-radius: 10px;
+      background: var(--bg-card-hover);
     }
 
     /* FLOATING BETSLIP BAR */
@@ -535,7 +555,7 @@
       left: 14px;
       right: 14px;
       z-index: 60;
-      background: linear-gradient(90deg, #7c3aed, #9333ea);
+      background: linear-gradient(90deg, #7e22ce, #9d4edd);
       color: #fff;
       border-radius: 14px;
       padding: 12px 16px;
@@ -543,8 +563,8 @@
       align-items: center;
       justify-content: space-between;
       font-weight: 800;
-      font-size: 14px;
-      box-shadow: 0 6px 22px rgba(124, 58, 237, 0.5);
+      font-size: 0.88rem;
+      box-shadow: 0 6px 22px var(--accent-glow);
       cursor: pointer;
     }
 
@@ -558,35 +578,38 @@
       bottom: 0;
       left: 0;
       right: 0;
+      height: 64px;
       z-index: 70;
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      background: rgba(18, 20, 27, 0.96);
-      backdrop-filter: blur(12px);
+      align-items: center;
+      background: rgba(9, 7, 15, 0.94);
+      backdrop-filter: blur(14px);
       border-top: 1px solid var(--border);
-      padding: 8px 4px 10px;
     }
 
     .nav-item {
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center;
       gap: 4px;
       background: transparent;
       border: none;
       color: var(--text-muted);
-      font-size: 11px;
+      font-size: 0.68rem;
       font-weight: 600;
       cursor: pointer;
+      transition: color 0.15s;
     }
 
     .nav-item.active {
-      color: #a78bfa;
+      color: var(--accent);
     }
 
-    .nav-icon {
-      font-size: 18px;
-      line-height: 1;
+    .nav-item svg {
+      width: 20px;
+      height: 20px;
     }
 
     /* MODALS */
@@ -595,7 +618,7 @@
       inset: 0;
       z-index: 100;
       background: rgba(0, 0, 0, 0.72);
-      backdrop-filter: blur(5px);
+      backdrop-filter: blur(6px);
       display: none;
       align-items: flex-end;
       justify-content: center;
@@ -610,7 +633,7 @@
       max-width: 520px;
       max-height: 82vh;
       overflow-y: auto;
-      background: #151720;
+      background: var(--bg-card);
       border-top-left-radius: 22px;
       border-top-right-radius: 22px;
       border-top: 1px solid var(--border);
@@ -625,7 +648,7 @@
     }
 
     .modal-title {
-      font-size: 17px;
+      font-size: 1.05rem;
       font-weight: 800;
     }
 
@@ -634,19 +657,22 @@
       height: 30px;
       border-radius: 50%;
       border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: #fff;
-      font-size: 15px;
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       cursor: pointer;
     }
 
     .league-item {
       padding: 12px 14px;
       border-radius: 12px;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
+      background: var(--bg-card-hover);
+      border: 1px solid rgba(255, 255, 255, 0.04);
       margin-bottom: 8px;
-      font-size: 13.5px;
+      font-size: 0.85rem;
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -661,7 +687,7 @@
     }
 
     .league-top {
-      font-size: 10px;
+      font-size: 0.65rem;
       font-weight: 800;
       padding: 2px 6px;
       border-radius: 6px;
@@ -674,7 +700,7 @@
     }
 
     .market-group-title {
-      font-size: 12.5px;
+      font-size: 0.78rem;
       font-weight: 700;
       color: var(--text-muted);
       margin-bottom: 8px;
@@ -687,7 +713,7 @@
     }
 
     .slip-item {
-      background: var(--bg-input);
+      background: var(--bg-card-hover);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 10px 12px;
@@ -704,19 +730,27 @@
       left: 50%;
       transform: translateX(-50%);
       z-index: 150;
-      background: #232634;
-      color: #fff;
+      background: var(--bg-card);
+      color: var(--text-main);
       border: 1px solid var(--accent);
       padding: 10px 16px;
       border-radius: 12px;
-      font-size: 13px;
+      font-size: 0.82rem;
       font-weight: 700;
       display: none;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     }
   </style>
 </head>
 <body>
+
+  <!-- SUBTLE GRAIN OVERLAY -->
+  <svg class="bg-noise" xmlns="http://www.w3.org/2000/svg">
+    <filter id="noiseFilter">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch" />
+    </filter>
+    <rect width="100%" height="100%" filter="url(#noiseFilter)" />
+  </svg>
 
   <div id="toast" class="toast"></div>
 
@@ -769,7 +803,9 @@
       <div id="chat-messages" class="chat-messages"></div>
       <div class="chat-input-row">
         <input id="chat-input" class="chat-input" type="text" placeholder="Написать в общий чат..." maxlength="300" onkeydown="if(event.key==='Enter') sendChatMessage()" />
-        <button class="primary-btn" style="width:auto; padding:0 16px;" onclick="sendChatMessage()">➤</button>
+        <button class="primary-btn" style="width:auto; padding:0 16px;" onclick="sendChatMessage()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
       </div>
     </div>
   </section>
@@ -804,8 +840,8 @@
   <!-- TAB 5: ПРОФИЛЬ -->
   <section id="tab-profile" class="tab-content">
     <div class="panel-card" style="text-align:center;">
-      <div id="profile-name" style="font-size:18px; font-weight:800;">Игрок</div>
-      <div id="profile-username" style="font-size:13px; color:var(--text-muted); margin-top:2px;">@player</div>
+      <div id="profile-name" style="font-size:1.1rem; font-weight:800;">Игрок</div>
+      <div id="profile-username" style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">@player</div>
       <div class="stats-grid">
         <div class="stat-box">
           <div id="stat-balance" class="stat-val">0 ⭐</div>
@@ -827,6 +863,11 @@
     </div>
 
     <div class="panel-card">
+      <div class="panel-title">График профита</div>
+      <canvas id="profit-chart" class="profit-canvas" width="400" height="120"></canvas>
+    </div>
+
+    <div class="panel-card">
       <div class="panel-title">Реферальная ссылка</div>
       <input id="ref-link-input" class="field-input" type="text" readonly />
       <button class="primary-btn" onclick="copyRefLink()">Скопировать ссылку</button>
@@ -839,26 +880,41 @@
     <span id="betslip-fab-coef">Коэф: 1.00</span>
   </div>
 
-  <!-- BOTTOM NAVIGATION -->
+  <!-- BOTTOM NAVIGATION (MONOCHROME SVG ICONS) -->
   <nav class="bottom-nav">
     <button id="nav-events" class="nav-item active" onclick="switchTab('events')">
-      <span class="nav-icon">⚑</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+        <line x1="4" y1="22" x2="4" y2="15"></line>
+      </svg>
       <span>События</span>
     </button>
     <button id="nav-bets" class="nav-item" onclick="switchTab('bets')">
-      <span class="nav-icon">📊</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
       <span>Ставки</span>
     </button>
     <button id="nav-chat" class="nav-item" onclick="switchTab('chat')">
-      <span class="nav-icon">💬</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+      </svg>
       <span>Чат</span>
     </button>
     <button id="nav-cashier" class="nav-item" onclick="switchTab('cashier')">
-      <span class="nav-icon">💳</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+        <line x1="2" y1="10" x2="22" y2="10"></line>
+      </svg>
       <span>Касса</span>
     </button>
     <button id="nav-profile" class="nav-item" onclick="switchTab('profile')">
-      <span class="nav-icon">👤</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+        <circle cx="12" cy="7" r="4"></circle>
+      </svg>
       <span>Профиль</span>
     </button>
   </nav>
@@ -893,12 +949,12 @@
         <button class="close-btn" onclick="closeBetSlipModal()">✕</button>
       </div>
       <div id="betslip-items-container"></div>
-      <div style="display:flex; justify-content:space-between; margin:12px 0; font-size:14px; font-weight:700;">
+      <div style="display:flex; justify-content:space-between; margin:12px 0; font-size:0.88rem; font-weight:700;">
         <span>Общий коэффициент:</span>
-        <span id="betslip-total-coef" style="color:#a78bfa;">1.00</span>
+        <span id="betslip-total-coef" style="color:#c084fc;">1.00</span>
       </div>
       <input id="bet-amount-input" class="field-input" type="number" min="1" step="1" placeholder="Сумма ставки (⭐)" value="1" oninput="updatePotentialWin()" />
-      <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:13px; color:var(--text-muted);">
+      <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:0.82rem; color:var(--text-muted);">
         <span>Возможный выигрыш:</span>
         <span id="betslip-potential-win" style="color:var(--green); font-weight:800;">0 ⭐</span>
       </div>
@@ -944,6 +1000,10 @@
     let betsFilter = 'active';
     window.matchTimers = {};
 
+    function escAttr(str) {
+      return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
     function showToast(msg) {
       const el = document.getElementById('toast');
       el.innerText = msg;
@@ -970,6 +1030,7 @@
       document.getElementById(`nav-${tabName}`).classList.add('active');
       if (tabName === 'bets') renderUserBets();
       if (tabName === 'chat') loadChatHistory();
+      if (tabName === 'profile') drawProfitChart();
     }
 
     async function syncUserProfile() {
@@ -986,6 +1047,7 @@
           userBets = Array.isArray(data.bets) ? data.bets : [];
           updateProfileUI();
           renderUserBets();
+          drawProfitChart();
         }
       } catch (e) {
         console.error('Ошибка синхронизации профиля:', e);
@@ -1013,22 +1075,80 @@
       }
     }
 
+    function drawProfitChart() {
+      const canvas = document.getElementById('profit-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const settled = userBets
+        .filter(b => b.status === 'won' || b.status === 'lost')
+        .slice()
+        .reverse();
+
+      const points = [0];
+      let cum = 0;
+      settled.forEach(b => {
+        if (b.status === 'won') cum += Number(b.potential_win || 0) - Number(b.amount || 0);
+        else cum -= Number(b.amount || 0);
+        points.push(cum);
+      });
+
+      const minVal = Math.min(...points, -5);
+      const maxVal = Math.max(...points, 5);
+      const range = maxVal - minVal || 1;
+      const zeroY = h - ((0 - minVal) / range) * (h - 24) - 12;
+
+      ctx.strokeStyle = 'rgba(138, 129, 155, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, zeroY);
+      ctx.lineTo(w, zeroY);
+      ctx.stroke();
+
+      if (points.length === 1) {
+        ctx.fillStyle = '#8a819b';
+        ctx.font = '600 12px Plus Jakarta Sans, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Нет рассчитанных ставок для графика', w / 2, h / 2 + 4);
+        return;
+      }
+
+      ctx.strokeStyle = cum >= 0 ? '#10b981' : '#ef4444';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      points.forEach((val, idx) => {
+        const x = (idx / (points.length - 1)) * (w - 24) + 12;
+        const y = h - ((val - minVal) / range) * (h - 24) - 12;
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    function applyMatchesPayload(matchesDict) {
+      if (!matchesDict || typeof matchesDict !== 'object') return;
+      allMatchesRaw = Object.entries(matchesDict)
+        .filter(([id, m]) => m && m.odds && m.score !== '?')
+        .map(([id, m]) => ({ id, ...m }));
+
+      const hasLive = allMatchesRaw.some(m => m.is_live === true || (m.status && m.status.startsWith('LIVE')));
+      if (!hasLive && currentMode === 'live' && !window._userSwitchedMode) {
+        setMode('upcoming', false);
+        return;
+      }
+      updateLeagueList();
+      renderMatches();
+    }
+
     async function loadMatches() {
       try {
         const res = await fetch(`${API_BASE_URL}/api/matches`);
         const data = await res.json();
         if (data.matches) {
-          allMatchesRaw = Object.entries(data.matches)
-            .filter(([id, m]) => m && m.odds && m.score !== '?')
-            .map(([id, m]) => ({ id, ...m }));
-
-          const hasLive = allMatchesRaw.some(m => m.is_live === true || (m.status && m.status.startsWith('LIVE')));
-          if (!hasLive && currentMode === 'live' && !window._userSwitchedMode) {
-            setMode('upcoming', false);
-            return;
-          }
-          updateLeagueList();
-          renderMatches();
+          applyMatchesPayload(data.matches);
         }
       } catch (e) {
         console.error('Ошибка загрузки матчей:', e);
@@ -1048,8 +1168,7 @@
       container.innerHTML = `<div class="league-item ${currentLeague === 'all' ? 'active' : ''}" onclick="selectLeague('all')">Все лиги</div>`;
       sortedLeagues.forEach(l => {
         const isTop = (LEAGUE_PRIORITY[l] || 999) <= 13 ? '<span class="league-top">ТОП</span>' : '';
-        const safeL = l.replace(/'/g, "\\'");
-        container.innerHTML += `<div class="league-item ${currentLeague === l ? 'active' : ''}" onclick="selectLeague('${safeL}')"><span>${l}</span> ${isTop}</div>`;
+        container.innerHTML += `<div class="league-item ${currentLeague === l ? 'active' : ''}" onclick="selectLeague('${escAttr(l)}')"><span>${l}</span> ${isTop}</div>`;
       });
     }
 
@@ -1126,7 +1245,13 @@
       }
 
       filtered.forEach(match => {
+        const homeName = match.home || match.team1 || 'Команда 1';
+        const awayName = match.away || match.team2 || 'Команда 2';
+        const homeLogo = match.homeLogo || match.logo1 || '';
+        const awayLogo = match.awayLogo || match.logo2 || '';
+        const matchTitle = match.title || `${homeName} - ${awayName}`;
         const isLive = match.is_live === true || (match.status && match.status.startsWith('LIVE'));
+
         const card = document.createElement('div');
         card.className = 'match-card';
         card.onclick = () => openMatchDetails(match.id);
@@ -1148,19 +1273,17 @@
           const coeff = match.odds[o.key] || '-';
           const isSelected = betSlip.some(b => b.matchId === match.id && b.outcomeKey === o.label);
           const selectedClass = isSelected ? 'selected' : '';
-          const safeTitle = (match.title || `${match.home} - ${match.away}`).replace(/'/g, '');
-          const safeLeague = (match.league || 'Футбол').replace(/'/g, '');
-          oddsHtml += `<div class="odd-btn ${selectedClass}" onclick="event.stopPropagation(); toggleBet('${match.id}', '${safeTitle}', '${o.label}', ${coeff === '-' ? 0 : coeff}, '${safeLeague}', '${o.label}', 'Исход')">
+          oddsHtml += `<div class="odd-btn ${selectedClass}" onclick="event.stopPropagation(); toggleBet('${escAttr(match.id)}', '${escAttr(matchTitle)}', '${o.label}', ${coeff === '-' ? 0 : coeff}, '${escAttr(match.league || 'Футбол')}', '${o.label}', 'Исход')">
             <span class="odd-name">${o.label}</span><span class="odd-val">${coeff}</span>
           </div>`;
         });
 
-        const homeLogoHtml = match.homeLogo
-          ? `<img src="${match.homeLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${match.home.substring(0,2).toUpperCase()}</div>`
-          : `<div class="team-logo">${match.home.substring(0,2).toUpperCase()}</div>`;
-        const awayLogoHtml = match.awayLogo
-          ? `<img src="${match.awayLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${match.away.substring(0,2).toUpperCase()}</div>`
-          : `<div class="team-logo">${match.away.substring(0,2).toUpperCase()}</div>`;
+        const homeLogoHtml = homeLogo
+          ? `<img src="${homeLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>`
+          : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+        const awayLogoHtml = awayLogo
+          ? `<img src="${awayLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>`
+          : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
 
         const displayStatus = isLive ? getLiveDisplayStatus(match) : timeDisplay;
         card.innerHTML = `
@@ -1169,9 +1292,9 @@
             <span>${match.league || 'Футбол'}</span>
           </div>
           <div class="teams-container">
-            <div class="team">${homeLogoHtml}<div class="team-name">${match.home}</div></div>
+            <div class="team">${homeLogoHtml}<div class="team-name">${homeName}</div></div>
             <div class="score">${isLive ? match.score : 'VS'}</div>
-            <div class="team">${awayLogoHtml}<div class="team-name">${match.away}</div></div>
+            <div class="team">${awayLogoHtml}<div class="team-name">${awayName}</div></div>
           </div>
           <div class="odds-grid">${oddsHtml}</div>`;
         container.appendChild(card);
@@ -1182,7 +1305,8 @@
       const modal = document.getElementById('match-modal');
       const container = document.getElementById('match-markets-container');
       const matchObj = allMatchesRaw.find(m => m.id === matchId);
-      document.getElementById('match-modal-title').innerText = matchObj ? matchObj.title : 'Рынки матча';
+      const matchTitle = matchObj ? (matchObj.title || `${matchObj.home} - ${matchObj.away}`) : 'Рынки матча';
+      document.getElementById('match-modal-title').innerText = matchTitle;
       container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:24px;">Загрузка рынков...</div>';
       modal.classList.add('open');
 
@@ -1195,17 +1319,14 @@
           return;
         }
         container.innerHTML = '';
-        const safeTitle = (matchObj ? matchObj.title : '').replace(/'/g, '');
-        const safeLeague = (matchObj ? matchObj.league : 'Футбол').replace(/'/g, '');
+        const leagueName = matchObj ? (matchObj.league || 'Футбол') : 'Футбол';
 
         groups.forEach(g => {
           let outcomesHtml = '';
           (g.outcomes || []).forEach(o => {
             const isSelected = betSlip.some(b => b.matchId === matchId && b.outcomeKey === o.outcome_key);
-            const safeKey = String(o.outcome_key).replace(/'/g, '');
-            const safeGroup = String(g.group_name).replace(/'/g, '');
             outcomesHtml += `
-              <div class="odd-btn ${isSelected ? 'selected' : ''}" onclick="toggleBet('${matchId}', '${safeTitle}', '${safeKey}', ${o.coefficient}, '${safeLeague}', '${safeKey}', '${safeGroup}'); openMatchDetails('${matchId}')">
+              <div class="odd-btn ${isSelected ? 'selected' : ''}" onclick="toggleBet('${escAttr(matchId)}', '${escAttr(matchTitle)}', '${escAttr(o.outcome_key)}', ${o.coefficient}, '${escAttr(leagueName)}', '${escAttr(o.outcome_key)}', '${escAttr(g.group_name)}'); openMatchDetails('${escAttr(matchId)}')">
                 <span class="odd-name">${o.name}</span>
                 <span class="odd-val">${o.coefficient}</span>
               </div>`;
@@ -1259,11 +1380,11 @@
         container.innerHTML += `
           <div class="slip-item">
             <div>
-              <div style="font-size:12px; color:var(--text-muted);">${item.matchTitle}</div>
-              <div style="font-size:13.5px; font-weight:700; margin-top:2px;">${item.groupName}: ${item.outcomeLabel}</div>
+              <div style="font-size:0.74rem; color:var(--text-muted);">${item.matchTitle}</div>
+              <div style="font-size:0.85rem; font-weight:700; margin-top:2px;">${item.groupName}: ${item.outcomeLabel}</div>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-weight:800; color:#a78bfa;">${item.coeff.toFixed(2)}</span>
+              <span style="font-weight:800; color:#c084fc;">${item.coeff.toFixed(2)}</span>
               <button class="close-btn" onclick="betSlip.splice(${idx},1); updateBetSlipUI(); renderMatches(); if(betSlip.length===0){closeBetSlipModal()}else{openBetSlipModal()}">✕</button>
             </div>
           </div>`;
@@ -1356,10 +1477,10 @@
               <span>${b.league || 'Спорт'}</span>
               <span class="bet-status-badge ${cls}">${statusMap[b.status] || b.status}</span>
             </div>
-            <div style="font-weight:800; font-size:14px; margin-bottom:4px;">${b.match_title || 'Событие'}</div>
-            <div style="font-size:13px; color:#a78bfa; margin-bottom:8px;">Исход: ${b.outcome} (×${b.total_coefficient || b.coefficient})</div>
-            <div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-muted);">
-              <span>Ставка: <b style="color:#fff;">${b.amount} ⭐</b></span>
+            <div style="font-weight:800; font-size:0.9rem; margin-bottom:4px;">${b.match_title || 'Событие'}</div>
+            <div style="font-size:0.82rem; color:#c084fc; margin-bottom:8px;">Исход: ${b.outcome} (×${b.total_coefficient || b.coefficient})</div>
+            <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted);">
+              <span>Ставка: <b style="color:var(--text-main);">${b.amount} ⭐</b></span>
               <span>Выигрыш: <b style="color:var(--green);">${b.potential_win} ⭐</b></span>
             </div>
           </div>`;
@@ -1494,10 +1615,36 @@
       inp.value = '';
     }
 
+    function connectLiveWebSocket() {
+      try {
+        const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/ws/live';
+        const liveWs = new WebSocket(wsUrl);
+        liveWs.onmessage = ev => {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === 'matches_update' && msg.data && msg.data.matches) {
+              applyMatchesPayload(msg.data.matches);
+            }
+          } catch (e) {}
+        };
+        liveWs.onclose = () => {
+          setTimeout(connectLiveWebSocket, 5000);
+        };
+      } catch (e) {}
+    }
+
     // Инициализация
     syncUserProfile();
     loadMatches();
+    connectLiveWebSocket();
     setInterval(loadMatches, 20000);
+    setInterval(() => {
+      document.querySelectorAll('.live-tag-text').forEach(el => {
+        const mid = el.getAttribute('data-match-id');
+        const m = allMatchesRaw.find(x => x.id === mid);
+        if (m) el.innerText = getLiveDisplayStatus(m);
+      });
+    }, 15000);
   </script>
 </body>
 </html>
