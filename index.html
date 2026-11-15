@@ -101,6 +101,12 @@
       font-size: 0.88rem;
       color: var(--text-main);
       cursor: pointer;
+      transition: border-color 0.15s, transform 0.12s;
+    }
+
+    .balance-pill:active {
+      transform: scale(0.97);
+      border-color: var(--accent-bright);
     }
 
     .header-avatar {
@@ -374,6 +380,13 @@
       border-radius: 16px;
       padding: 14px;
       margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.12s;
+    }
+
+    .bet-item-card:active {
+      transform: scale(0.99);
+      border-color: var(--accent);
     }
 
     .bet-item-top {
@@ -874,7 +887,26 @@
       border-bottom: none;
     }
 
-    /* RECEIPT MODAL (ЧЕК ПРИНЯТОЙ СТАВКИ) */
+    /* CURRENCY SWITCHER MODAL */
+    .currency-option {
+      background: var(--bg-card-hover);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 14px;
+      padding: 13px 14px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+
+    .currency-option.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    /* RECEIPT & BET DETAILS MODAL */
     .receipt-overlay {
       position: fixed;
       inset: 0;
@@ -1056,10 +1088,12 @@
   <header class="app-header">
     <div class="brand-title">WINSTARS</div>
     <div class="header-right">
-      <div class="balance-pill" onclick="switchTab('cashier')">
-        <svg class="star-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+      <div class="balance-pill" onclick="openCurrencyModal()" title="Сменить валюту отображения">
         <span id="header-balance" class="mono">0</span>
-        <svg class="star-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        <span id="header-currency-icon">
+          <svg class="star-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        </span>
+        <span style="font-size:0.7rem; color:var(--text-muted); margin-left:1px;">▾</span>
       </div>
       <div id="header-avatar-wrap" onclick="switchTab('profile')">
         <div class="header-avatar">WS</div>
@@ -1121,24 +1155,25 @@
       <div class="panel-card">
         <div class="panel-title">Пополнение Telegram Stars</div>
         <div class="preset-grid">
-          <button class="preset-btn" onclick="document.getElementById('deposit-amount').value=10">
+          <button class="preset-btn" onclick="setDepositAmount(10)">
             <span class="mono">10</span>
             <svg class="star-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
-          <button class="preset-btn" onclick="document.getElementById('deposit-amount').value=50">
+          <button class="preset-btn" onclick="setDepositAmount(50)">
             <span class="mono">50</span>
             <svg class="star-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
-          <button class="preset-btn" onclick="document.getElementById('deposit-amount').value=100">
+          <button class="preset-btn" onclick="setDepositAmount(100)">
             <span class="mono">100</span>
             <svg class="star-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
-          <button class="preset-btn" onclick="document.getElementById('deposit-amount').value=500">
+          <button class="preset-btn" onclick="setDepositAmount(500)">
             <span class="mono">500</span>
             <svg class="star-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
         </div>
-        <input id="deposit-amount" class="field-input mono" type="number" min="1" placeholder="Введите количество звёзд" value="50" />
+        <input id="deposit-amount" class="field-input mono" type="number" min="1" placeholder="Введите количество звёзд" value="50" oninput="updateDepositHint()" />
+        <div id="deposit-rub-hint" style="font-size:0.76rem; color:var(--text-muted); margin:-4px 0 10px 2px;"></div>
         <button class="primary-btn" onclick="createDepositInvoice()">Пополнить баланс</button>
       </div>
 
@@ -1152,7 +1187,7 @@
     <!-- ПОДРАЗДЕЛ: ВЫВОД -->
     <div id="cashier-pane-withdraw" class="cashier-pane">
       <div class="panel-card">
-        <div class="panel-title">Условия вывода звёзд</div>
+        <div class="panel-title">Условия вывода средств</div>
         <div class="cond-row">
           <span>Минимальный баланс</span>
           <span id="wd-cond-bal" class="cond-badge cond-wait mono">0 / 1000</span>
@@ -1162,7 +1197,7 @@
           <span id="wd-cond-refs" class="cond-badge cond-wait mono">0 / 5</span>
         </div>
 
-        <input id="withdraw-amount" class="field-input mono" type="number" min="1000" placeholder="Сумма вывода (мин. 1000)" oninput="updateWithdrawCalc()" />
+        <input id="withdraw-amount" class="field-input mono" type="number" min="1" placeholder="Сумма вывода (мин. 1000)" oninput="updateWithdrawCalc()" />
 
         <div class="info-summary-box">
           <div class="info-summary-row">
@@ -1297,6 +1332,38 @@
     </button>
   </nav>
 
+  <!-- MODAL: ВЫБОР ВАЛЮТЫ ОТОБРАЖЕНИЯ -->
+  <div id="currency-modal" class="receipt-overlay" onclick="if(event.target===this) closeCurrencyModal()">
+    <div class="receipt-card">
+      <div class="modal-header" style="margin-bottom:12px;">
+        <div class="modal-title">Валюта баланса</div>
+        <button class="close-btn" onclick="closeCurrencyModal()">✕</button>
+      </div>
+      <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:14px;">
+        Курс конвертации: <b class="mono" style="color:var(--text-main);">1 ★ = 1.5 ₽</b>
+      </div>
+
+      <div id="cur-opt-stars" class="currency-option active" onclick="setDisplayCurrency('stars')">
+        <div>
+          <div style="font-size:0.92rem; font-weight:800; display:flex; align-items:center; gap:6px;">
+            <span>Telegram Stars</span>
+            <svg class="star-icon" width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          </div>
+          <div style="font-size:0.74rem; color:var(--text-muted); margin-top:2px;">Базовая игровая валюта</div>
+        </div>
+        <div id="cur-preview-stars" class="mono" style="font-weight:800; font-size:0.92rem; color:#c084fc;">0 ★</div>
+      </div>
+
+      <div id="cur-opt-rub" class="currency-option" onclick="setDisplayCurrency('rub')">
+        <div>
+          <div style="font-size:0.92rem; font-weight:800;">Российский рубль (₽)</div>
+          <div style="font-size:0.74rem; color:var(--text-muted); margin-top:2px;">Автоконвертация по курсу 1.5₽</div>
+        </div>
+        <div id="cur-preview-rub" class="mono" style="font-weight:800; font-size:0.92rem; color:var(--green);">0 ₽</div>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: ВЫБОР ЛИГИ -->
   <div id="league-modal" class="modal-overlay" onclick="closeLeagueModal(event)">
     <div class="modal-sheet">
@@ -1331,7 +1398,7 @@
         <span>Общий коэффициент:</span>
         <span id="betslip-total-coef" class="mono" style="color:#c084fc;">1.00</span>
       </div>
-      <input id="bet-amount-input" class="field-input mono" type="number" min="1" step="1" placeholder="Сумма ставки" value="1" oninput="updatePotentialWin()" />
+      <input id="bet-amount-input" class="field-input mono" type="number" min="1" step="any" placeholder="Сумма ставки" value="10" oninput="updatePotentialWin()" />
       <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:0.82rem; color:var(--text-muted);">
         <span>Возможный выигрыш:</span>
         <span id="betslip-potential-win" class="mono" style="color:var(--green); font-weight:800;">0</span>
@@ -1377,9 +1444,43 @@
     </div>
   </div>
 
+  <!-- MODAL: ДЕТАЛИ СТАВКИ ИЗ РАЗДЕЛА «СТАВКИ» -->
+  <div id="bet-detail-modal" class="receipt-overlay" onclick="if(event.target===this) closeBetDetailModal()">
+    <div class="receipt-card">
+      <div id="bd-icon-wrap" class="receipt-check"></div>
+      <div id="bd-heading" class="receipt-heading">В ожидании!</div>
+
+      <div class="receipt-brand-row">
+        <div class="receipt-brand">WINSTARS</div>
+        <div id="bd-badge" class="receipt-badge">В игре</div>
+      </div>
+      <div id="bd-meta" class="receipt-meta">Ординар · 1 соб.</div>
+
+      <div id="bd-events-list" class="receipt-events-list"></div>
+
+      <div class="receipt-summary-box">
+        <div>
+          <div class="receipt-sum-lbl">Ставка</div>
+          <div id="bd-stake" class="receipt-sum-val">0</div>
+        </div>
+        <div>
+          <div class="receipt-sum-lbl">Коэф</div>
+          <div id="bd-coef" class="receipt-sum-val">1.00</div>
+        </div>
+        <div>
+          <div class="receipt-sum-lbl" id="bd-payout-lbl">Выплата</div>
+          <div id="bd-payout" class="receipt-sum-val">0</div>
+        </div>
+      </div>
+
+      <button class="primary-btn" onclick="closeBetDetailModal()">Закрыть</button>
+    </div>
+  </div>
+
   <script>
     const API_BASE_URL = 'https://winstarsbot.onrender.com';
     const BOT_USERNAME = 'WinStarsPlaybot';
+    const RUB_RATE = 1.5;
 
     const LEAGUE_PRIORITY = {
       'Россия. Премьер-лига': 1,
@@ -1406,6 +1507,7 @@
       tg.expand();
     }
 
+    let displayCurrency = localStorage.getItem('ws_currency') === 'rub' ? 'rub' : 'stars';
     let currentUser = null;
     let allMatchesRaw = [];
     let userBets = [];
@@ -1413,16 +1515,48 @@
     let currentMode = 'live';
     let currentLeague = 'all';
     let betsFilter = 'active';
+    let lastTransactionsCache = [];
     window.matchTimers = {};
+
+    function getRate() {
+      return displayCurrency === 'rub' ? RUB_RATE : 1;
+    }
+
+    function toDisplayVal(starsVal) {
+      return Number(starsVal || 0) * getRate();
+    }
+
+    function toStarsVal(displayVal) {
+      return Number(displayVal || 0) / getRate();
+    }
 
     function starSvg(size = 13) {
       return `<svg class="star-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
     }
 
+    function currencyBadgeHtml(size = 13) {
+      return displayCurrency === 'rub' ? '₽' : starSvg(size);
+    }
+
     function fmtNum(val) {
       const n = Number(val || 0);
       if (Number.isNaN(n)) return '0';
-      return Number.isInteger(n) ? String(n) : n.toFixed(2);
+      const rounded = Math.round(n * 100) / 100;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, '');
+    }
+
+    function fmtMoney(starsVal, iconSize = 12) {
+      const converted = toDisplayVal(starsVal);
+      return `${fmtNum(converted)} ${currencyBadgeHtml(iconSize)}`;
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function escAttr(str) {
@@ -1435,6 +1569,75 @@
       el.style.display = 'block';
       clearTimeout(window._toastTimer);
       window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, 2600);
+    }
+
+    /* ПЕРЕКЛЮЧАТЕЛЬ ВАЛЮТЫ */
+    function openCurrencyModal() {
+      const balStars = currentUser ? Number(currentUser.balance || 0) : 0;
+      document.getElementById('cur-preview-stars').innerText = `${fmtNum(balStars)} ★`;
+      document.getElementById('cur-preview-rub').innerText = `${fmtNum(balStars * RUB_RATE)} ₽`;
+      document.getElementById('cur-opt-stars').classList.toggle('active', displayCurrency === 'stars');
+      document.getElementById('cur-opt-rub').classList.toggle('active', displayCurrency === 'rub');
+      document.getElementById('currency-modal').classList.add('open');
+    }
+
+    function closeCurrencyModal() {
+      document.getElementById('currency-modal').classList.remove('open');
+    }
+
+    function setDisplayCurrency(cur) {
+      const prevCur = displayCurrency;
+      displayCurrency = cur === 'rub' ? 'rub' : 'stars';
+      localStorage.setItem('ws_currency', displayCurrency);
+
+      // Конвертируем введённое значение в купоне при переключении валюты
+      const betInp = document.getElementById('bet-amount-input');
+      if (betInp && betInp.value && prevCur !== displayCurrency) {
+        const raw = Number(betInp.value || 0);
+        if (raw > 0) {
+          betInp.value = displayCurrency === 'rub'
+            ? fmtNum(raw * RUB_RATE)
+            : fmtNum(raw / RUB_RATE);
+        }
+      }
+
+      // Очищаем поле вывода, чтобы не перепутать порог 1000 ★ и 1500 ₽
+      const wdInp = document.getElementById('withdraw-amount');
+      if (wdInp && prevCur !== displayCurrency) {
+        wdInp.value = '';
+      }
+
+      closeCurrencyModal();
+      applyCurrencyUI();
+      showToast(displayCurrency === 'rub' ? 'Баланс переключён на рубли (₽)' : 'Баланс переключён на звёзды (★)');
+    }
+
+    function applyCurrencyUI() {
+      const iconWrap = document.getElementById('header-currency-icon');
+      if (iconWrap) {
+        iconWrap.innerHTML = displayCurrency === 'rub' ? '₽' : starSvg(13);
+      }
+
+      const betInp = document.getElementById('bet-amount-input');
+      if (betInp) {
+        betInp.placeholder = displayCurrency === 'rub' ? 'Сумма ставки (₽)' : 'Сумма ставки (★)';
+      }
+
+      const wdInp = document.getElementById('withdraw-amount');
+      if (wdInp) {
+        wdInp.min = displayCurrency === 'rub' ? '1500' : '1000';
+        wdInp.placeholder = displayCurrency === 'rub' ? 'Сумма вывода (мин. 1500 ₽)' : 'Сумма вывода (мин. 1000 ★)';
+      }
+
+      updateProfileUI();
+      updateDepositHint();
+      updateWithdrawCalc();
+      updatePotentialWin();
+      renderUserBets();
+      drawProfitChart();
+      if (lastTransactionsCache.length > 0) {
+        renderTransactionsList(lastTransactionsCache);
+      }
     }
 
     function getUserAuthPayload() {
@@ -1458,6 +1661,7 @@
       if (tabName === 'bets') renderUserBets();
       if (tabName === 'chat') loadChatHistory();
       if (tabName === 'cashier') {
+        updateDepositHint();
         updateWithdrawCalc();
         loadTransactionsHistory();
       }
@@ -1492,15 +1696,16 @@
       if (!currentUser) return;
       const auth = getUserAuthPayload();
       const uid = currentUser.id || currentUser.user_id || auth.user_id;
-      const bal = Number(currentUser.balance || 0);
+      const balStars = Number(currentUser.balance || 0);
+      const balDisp = toDisplayVal(balStars);
       const refs = Number(currentUser.referrals || 0);
       const photoUrl = currentUser.photo_url || auth.photo_url || '';
       const firstName = currentUser.first_name || auth.first_name || 'Игрок';
       const username = currentUser.username || auth.username || '';
-      const initials = firstName.substring(0, 2).toUpperCase();
+      const initials = escapeHtml(firstName.substring(0, 2).toUpperCase());
 
-      document.getElementById('header-balance').innerText = fmtNum(bal);
-      document.getElementById('stat-balance').innerHTML = `${fmtNum(bal)} ${starSvg(15)}`;
+      document.getElementById('header-balance').innerText = fmtNum(balDisp);
+      document.getElementById('stat-balance').innerHTML = `${fmtNum(balDisp)} ${currencyBadgeHtml(15)}`;
       document.getElementById('stat-bets').innerText = currentUser.total_bets || userBets.length || 0;
       document.getElementById('stat-winrate').innerText = `${currentUser.winrate || 0}%`;
       document.getElementById('stat-refs').innerText = refs;
@@ -1514,11 +1719,13 @@
       document.getElementById('ref-progress-label').innerText = `${refs} / 5 друзей`;
       document.getElementById('ref-progress-bar').style.width = `${(clampedRefs / 5) * 100}%`;
 
+      const minStars = 1000;
+      const minDisp = toDisplayVal(minStars);
       const condBalEl = document.getElementById('wd-cond-bal');
       const condRefsEl = document.getElementById('wd-cond-refs');
       if (condBalEl) {
-        condBalEl.innerHTML = `${fmtNum(bal)} / 1000 ${starSvg(12)}`;
-        condBalEl.className = `cond-badge mono ${bal >= 1000 ? 'cond-ok' : 'cond-wait'}`;
+        condBalEl.innerHTML = `${fmtNum(balDisp)} / ${fmtNum(minDisp)} ${currencyBadgeHtml(12)}`;
+        condBalEl.className = `cond-badge mono ${balStars >= minStars ? 'cond-ok' : 'cond-wait'}`;
       }
       if (condRefsEl) {
         condRefsEl.innerText = `${refs} / 5 друзей`;
@@ -1528,14 +1735,14 @@
 
       const headerAvatarWrap = document.getElementById('header-avatar-wrap');
       if (photoUrl) {
-        headerAvatarWrap.innerHTML = `<img src="${photoUrl}" class="header-avatar" onerror="this.outerHTML='<div class=\\'header-avatar\\'>${initials}</div>'">`;
+        headerAvatarWrap.innerHTML = `<img src="${escAttr(photoUrl)}" class="header-avatar" onerror="this.outerHTML='<div class=\\'header-avatar\\'>${initials}</div>'">`;
       } else {
         headerAvatarWrap.innerHTML = `<div class="header-avatar">${initials}</div>`;
       }
 
       const profileAvatarWrap = document.getElementById('profile-avatar-wrap');
       if (photoUrl) {
-        profileAvatarWrap.innerHTML = `<img src="${photoUrl}" class="profile-avatar-lg" onerror="this.outerHTML='<div class=\\'profile-avatar-lg\\'>${initials}</div>'">`;
+        profileAvatarWrap.innerHTML = `<img src="${escAttr(photoUrl)}" class="profile-avatar-lg" onerror="this.outerHTML='<div class=\\'profile-avatar-lg\\'>${initials}</div>'">`;
       } else {
         profileAvatarWrap.innerHTML = `<div class="profile-avatar-lg">${initials}</div>`;
       }
@@ -1550,6 +1757,7 @@
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
 
+      const rate = getRate();
       const settled = userBets
         .filter(b => b.status === 'won' || b.status === 'lost')
         .slice()
@@ -1561,26 +1769,26 @@
         const amt = Number(b.amount || 0);
         const odd = Number(b.total_coefficient || b.coefficient || b.odd || 1);
         const potWin = Number(b.potential_win ?? b.possible_win ?? (amt * odd));
-        if (b.status === 'won') cum += (potWin - amt);
-        else cum -= amt;
+        if (b.status === 'won') cum += (potWin - amt) * rate;
+        else cum -= amt * rate;
         points.push(Number(cum.toFixed(2)));
       });
 
       if (badge) {
         if (cum > 0) {
           badge.style.color = '#10b981';
-          badge.innerHTML = `+${fmtNum(cum)} ${starSvg(13)}`;
+          badge.innerHTML = `+${fmtNum(cum)} ${currencyBadgeHtml(13)}`;
         } else if (cum < 0) {
           badge.style.color = '#ef4444';
-          badge.innerHTML = `${fmtNum(cum)} ${starSvg(13)}`;
+          badge.innerHTML = `${fmtNum(cum)} ${currencyBadgeHtml(13)}`;
         } else {
           badge.style.color = '#8a819b';
-          badge.innerHTML = `0 ${starSvg(13)}`;
+          badge.innerHTML = `0 ${currencyBadgeHtml(13)}`;
         }
       }
 
-      const minVal = Math.min(...points, -5);
-      const maxVal = Math.max(...points, 5);
+      const minVal = Math.min(...points, -5 * rate);
+      const maxVal = Math.max(...points, 5 * rate);
       const range = maxVal - minVal || 1;
       const zeroY = h - ((0 - minVal) / range) * (h - 26) - 13;
 
@@ -1674,7 +1882,7 @@
       container.innerHTML = `<div class="league-item ${currentLeague === 'all' ? 'active' : ''}" onclick="selectLeague('all')">Все лиги</div>`;
       sortedLeagues.forEach(l => {
         const isTop = (LEAGUE_PRIORITY[l] || 999) <= 13 ? '<span class="league-top">ТОП</span>' : '';
-        container.innerHTML += `<div class="league-item ${currentLeague === l ? 'active' : ''}" onclick="selectLeague('${escAttr(l)}')"><span>${l}</span> ${isTop}</div>`;
+        container.innerHTML += `<div class="league-item ${currentLeague === l ? 'active' : ''}" onclick="selectLeague('${escAttr(l)}')"><span>${escapeHtml(l)}</span> ${isTop}</div>`;
       });
     }
 
@@ -1784,23 +1992,25 @@
           </div>`;
         });
 
+        const homeInit = escapeHtml(homeName.substring(0, 2).toUpperCase());
+        const awayInit = escapeHtml(awayName.substring(0, 2).toUpperCase());
         const homeLogoHtml = homeLogo
-          ? `<img src="${homeLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeName.substring(0,2).toUpperCase()}</div>`
-          : `<div class="team-logo">${homeName.substring(0,2).toUpperCase()}</div>`;
+          ? `<img src="${escAttr(homeLogo)}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${homeInit}</div>`
+          : `<div class="team-logo">${homeInit}</div>`;
         const awayLogoHtml = awayLogo
-          ? `<img src="${awayLogo}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayName.substring(0,2).toUpperCase()}</div>`
-          : `<div class="team-logo">${awayName.substring(0,2).toUpperCase()}</div>`;
+          ? `<img src="${escAttr(awayLogo)}" class="team-logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="team-logo" style="display:none">${awayInit}</div>`
+          : `<div class="team-logo">${awayInit}</div>`;
 
         const displayStatus = isLive ? getLiveDisplayStatus(match) : timeDisplay;
         card.innerHTML = `
           <div class="match-header">
-            ${isLive ? `<span class="live-tag"><div class="live-dot"></div> <span class="live-tag-text mono" data-match-id="${match.id}">${displayStatus}</span></span>` : `<span class="mono">${displayStatus}</span>`}
-            <span>${match.league || 'Футбол'}</span>
+            ${isLive ? `<span class="live-tag"><div class="live-dot"></div> <span class="live-tag-text mono" data-match-id="${escAttr(match.id)}">${escapeHtml(displayStatus)}</span></span>` : `<span class="mono">${escapeHtml(displayStatus)}</span>`}
+            <span>${escapeHtml(match.league || 'Футбол')}</span>
           </div>
           <div class="teams-container">
-            <div class="team">${homeLogoHtml}<div class="team-name">${homeName}</div></div>
-            <div class="score">${isLive ? match.score : 'VS'}</div>
-            <div class="team">${awayLogoHtml}<div class="team-name">${awayName}</div></div>
+            <div class="team">${homeLogoHtml}<div class="team-name">${escapeHtml(homeName)}</div></div>
+            <div class="score">${isLive ? escapeHtml(match.score) : 'VS'}</div>
+            <div class="team">${awayLogoHtml}<div class="team-name">${escapeHtml(awayName)}</div></div>
           </div>
           <div class="odds-grid">${oddsHtml}</div>`;
         container.appendChild(card);
@@ -1833,13 +2043,13 @@
             const isSelected = betSlip.some(b => b.matchId === matchId && b.outcomeKey === o.outcome_key);
             outcomesHtml += `
               <div class="odd-btn ${isSelected ? 'selected' : ''}" onclick="toggleBet('${escAttr(matchId)}', '${escAttr(matchTitle)}', '${escAttr(o.outcome_key)}', ${o.coefficient}, '${escAttr(leagueName)}', '${escAttr(o.outcome_key)}', '${escAttr(g.group_name)}'); openMatchDetails('${escAttr(matchId)}')">
-                <span class="odd-name">${o.name}</span>
+                <span class="odd-name">${escapeHtml(o.name)}</span>
                 <span class="odd-val">${o.coefficient}</span>
               </div>`;
           });
           container.innerHTML += `
             <div class="market-group">
-              <div class="market-group-title">${g.group_name}</div>
+              <div class="market-group-title">${escapeHtml(g.group_name)}</div>
               <div class="market-outcomes-grid">${outcomesHtml}</div>
             </div>`;
         });
@@ -1886,8 +2096,8 @@
         container.innerHTML += `
           <div class="slip-item">
             <div>
-              <div style="font-size:0.74rem; color:var(--text-muted);">${item.matchTitle}</div>
-              <div style="font-size:0.85rem; font-weight:700; margin-top:2px;">${item.groupName}: ${item.outcomeLabel}</div>
+              <div style="font-size:0.74rem; color:var(--text-muted);">${escapeHtml(item.matchTitle)}</div>
+              <div style="font-size:0.85rem; font-weight:700; margin-top:2px;">${escapeHtml(item.groupName)}: ${escapeHtml(item.outcomeLabel)}</div>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="mono" style="font-weight:800; color:#c084fc;">${item.coeff.toFixed(2)}</span>
@@ -1906,12 +2116,15 @@
     }
 
     function updatePotentialWin() {
-      const amount = Number(document.getElementById('bet-amount-input').value || 0);
+      const inp = document.getElementById('bet-amount-input');
+      const out = document.getElementById('betslip-potential-win');
+      if (!inp || !out) return;
+      const amountDisp = Number(inp.value || 0);
       const totalCoef = betSlip.reduce((acc, item) => acc * item.coeff, 1);
-      document.getElementById('betslip-potential-win').innerHTML = `${fmtNum(amount * totalCoef)} ${starSvg(12)}`;
+      out.innerHTML = `${fmtNum(amountDisp * totalCoef)} ${currencyBadgeHtml(12)}`;
     }
 
-    function openReceiptModal(eventsSnapshot, amount, totalCoef) {
+    function openReceiptModal(eventsSnapshot, amountStars, totalCoef) {
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, '0');
       const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -1928,17 +2141,17 @@
         listEl.innerHTML += `
           <div class="receipt-event-box">
             <div>
-              <div class="receipt-event-title">${ev.matchTitle}</div>
-              <div class="receipt-event-pick">${ev.outcomeLabel} <span>(${ev.groupName || 'Исход'})</span></div>
+              <div class="receipt-event-title">${escapeHtml(ev.matchTitle)}</div>
+              <div class="receipt-event-pick">${escapeHtml(ev.outcomeLabel)} <span>(${escapeHtml(ev.groupName || 'Исход')})</span></div>
             </div>
             <div class="receipt-event-odd">${Number(ev.coeff).toFixed(2)}</div>
           </div>`;
       });
 
-      const payout = amount * totalCoef;
-      document.getElementById('receipt-stake').innerHTML = `${fmtNum(amount)} ${starSvg(13)}`;
+      const payoutStars = amountStars * totalCoef;
+      document.getElementById('receipt-stake').innerHTML = fmtMoney(amountStars, 13);
       document.getElementById('receipt-coef').innerText = Number(totalCoef).toFixed(2);
-      document.getElementById('receipt-payout').innerHTML = `${fmtNum(payout)} ${starSvg(13)}`;
+      document.getElementById('receipt-payout').innerHTML = fmtMoney(payoutStars, 13);
 
       document.getElementById('receipt-modal').classList.add('open');
     }
@@ -1949,8 +2162,9 @@
 
     async function submitBet() {
       if (betSlip.length === 0) return;
-      const amount = Number(document.getElementById('bet-amount-input').value || 0);
-      if (amount <= 0) {
+      const rawInput = Number(document.getElementById('bet-amount-input').value || 0);
+      const amountStars = Number(toStarsVal(rawInput).toFixed(2));
+      if (amountStars <= 0) {
         showToast('Введите сумму ставки');
         return;
       }
@@ -1972,7 +2186,7 @@
             : first.outcomeLabel,
           odd: totalCoef,
           total_coefficient: totalCoef,
-          amount,
+          amount: amountStars,
           events: eventsSnapshot
         };
         const res = await fetch(`${API_BASE_URL}/api/bets/place`, {
@@ -1989,7 +2203,7 @@
         updateBetSlipUI();
         closeBetSlipModal();
         renderMatches();
-        openReceiptModal(eventsSnapshot, amount, totalCoef);
+        openReceiptModal(eventsSnapshot, amountStars, totalCoef);
         await syncUserProfile();
       } catch (e) {
         showToast('Ошибка соединения с сервером');
@@ -2017,9 +2231,9 @@
         const statusMap = { active: 'В игре', won: 'Выигрыш', lost: 'Проигрыш', refund: 'Возврат' };
         const cls = `bet-status-${b.status || 'active'}`;
 
-        const amt = Number(b.amount || 0);
+        const amtStars = Number(b.amount || 0);
         const odd = Number(b.total_coefficient || b.coefficient || b.odd || 1);
-        const potWin = b.potential_win ?? b.possible_win ?? (amt * odd);
+        const potWinStars = Number(b.potential_win ?? b.possible_win ?? (amtStars * odd));
 
         let titleText = b.match_title || '';
         if (!titleText) {
@@ -2036,19 +2250,131 @@
         if (!outcomeText) outcomeText = 'Основной исход';
 
         container.innerHTML += `
-          <div class="bet-item-card">
+          <div class="bet-item-card" onclick="openBetDetailModal('${escAttr(b.id)}')">
             <div class="bet-item-top">
-              <span>${b.league || 'Футбол'}</span>
-              <span class="bet-status-badge ${cls}">${statusMap[b.status] || b.status}</span>
+              <span>${escapeHtml(b.league || 'Футбол')}</span>
+              <span class="bet-status-badge ${cls}">${statusMap[b.status] || escapeHtml(b.status)}</span>
             </div>
-            <div style="font-weight:800; font-size:0.92rem; margin-bottom:4px;">${titleText}</div>
-            <div style="font-size:0.82rem; color:#c084fc; margin-bottom:8px;">Исход: ${outcomeText} <span class="mono">(×${fmtNum(odd)})</span></div>
+            <div style="font-weight:800; font-size:0.92rem; margin-bottom:4px;">${escapeHtml(titleText)}</div>
+            <div style="font-size:0.82rem; color:#c084fc; margin-bottom:8px;">Исход: ${escapeHtml(outcomeText)} <span class="mono">(×${fmtNum(odd)})</span></div>
             <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted);">
-              <span>Ставка: <b class="mono" style="color:var(--text-main);">${fmtNum(amt)} ${starSvg(11)}</b></span>
-              <span>Выигрыш: <b class="mono" style="color:var(--green);">${fmtNum(potWin)} ${starSvg(11)}</b></span>
+              <span>Ставка: <b class="mono" style="color:var(--text-main);">${fmtMoney(amtStars, 11)}</b></span>
+              <span>Выигрыш: <b class="mono" style="color:var(--green);">${fmtMoney(potWinStars, 11)}</b></span>
             </div>
           </div>`;
       });
+    }
+
+    /* МОДАЛКА ДЕТАЛЕЙ СТАВКИ ПРИ КЛИКЕ В РАЗДЕЛЕ «СТАВКИ» */
+    function openBetDetailModal(betId) {
+      const bet = userBets.find(x => String(x.id) === String(betId));
+      if (!bet) return;
+
+      const status = bet.status || 'active';
+      const iconWrap = document.getElementById('bd-icon-wrap');
+      const headingEl = document.getElementById('bd-heading');
+      const badgeEl = document.getElementById('bd-badge');
+      const payoutLbl = document.getElementById('bd-payout-lbl');
+      const payoutEl = document.getElementById('bd-payout');
+
+      if (status === 'won') {
+        iconWrap.style.background = 'rgba(16, 185, 129, 0.14)';
+        iconWrap.style.color = 'var(--green)';
+        iconWrap.innerHTML = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        headingEl.innerText = 'Ставка сыграла!';
+        headingEl.style.color = 'var(--green)';
+        badgeEl.innerText = 'Выигрыш';
+        badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+        badgeEl.style.color = 'var(--green)';
+        payoutLbl.innerText = 'Выигрыш';
+        payoutEl.style.color = 'var(--green)';
+      } else if (status === 'lost') {
+        iconWrap.style.background = 'rgba(239, 68, 68, 0.14)';
+        iconWrap.style.color = 'var(--red)';
+        iconWrap.innerHTML = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+        headingEl.innerText = 'Ставка проиграла!';
+        headingEl.style.color = 'var(--red)';
+        badgeEl.innerText = 'Проигрыш';
+        badgeEl.style.background = 'rgba(239, 68, 68, 0.15)';
+        badgeEl.style.color = 'var(--red)';
+        payoutLbl.innerText = 'Выплата';
+        payoutEl.style.color = 'var(--red)';
+      } else if (status === 'refund') {
+        iconWrap.style.background = 'rgba(138, 129, 155, 0.16)';
+        iconWrap.style.color = 'var(--text-muted)';
+        iconWrap.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>`;
+        headingEl.innerText = 'Возврат ставки!';
+        headingEl.style.color = 'var(--text-muted)';
+        badgeEl.innerText = 'Возврат';
+        badgeEl.style.background = 'rgba(138, 129, 155, 0.16)';
+        badgeEl.style.color = 'var(--text-muted)';
+        payoutLbl.innerText = 'Возврат';
+        payoutEl.style.color = 'var(--text-main)';
+      } else {
+        iconWrap.style.background = 'rgba(251, 191, 36, 0.14)';
+        iconWrap.style.color = 'var(--gold)';
+        iconWrap.innerHTML = `<svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>`;
+        headingEl.innerText = 'В ожидании!';
+        headingEl.style.color = 'var(--gold)';
+        badgeEl.innerText = 'В игре';
+        badgeEl.style.background = 'rgba(251, 191, 36, 0.15)';
+        badgeEl.style.color = 'var(--gold)';
+        payoutLbl.innerText = 'Выплата';
+        payoutEl.style.color = 'var(--green)';
+      }
+
+      const eventsList = Array.isArray(bet.events) && bet.events.length > 0
+        ? bet.events
+        : [{
+            matchTitle: bet.match_title || (bet.team1 && bet.team2 ? `${bet.team1} - ${bet.team2}` : 'Матч'),
+            outcomeLabel: bet.outcome || bet.pick || 'Исход',
+            groupName: 'Исход',
+            coeff: Number(bet.total_coefficient || bet.coefficient || bet.odd || 1)
+          }];
+
+      const ts = Number(bet.timestamp || bet.created_at || 0);
+      let datePart = '';
+      if (ts > 0) {
+        const d = new Date(ts * 1000);
+        datePart = ` · ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+      const typeLabel = eventsList.length > 1 ? 'Экспресс' : 'Ординар';
+      document.getElementById('bd-meta').innerText = `${typeLabel} · ${eventsList.length} соб.${datePart}`;
+
+      const listEl = document.getElementById('bd-events-list');
+      listEl.innerHTML = '';
+      eventsList.forEach(ev => {
+        const legStatus = ev.status;
+        let legColor = '#c084fc';
+        if (legStatus === 'won') legColor = 'var(--green)';
+        else if (legStatus === 'lost') legColor = 'var(--red)';
+        else if (legStatus === 'refund') legColor = 'var(--text-muted)';
+
+        listEl.innerHTML += `
+          <div class="receipt-event-box">
+            <div>
+              <div class="receipt-event-title">${escapeHtml(ev.matchTitle || 'Матч')}</div>
+              <div class="receipt-event-pick">${escapeHtml(ev.outcomeLabel || ev.outcome || '')} <span>(${escapeHtml(ev.groupName || 'Исход')})</span></div>
+            </div>
+            <div class="receipt-event-odd" style="color:${legColor};">${Number(ev.coeff || 1).toFixed(2)}</div>
+          </div>`;
+      });
+
+      const amtStars = Number(bet.amount || 0);
+      const totalCoef = Number(bet.total_coefficient || bet.coefficient || bet.odd || 1);
+      const payoutStars = status === 'lost'
+        ? 0
+        : (status === 'refund' ? amtStars : Number(bet.potential_win ?? bet.possible_win ?? (amtStars * totalCoef)));
+
+      document.getElementById('bd-stake').innerHTML = fmtMoney(amtStars, 13);
+      document.getElementById('bd-coef').innerText = totalCoef.toFixed(2);
+      payoutEl.innerHTML = fmtMoney(payoutStars, 13);
+
+      document.getElementById('bet-detail-modal').classList.add('open');
+    }
+
+    function closeBetDetailModal() {
+      document.getElementById('bet-detail-modal').classList.remove('open');
     }
 
     /* КАССА: ПОДРАЗДЕЛЫ */
@@ -2057,17 +2383,63 @@
         document.getElementById(`cashier-sub-${k}`).classList.toggle('active', k === sub);
         document.getElementById(`cashier-pane-${k}`).classList.toggle('active', k === sub);
       });
+      if (sub === 'deposit') updateDepositHint();
       if (sub === 'withdraw') updateWithdrawCalc();
       if (sub === 'history') loadTransactionsHistory();
+    }
+
+    function setDepositAmount(stars) {
+      document.getElementById('deposit-amount').value = stars;
+      updateDepositHint();
+    }
+
+    function updateDepositHint() {
+      const inp = document.getElementById('deposit-amount');
+      const hint = document.getElementById('deposit-rub-hint');
+      if (!inp || !hint) return;
+      const stars = Number(inp.value || 0);
+      if (stars > 0) {
+        hint.innerText = `Будет зачислено: ${fmtNum(stars)} ★ (эквивалент ${fmtNum(stars * RUB_RATE)} ₽)`;
+      } else {
+        hint.innerText = '';
+      }
     }
 
     function updateWithdrawCalc() {
       const inp = document.getElementById('withdraw-amount');
       const preview = document.getElementById('wd-payout-preview');
       if (!inp || !preview) return;
-      const val = Number(inp.value || 0);
-      const payout = val > 0 ? val * 0.95 : 0;
-      preview.innerHTML = `${fmtNum(payout)} ${starSvg(12)}`;
+      const valDisp = Number(inp.value || 0);
+      const payoutDisp = valDisp > 0 ? valDisp * 0.95 : 0;
+      preview.innerHTML = `${fmtNum(payoutDisp)} ${currencyBadgeHtml(12)}`;
+    }
+
+    function renderTransactionsList(list) {
+      const container = document.getElementById('transactions-list-container');
+      if (!container) return;
+      if (!Array.isArray(list) || list.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">История операций пуста</div>';
+        return;
+      }
+      container.innerHTML = '';
+      list.forEach(tx => {
+        const amtStars = Number(tx.amount || 0);
+        const amtDisp = toDisplayVal(amtStars);
+        const isPlus = amtDisp >= 0;
+        const color = isPlus ? 'var(--green)' : 'var(--red)';
+        const sign = isPlus ? '+' : '';
+        const dt = tx.created_at ? new Date(tx.created_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        container.innerHTML += `
+          <div class="tx-row">
+            <div>
+              <div style="font-size:0.84rem; font-weight:700;">${escapeHtml(tx.title || 'Операция')}</div>
+              <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">${dt}</div>
+            </div>
+            <div class="mono" style="font-weight:800; font-size:0.88rem; color:${color};">
+              ${sign}${fmtNum(amtDisp)} ${currencyBadgeHtml(12)}
+            </div>
+          </div>`;
+      });
     }
 
     async function loadTransactionsHistory() {
@@ -2077,36 +2449,15 @@
         const auth = getUserAuthPayload();
         const res = await fetch(`${API_BASE_URL}/api/user/transactions?user_id=${auth.user_id}`);
         const data = await res.json();
-        const list = Array.isArray(data.transactions) ? data.transactions : [];
-        if (list.length === 0) {
-          container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">История операций пуста</div>';
-          return;
-        }
-        container.innerHTML = '';
-        list.forEach(tx => {
-          const amt = Number(tx.amount || 0);
-          const isPlus = amt >= 0;
-          const color = isPlus ? 'var(--green)' : 'var(--red)';
-          const sign = isPlus ? '+' : '';
-          const dt = tx.created_at ? new Date(tx.created_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-          container.innerHTML += `
-            <div class="tx-row">
-              <div>
-                <div style="font-size:0.84rem; font-weight:700;">${tx.title || 'Операция'}</div>
-                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">${dt}</div>
-              </div>
-              <div class="mono" style="font-weight:800; font-size:0.88rem; color:${color};">
-                ${sign}${fmtNum(amt)} ${starSvg(12)}
-              </div>
-            </div>`;
-        });
+        lastTransactionsCache = Array.isArray(data.transactions) ? data.transactions : [];
+        renderTransactionsList(lastTransactionsCache);
       } catch (e) {
         container.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Не удалось загрузить историю</div>';
       }
     }
 
     async function createDepositInvoice() {
-      const amount = Number(document.getElementById('deposit-amount').value || 0);
+      const amount = Math.round(Number(document.getElementById('deposit-amount').value || 0));
       if (amount < 1) {
         showToast('Минимум 1 звезда');
         return;
@@ -2151,7 +2502,9 @@
           return;
         }
         document.getElementById('promo-code-input').value = '';
-        showToast(`Начислено +${data.bonus} звёзд!`);
+        const bonusDisp = fmtNum(toDisplayVal(data.bonus));
+        const unit = displayCurrency === 'rub' ? '₽' : '★';
+        showToast(`Начислено +${bonusDisp} ${unit}!`);
         syncUserProfile();
       } catch (e) {
         showToast('Ошибка сети');
@@ -2159,16 +2512,18 @@
     }
 
     async function requestWithdraw() {
-      const amount = Number(document.getElementById('withdraw-amount').value || 0);
-      if (amount < 1000) {
-        showToast('Минимальная сумма вывода — 1000 звёзд');
+      const rawDisp = Number(document.getElementById('withdraw-amount').value || 0);
+      const minDisp = toDisplayVal(1000);
+      if (rawDisp < minDisp) {
+        showToast(displayCurrency === 'rub' ? 'Минимальная сумма вывода — 1500 ₽' : 'Минимальная сумма вывода — 1000 ★');
         return;
       }
+      const amountStars = Number(toStarsVal(rawDisp).toFixed(2));
       try {
         const res = await fetch(`${API_BASE_URL}/api/cashier/withdraw`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...getUserAuthPayload(), amount })
+          body: JSON.stringify({ ...getUserAuthPayload(), amount: amountStars })
         });
         const data = await res.json();
         if (!res.ok) {
@@ -2235,7 +2590,7 @@
       const isMine = currentUser && Number(m.user_id) === Number(currentUser.id);
       const div = document.createElement('div');
       div.className = `chat-msg ${isMine ? 'mine' : ''}`;
-      div.innerHTML = `<div class="chat-msg-author">${m.author || 'Игрок'}</div><div class="chat-msg-text">${m.text || ''}</div>`;
+      div.innerHTML = `<div class="chat-msg-author">${escapeHtml(m.author || 'Игрок')}</div><div class="chat-msg-text">${escapeHtml(m.text || '')}</div>`;
       box.appendChild(div);
     }
 
@@ -2270,6 +2625,7 @@
     }
 
     // Инициализация
+    applyCurrencyUI();
     syncUserProfile();
     loadMatches();
     connectLiveWebSocket();
