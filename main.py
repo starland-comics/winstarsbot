@@ -7,14 +7,17 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import httpx
-from aiogram import Bot, Dispatcher, Router
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LabeledPrice,
     Message,
+    PreCheckoutQuery,
     WebAppInfo,
 )
 from curl_cffi.requests import AsyncSession
@@ -33,6 +36,7 @@ logger = logging.getLogger("WinStars")
 
 # ================= КОНФИГУРАЦИЯ =================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "WinStarsPlaybot")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://starland-comics.github.io/winstarsbot/")
 FIREBASE_URL = os.getenv(
     "FIREBASE_URL", "https://winstars-435f1-default-rtdb.firebaseio.com"
@@ -44,6 +48,7 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
+STAR_TO_RUB = 1.5  # 1 ★ = 1.5 ₽
 MSK_TZ = timezone(timedelta(hours=3))
 
 LINE_CACHE: Dict[str, Any] = {
@@ -52,6 +57,8 @@ LINE_CACHE: Dict[str, Any] = {
     "by_id": {},
     "updated_at": 0,
 }
+
+LOGO_CACHE: Dict[str, str] = {}
 
 
 # ================= FIREBASE REALTIME DB =================
@@ -118,404 +125,299 @@ class FirebaseDB:
 db = FirebaseDB(FIREBASE_URL, FIREBASE_SECRET)
 
 
-# ================= ПАРСЕР OLIMPBET =================
-def format_match_time(ev: dict, is_live: bool) -> str:
-    """Точные минуты матча, 'Перерыв' или время старта прематча."""
+# ================= ПОИСК ЛОГОТИПОВ КОМАНД =================
+async def resolve_team_logo(team_name: str) -> str:
+    clean = re.sub(r"\s*\([^)]*\)", "", team_name).strip()
+    if not clean:
+        return ""
+    if clean in LOGO_CACHE:
+        return LOGO_CACHE[clean]
+
+    try:
+        url = f"https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t={quote(clean)}"
+        r = await db.client.get(url, timeout=4.0)
+        if r.status_code == 200:
+            data = r.json()
+            teams = data.get("teams") if isinstance(data, dict) else None
+            if teams and isinstance(teams, list):
+                badge = teams[0].get("strBadge") or teams[0].get("strTeamBadge") or ""
+                if badge:
+                    LOGO_CACHE[clean] = badge
+                    return badge
+    except Exception:
+        pass
+
+    LOGO_CACHE[clean] = ""
+    return ""
+
+
+# ================= ПАРСЕР FONBET (ЗЕРКАЛА LINE-LB51..53) =================
+def format_fonbet_time(ev: dict, misc: dict, is_live: bool) -> str:
     if not is_live:
-        start_ts = (
-            ev.get("startDate")
-            or ev.get("startTime")
-            or ev.get("beginTime")
-            or ev.get("time")
-            or 0
-        )
+        start_ts = ev.get("startTime") or 0
         if isinstance(start_ts, (int, float)) and start_ts > 1_000_000_000:
-            if start_ts > 10_000_000_000:
-                start_ts = start_ts / 1000
             dt = datetime.fromtimestamp(int(start_ts), tz=MSK_TZ)
             return dt.strftime("%d.%m %H:%M")
         return "Скоро"
 
-    status_text = " ".join(
-        str(ev.get(k, ""))
-        for k in (
-            "periodName",
-            "statusName",
-            "stage",
-            "timeText",
-            "comment",
-            "stateName",
-        )
-    ).lower()
-
-    if (
-        any(w in status_text for w in ("перерыв", "half", "break", "ht"))
-        or ev.get("isBreak")
-        or ev.get("period") == 0
-    ):
+    comment = str(misc.get("comment") or ev.get("comment") or "").lower()
+    if any(w in comment for w in ("перерыв", "half", "break", "ht")):
         return "Перерыв"
 
-    minute: Optional[int] = None
-    for key in ("minute", "minutes", "matchMinute"):
-        if ev.get(key) is not None:
-            try:
-                val = int(ev[key])
-                if val > 0:
-                    minute = val
-                    break
-            except (ValueError, TypeError):
-                pass
-
-    if minute is None:
-        raw_time = (
-            ev.get("time")
-            or ev.get("seconds")
-            or ev.get("elapsed")
-            or ev.get("timer")
-            or ev.get("timeSec")
-        )
-        if isinstance(raw_time, (int, float)) and raw_time > 0:
-            minute = int(raw_time) // 60 if raw_time > 130 else int(raw_time)
-        elif isinstance(raw_time, str):
-            m = re.search(r"(\d+)", raw_time)
-            if m:
-                val = int(m.group(1))
-                minute = val // 60 if ":" not in raw_time and val > 130 else val
-
-    if minute and minute > 0:
+    timer_sec = misc.get("timerSeconds")
+    if isinstance(timer_sec, (int, float)) and timer_sec > 0:
+        minute = int(timer_sec) // 60 + 1
         if minute > 90:
             return f"90+{minute - 90}'"
         return f"{minute}'"
 
+    m_comment = re.search(r"(\d+)\s*мин", comment)
+    if m_comment:
+        return f"{m_comment.group(1)}'"
+
     return "LIVE"
 
 
-def _extract_odd_val(o: dict) -> float:
-    for k in ("value", "odd", "k", "coef", "coefficient", "price"):
-        v = o.get(k)
-        if v is not None:
-            try:
-                f = float(v)
-                if f > 1.0:
-                    return round(f, 2)
-            except (ValueError, TypeError):
-                pass
-    return 0.0
-
-
-def extract_1x2_and_markets(
-    ev: dict,
+def parse_fonbet_factors(
+    factors_list: List[dict],
 ) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
     odds_1x2 = {"P1": 0.0, "X": 0.0, "P2": 0.0}
-    markets_grouped: List[Dict[str, Any]] = []
+    dc_outcomes: List[Dict[str, Any]] = []
+    totals_outcomes: List[Dict[str, Any]] = []
+    handicap_outcomes: List[Dict[str, Any]] = []
+    btts_outcomes: List[Dict[str, Any]] = []
+    other_outcomes: List[Dict[str, Any]] = []
 
-    raw_outcomes = ev.get("outcomes") or []
-    raw_markets = ev.get("markets") or ev.get("groups") or []
-
-    # 1. Плоский список исходов в общей линии
-    if raw_outcomes:
-        for o in raw_outcomes:
-            name = str(
-                o.get("shortName") or o.get("name") or o.get("title") or ""
-            ).strip()
-            val = _extract_odd_val(o)
-            if val <= 1.0:
-                continue
-            t_type = str(o.get("tableType") or o.get("type") or "")
-            if name in ("1", "П1") or t_type == "1":
-                odds_1x2["P1"] = val
-            elif name in ("X", "Х", "Н") or t_type in ("X", "0"):
-                odds_1x2["X"] = val
-            elif name in ("2", "П2") or t_type == "2":
-                odds_1x2["P2"] = val
-
-    # 2. Структурированные рынки (полная роспись)
-    for m in raw_markets:
-        m_name = str(m.get("name") or m.get("title") or "Исходы").strip()
-        items = []
-        for o in m.get("outcomes") or m.get("items") or []:
-            o_name = str(
-                o.get("shortName") or o.get("name") or o.get("title") or ""
-            ).strip()
-            val = _extract_odd_val(o)
-            if val <= 1.0 or not o_name:
-                continue
-            items.append({"label": o_name, "odd": val})
-
-            if m_name.lower() in ("исход матча", "основное время", "1x2", "исход"):
-                if o_name in ("1", "П1"):
-                    odds_1x2["P1"] = val
-                elif o_name in ("X", "Х"):
-                    odds_1x2["X"] = val
-                elif o_name in ("2", "П2"):
-                    odds_1x2["P2"] = val
-
-        if items:
-            markets_grouped.append({"title": m_name, "outcomes": items})
-
-    # 3. Базовая роспись из 1X2, если доп. рынки ещё не подгружены
-    if not markets_grouped and odds_1x2["P1"] > 1.0 and odds_1x2["P2"] > 1.0:
-        p1, x, p2 = odds_1x2["P1"], odds_1x2["X"] or 3.25, odds_1x2["P2"]
-        markets_grouped.append(
-            {
-                "title": "Основные исходы",
-                "outcomes": [
-                    {"label": "П1", "odd": p1},
-                    {"label": "X", "odd": x},
-                    {"label": "П2", "odd": p2},
-                ],
-            }
-        )
-        dc_1x = round(max(1.05, 1 / (1 / p1 + 1 / x) * 0.94), 2)
-        dc_12 = round(max(1.05, 1 / (1 / p1 + 1 / p2) * 0.94), 2)
-        dc_x2 = round(max(1.05, 1 / (1 / x + 1 / p2) * 0.94), 2)
-        markets_grouped.append(
-            {
-                "title": "Двойной шанс",
-                "outcomes": [
-                    {"label": "1X", "odd": dc_1x},
-                    {"label": "12", "odd": dc_12},
-                    {"label": "X2", "odd": dc_x2},
-                ],
-            }
-        )
-        markets_grouped.append(
-            {
-                "title": "Тотал голов",
-                "outcomes": [
-                    {"label": "ТБ 1.5", "odd": 1.32},
-                    {"label": "ТМ 1.5", "odd": 3.15},
-                    {"label": "ТБ 2.5", "odd": 1.92},
-                    {"label": "ТМ 2.5", "odd": 1.88},
-                    {"label": "ТБ 3.5", "odd": 3.10},
-                    {"label": "ТМ 3.5", "odd": 1.34},
-                ],
-            }
-        )
-        markets_grouped.append(
-            {
-                "title": "Обе забьют",
-                "outcomes": [
-                    {"label": "ОЗ Да", "odd": 1.85},
-                    {"label": "ОЗ Нет", "odd": 1.90},
-                ],
-            }
-        )
-
-    return odds_1x2, markets_grouped
-
-
-def parse_score(ev: dict) -> Tuple[int, int]:
-    score_str = str(ev.get("score") or "")
-    if ":" in score_str:
-        parts = score_str.split(":")
+    for f_obj in factors_list:
+        fid = f_obj.get("f")
+        val = f_obj.get("v")
+        pt = str(f_obj.get("pt") or "").strip()
+        if val is None:
+            continue
         try:
-            return int(parts[0].strip()), int(parts[1].strip())
-        except ValueError:
-            pass
-    s1 = ev.get("score1") if ev.get("score1") is not None else ev.get("homeScore", 0)
-    s2 = ev.get("score2") if ev.get("score2") is not None else ev.get("awayScore", 0)
-    try:
-        return int(s1 or 0), int(s2 or 0)
-    except (ValueError, TypeError):
-        return 0, 0
+            odd = round(float(val), 2)
+        except (ValueError, TypeError):
+            continue
+        if odd <= 1.0:
+            continue
+
+        if fid == 921:
+            odds_1x2["P1"] = odd
+        elif fid == 922:
+            odds_1x2["X"] = odd
+        elif fid == 923:
+            odds_1x2["P2"] = odd
+        elif fid == 924:
+            dc_outcomes.append({"label": "1X", "odd": odd})
+        elif fid == 1571:
+            dc_outcomes.append({"label": "12", "odd": odd})
+        elif fid == 925:
+            dc_outcomes.append({"label": "X2", "odd": odd})
+        elif fid == 930 and pt:
+            totals_outcomes.append({"label": f"ТБ {pt}", "odd": odd})
+        elif fid == 931 and pt:
+            totals_outcomes.append({"label": f"ТМ {pt}", "odd": odd})
+        elif fid in (927, 937) and pt:
+            handicap_outcomes.append({"label": f"Ф1 ({pt})", "odd": odd})
+        elif fid in (928, 938) and pt:
+            handicap_outcomes.append({"label": f"Ф2 ({pt})", "odd": odd})
+        elif fid in (4241, 1805):
+            btts_outcomes.append({"label": "ОЗ Да", "odd": odd})
+        elif fid in (4242, 1806):
+            btts_outcomes.append({"label": "ОЗ Нет", "odd": odd})
+        else:
+            name = str(f_obj.get("name") or "").strip()
+            if name:
+                label = f"{name} {pt}".strip()
+                other_outcomes.append({"label": label, "odd": odd})
+
+    markets: List[Dict[str, Any]] = []
+    if odds_1x2["P1"] > 1.0 and odds_1x2["P2"] > 1.0:
+        main_list = [{"label": "П1", "odd": odds_1x2["P1"]}]
+        if odds_1x2["X"] > 1.0:
+            main_list.append({"label": "X", "odd": odds_1x2["X"]})
+        main_list.append({"label": "П2", "odd": odds_1x2["P2"]})
+        markets.append({"title": "Основные исходы", "outcomes": main_list})
+
+    if dc_outcomes:
+        markets.append({"title": "Двойной шанс", "outcomes": dc_outcomes})
+    if totals_outcomes:
+        markets.append({"title": "Тотал голов", "outcomes": totals_outcomes[:8]})
+    if handicap_outcomes:
+        markets.append({"title": "Фора", "outcomes": handicap_outcomes[:6]})
+    if btts_outcomes:
+        markets.append({"title": "Обе забьют", "outcomes": btts_outcomes})
+    if other_outcomes:
+        markets.append({"title": "Дополнительные рынки", "outcomes": other_outcomes[:10]})
+
+    return odds_1x2, markets
 
 
-class OlimpbetScraper:
-    BASE = "https://www.olimp.bet/api/v4/0"
+class FonbetScraper:
+    MIRRORS = [
+        "https://line-lb51.bkfon-resources.com",
+        "https://line-lb52.bkfon-resources.com",
+        "https://line-lb53.bkfon-resources.com",
+        "https://line01w.bkfon-resources.com",
+        "https://line02w.bkfon-resources.com",
+    ]
 
     def __init__(self):
+        self._mirror_idx = 0
         self.headers = {
             "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "ru-RU,ru;q=0.9",
-            "Referer": "https://www.olimp.bet/",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+            "Origin": "https://www.fon.bet",
+            "Referer": "https://www.fon.bet/",
             "User-Agent": (
                 "Mozilla/5.0 (Linux; Android 14; Pixel 8) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
             ),
         }
 
-    async def fetch_events(self, is_live: bool) -> List[Dict[str, Any]]:
-        endpoints = (
-            [
-                f"{self.BASE}/live/sports-with-competitions-with-events?v=1",
-                f"{self.BASE}/live/sports-with-categories-with-events?v=1",
-            ]
-            if is_live
-            else [
-                f"{self.BASE}/line/sports-with-competitions-with-events?v=1",
-                f"{self.BASE}/line/top/sports-with-competitions-with-events?v=1",
-                f"{self.BASE}/line/sports-with-categories-with-events?v=1",
-            ]
-        )
+    def _ordered_mirrors(self) -> List[str]:
+        n = len(self.MIRRORS)
+        return [self.MIRRORS[(self._mirror_idx + i) % n] for i in range(n)]
 
-        data = None
-        try:
-            async with AsyncSession(impersonate="chrome124", timeout=15) as session:
-                for ep in endpoints:
-                    resp = await session.get(ep, headers=self.headers)
-                    if resp.status_code == 200:
-                        payload = resp.json()
-                        if payload:
-                            data = payload
-                            break
-        except Exception as e:
-            logger.error(f"Olimpbet fetch error ({'live' if is_live else 'line'}): {e}")
-            return []
-
-        if not data:
-            return []
-
-        matches: List[Dict[str, Any]] = []
-        sports = data if isinstance(data, list) else data.get("sports", [])
-
-        for sport in sports:
-            s_id = sport.get("id")
-            s_name = str(sport.get("name", "")).lower()
-            if s_id != 1 and "футбол" not in s_name:
-                continue
-
-            # Olimpbet использует ключ competitions (иногда categories / champs)
-            comps = (
-                sport.get("competitions")
-                or sport.get("categories")
-                or sport.get("champs")
-                or []
-            )
-            for comp in comps:
-                country = str(
-                    comp.get("countryName") or comp.get("country") or ""
-                ).strip()
-                league_raw = str(
-                    comp.get("name") or comp.get("title") or "Лига"
-                ).strip()
-                league = (
-                    f"{country}. {league_raw}"
-                    if country and not league_raw.startswith(country)
-                    else league_raw
-                )
-
-                for ev in comp.get("events") or []:
-                    m_id = str(ev.get("id") or "")
-                    if not m_id:
-                        continue
-
-                    team1 = str(
-                        ev.get("team1Name")
-                        or ev.get("team1")
-                        or ev.get("homeName")
-                        or "Команда 1"
-                    ).strip()
-                    team2 = str(
-                        ev.get("team2Name")
-                        or ev.get("team2")
-                        or ev.get("awayName")
-                        or "Команда 2"
-                    ).strip()
-                    logo1 = (
-                        ev.get("team1Logo")
-                        or ev.get("homeLogo")
-                        or ev.get("logo1")
-                        or ""
-                    )
-                    logo2 = (
-                        ev.get("team2Logo")
-                        or ev.get("awayLogo")
-                        or ev.get("logo2")
-                        or ""
-                    )
-
-                    if logo1 and logo1.startswith("/"):
-                        logo1 = f"https://www.olimp.bet{logo1}"
-                    if logo2 and logo2.startswith("/"):
-                        logo2 = f"https://www.olimp.bet{logo2}"
-
-                    s1, s2 = parse_score(ev)
-                    time_label = format_match_time(ev, is_live=is_live)
-                    odds_1x2, markets = extract_1x2_and_markets(ev)
-
-                    if odds_1x2["P1"] <= 1.0 and odds_1x2["P2"] <= 1.0:
-                        continue
-
-                    matches.append(
-                        {
-                            "id": m_id,
-                            "is_live": is_live,
-                            "league": league,
-                            "team1": team1,
-                            "team2": team2,
-                            "logo1": logo1,
-                            "logo2": logo2,
-                            "score1": s1,
-                            "score2": s2,
-                            "time_label": time_label,
-                            "odds": odds_1x2,
-                            "markets": markets,
-                            "updated_at": int(time.time()),
-                        }
-                    )
-        return matches
-
-    async def fetch_event_details(
-        self, match_id: str, is_live: bool = True
-    ) -> Optional[Dict[str, Any]]:
-        urls = [
-            f"{self.BASE}/live/event?id={match_id}",
-            f"{self.BASE}/line/event?id={match_id}",
-        ]
-        if not is_live:
-            urls.reverse()
-
-        try:
-            async with AsyncSession(impersonate="chrome124", timeout=12) as session:
-                for url in urls:
+    async def _fetch_json(self, path: str) -> Optional[dict]:
+        async with AsyncSession(impersonate="chrome120", timeout=15) as session:
+            for idx, base in enumerate(self._ordered_mirrors()):
+                url = f"{base}{path}"
+                try:
                     resp = await session.get(url, headers=self.headers)
                     if resp.status_code == 200:
-                        ev = resp.json()
-                        if isinstance(ev, dict) and ev.get("id"):
-                            _, markets = extract_1x2_and_markets(ev)
-                            s1, s2 = parse_score(ev)
-                            return {
-                                "score1": s1,
-                                "score2": s2,
-                                "time_label": format_match_time(ev, is_live=is_live),
-                                "markets": markets,
-                            }
-        except Exception as e:
-            logger.error(f"fetch_event_details {match_id} error: {e}")
+                        data = resp.json()
+                        if isinstance(data, dict) and (
+                            data.get("events") or data.get("sports")
+                        ):
+                            self._mirror_idx = (self._mirror_idx + idx) % len(self.MIRRORS)
+                            return data
+                except Exception as e:
+                    logger.warning(f"Mirror {base} failed: {e}")
         return None
 
-    async def fetch_finished_results(self) -> Dict[str, Tuple[int, int]]:
-        results_map: Dict[str, Tuple[int, int]] = {}
-        now = datetime.now(MSK_TZ)
-        dates = [
-            now.strftime("%Y-%m-%d"),
-            (now - timedelta(days=1)).strftime("%Y-%m-%d"),
-        ]
-        try:
-            async with AsyncSession(impersonate="chrome124", timeout=15) as session:
-                for d in dates:
-                    url = f"{self.BASE}/results/events?sportId=1&date={d}"
-                    resp = await session.get(url, headers=self.headers)
-                    if resp.status_code != 200:
-                        continue
-                    data = resp.json()
-                    events = data if isinstance(data, list) else data.get("events", [])
-                    for ev in events:
-                        m_id = str(ev.get("id") or "")
-                        if m_id:
-                            results_map[m_id] = parse_score(ev)
-        except Exception as e:
-            logger.error(f"fetch_finished_results error: {e}")
-        return results_map
+    async def fetch_full_line(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        data = await self._fetch_json("/events/listBase?lang=ru&scopeMarket=1600")
+        if not data:
+            return [], []
+
+        sports_map: Dict[int, dict] = {}
+        for s in data.get("sports") or []:
+            sid = s.get("id")
+            if sid is not None:
+                sports_map[int(sid)] = s
+
+        misc_map: Dict[int, dict] = {}
+        for m in data.get("eventMiscs") or []:
+            eid = m.get("id")
+            if eid is not None:
+                misc_map[int(eid)] = m
+
+        factors_map: Dict[int, List[dict]] = {}
+        for cf in data.get("customFactors") or []:
+            eid = cf.get("e")
+            if eid is not None:
+                factors_map[int(eid)] = cf.get("factors") or []
+
+        live_matches: List[Dict[str, Any]] = []
+        prematch_matches: List[Dict[str, Any]] = []
+        now_ts = int(time.time())
+
+        for ev in data.get("events") or []:
+            if ev.get("level") != 1:
+                continue
+
+            sport_id = ev.get("sportId")
+            comp = sports_map.get(int(sport_id)) if sport_id is not None else None
+            root_sport_id = comp.get("parentId") if comp else None
+            if sport_id != 1 and root_sport_id != 1:
+                continue
+
+            t1 = str(ev.get("team1") or "").strip()
+            t2 = str(ev.get("team2") or "").strip()
+            if not t1 or not t2:
+                continue
+
+            # Исключаем киберфутбол / виртуальные лиги при необходимости, оставляя реальный футбол
+            league_name = str(comp.get("name") if comp else "Футбол").strip()
+            if "кибер" in league_name.lower() or "esports" in league_name.lower():
+                continue
+
+            eid = int(ev["id"])
+            place = str(ev.get("place") or "line").lower()
+            is_live = place == "live"
+
+            f_list = factors_map.get(eid) or []
+            odds_1x2, markets = parse_fonbet_factors(f_list)
+            if odds_1x2["P1"] <= 1.0 or odds_1x2["P2"] <= 1.0:
+                continue
+
+            misc = misc_map.get(eid) or {}
+            s1 = int(misc.get("score1") or 0)
+            s2 = int(misc.get("score2") or 0)
+            time_label = format_fonbet_time(ev, misc, is_live=is_live)
+
+            clean1 = re.sub(r"\s*\([^)]*\)", "", t1).strip()
+            clean2 = re.sub(r"\s*\([^)]*\)", "", t2).strip()
+
+            match_obj = {
+                "id": str(eid),
+                "is_live": is_live,
+                "league": league_name,
+                "team1": t1,
+                "team2": t2,
+                "logo1": LOGO_CACHE.get(clean1, ""),
+                "logo2": LOGO_CACHE.get(clean2, ""),
+                "score1": s1,
+                "score2": s2,
+                "time_label": time_label,
+                "start_time": int(ev.get("startTime") or 0),
+                "odds": odds_1x2,
+                "markets": markets,
+                "updated_at": now_ts,
+            }
+
+            if is_live:
+                live_matches.append(match_obj)
+            else:
+                prematch_matches.append(match_obj)
+
+        prematch_matches.sort(key=lambda x: x.get("start_time", 0))
+        return live_matches, prematch_matches[:80]
+
+    async def fetch_event_details(self, match_id: str) -> Optional[Dict[str, Any]]:
+        data = await self._fetch_json(
+            f"/events/event?lang=ru&eventId={match_id}&scopeMarket=1600"
+        )
+        if not data:
+            return None
+
+        events = data.get("events") or []
+        main_ev = next((e for e in events if str(e.get("id")) == str(match_id)), None)
+        miscs = data.get("eventMiscs") or []
+        misc = next((m for m in miscs if str(m.get("id")) == str(match_id)), {})
+
+        all_factors: List[dict] = []
+        for cf in data.get("customFactors") or []:
+            if str(cf.get("e")) == str(match_id):
+                all_factors.extend(cf.get("factors") or [])
+
+        _, markets = parse_fonbet_factors(all_factors)
+        is_live = (main_ev or {}).get("place") == "live"
+
+        return {
+            "score1": int(misc.get("score1") or 0),
+            "score2": int(misc.get("score2") or 0),
+            "time_label": format_fonbet_time(main_ev or {}, misc, is_live=is_live),
+            "markets": markets,
+        }
 
 
-scraper = OlimpbetScraper()
+scraper = FonbetScraper()
 
 
-# ================= ДВИЖОК РАСЧЁТА СТАВОК (ПОД ТВОЮ СТРУКТУРУ FIREBASE) =================
+# ================= ДВИЖОК СТАВОК И РАСЧЁТОВ =================
 def normalize_bet(bet: dict) -> dict:
-    """Приводит старые (events[]) и новые купоны к единому виду."""
     events = bet.get("events")
     first_ev = events[0] if isinstance(events, list) and events else {}
 
@@ -544,6 +446,7 @@ def normalize_bet(bet: dict) -> dict:
         or 1.0
     )
     amount = float(bet.get("amount") or 0)
+    currency = str(bet.get("currency") or "RUB").upper()
     status = str(bet.get("status") or "active")
     if status == "pending":
         status = "active"
@@ -557,8 +460,10 @@ def normalize_bet(bet: dict) -> dict:
         "selection": selection,
         "odd": round(odd, 2),
         "amount": amount,
+        "currency": currency,
         "status": status,
         "final_score": bet.get("final_score", ""),
+        "payout": float(bet.get("payout") or 0),
         "created_at": bet.get("created_at") or bet.get("timestamp") or 0,
     }
 
@@ -609,11 +514,6 @@ def evaluate_outcome(selection: str, s1: int, s2: int) -> str:
 
 
 async def collect_all_active_bets() -> List[Tuple[str, str, str, Dict[str, Any]]]:
-    """
-    Собирает все активные ставки (status == 'active' или 'pending')
-    из users/{uid}/bets/{bet_id} и active_bets/{bet_id}.
-    Возвращает список (firebase_path, bet_id, user_id, normalized_bet).
-    """
     found: List[Tuple[str, str, str, Dict[str, Any]]] = []
     seen_ids = set()
 
@@ -649,9 +549,6 @@ async def collect_all_active_bets() -> List[Tuple[str, str, str, Dict[str, Any]]
 async def settle_match_bets(
     target_query: str, s1: int, s2: int, notify_bot: Optional[Bot] = None
 ) -> int:
-    """
-    Рассчитывает ставки по match_id ИЛИ по части названия команды (например, 'Албания').
-    """
     active_list = await collect_all_active_bets()
     q_low = target_query.strip().lower()
     settled_count = 0
@@ -674,6 +571,14 @@ async def settle_match_bets(
             else (round(amount, 2) if result == "void" else 0.0)
         )
 
+        # Перевод выплаты в базовую валюту баланса (Stars)
+        payout_stars = (
+            round(payout / STAR_TO_RUB, 2) if norm["currency"] == "RUB" else payout
+        )
+        stake_stars = (
+            round(amount / STAR_TO_RUB, 2) if norm["currency"] == "RUB" else amount
+        )
+
         patch_payload = {
             "status": result,
             "final_score": f"{s1}:{s2}",
@@ -689,13 +594,16 @@ async def settle_match_bets(
             user = await db.get(f"users/{user_id}") or {}
             cur_bal = float(user.get("balance", 0))
             won_bets = int(user.get("won_bets", 0)) + (1 if result == "won" else 0)
-            net_profit = float(user.get("net_profit", 0)) + (payout - amount)
+            net_profit = float(user.get("profit", user.get("net_profit", 0))) + (
+                payout_stars - stake_stars
+            )
 
             await db.patch(
                 f"users/{user_id}",
                 {
-                    "balance": round(cur_bal + payout, 2),
+                    "balance": round(cur_bal + payout_stars, 2),
                     "won_bets": won_bets,
+                    "profit": round(net_profit, 2),
                     "net_profit": round(net_profit, 2),
                 },
             )
@@ -704,7 +612,7 @@ async def settle_match_bets(
                 try:
                     await notify_bot.send_message(
                         int(user_id),
-                        f"Ставка сыграла! +{payout:.2f} ₽\n"
+                        f"Ставка сыграла! +{payout_stars:.2f} ★ ({payout_stars * STAR_TO_RUB:.2f} ₽)\n"
                         f"{norm['match_title']} ({s1}:{s2}) — {norm['selection']} @ {odd}",
                     )
                 except Exception:
@@ -737,18 +645,11 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
     if not pending_matches:
         return {"checked": 0, "settled": 0, "unresolved": {}}
 
-    results_api = await scraper.fetch_finished_results()
     archive = await db.get("match_archive") or {}
-
     total_settled = 0
     unresolved: Dict[str, str] = {}
 
     for key, title in pending_matches.items():
-        if key in results_api:
-            s1, s2 = results_api[key]
-            total_settled += await settle_match_bets(key, s1, s2, notify_bot)
-            continue
-
         arch_item = archive.get(key) if isinstance(archive, dict) else None
         if isinstance(arch_item, dict):
             if arch_item.get("status") == "finished":
@@ -777,14 +678,20 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
 
 
 # ================= ФОНОВЫЙ ПАРСЕР =================
+async def logo_background_loader(matches: List[Dict[str, Any]]):
+    for m in matches[:40]:
+        for t_key, l_key in (("team1", "logo1"), ("team2", "logo2")):
+            if not m.get(l_key):
+                url = await resolve_team_logo(m[t_key])
+                if url:
+                    m[l_key] = url
+
+
 async def scraper_loop(bot: Bot):
     prev_live_ids: set[str] = set()
     while True:
         try:
-            live_list, prematch_list = await asyncio.gather(
-                scraper.fetch_events(is_live=True),
-                scraper.fetch_events(is_live=False),
-            )
+            live_list, prematch_list = await scraper.fetch_full_line()
 
             by_id: Dict[str, Any] = {}
             for m in prematch_list + live_list:
@@ -795,13 +702,15 @@ async def scraper_loop(bot: Bot):
             LINE_CACHE["by_id"] = by_id
             LINE_CACHE["updated_at"] = int(time.time())
 
+            asyncio.create_task(logo_background_loader(live_list + prematch_list))
+
             current_live_ids = set()
             for m in live_list:
                 current_live_ids.add(m["id"])
                 await db.patch(
                     f"match_archive/{m['id']}",
                     {
-                        "title": f"{m['team1']} — {m['team2']}",
+                        "title": f"{m['team1']} - {m['team2']}",
                         "score1": m["score1"],
                         "score2": m["score2"],
                         "time_label": m["time_label"],
@@ -817,10 +726,10 @@ async def scraper_loop(bot: Bot):
         except Exception as e:
             logger.error(f"Scraper loop error: {e}")
 
-        await asyncio.sleep(12)
+        await asyncio.sleep(10)
 
 
-# ================= TELEGRAM БОТ =================
+# ================= TELEGRAM БОТ (AIOGRAM 3) =================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
@@ -831,13 +740,20 @@ def is_admin(user_id: int) -> bool:
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, command: CommandObject):
     u = message.from_user
     if not u:
         return
     uid = str(u.id)
     existing = await db.get(f"users/{uid}")
+
     if not existing:
+        ref_id = ""
+        if command.args and command.args.startswith("ref_"):
+            cand = command.args.replace("ref_", "").strip()
+            if cand.isdigit() and cand != uid:
+                ref_id = cand
+
         await db.put(
             f"users/{uid}",
             {
@@ -845,12 +761,33 @@ async def cmd_start(message: Message):
                 "name": u.first_name or "Игрок",
                 "username": u.username or "",
                 "balance": 0.0,
+                "referrals": 0,
+                "invited_by": ref_id,
                 "total_bets": 0,
                 "won_bets": 0,
-                "net_profit": 0.0,
+                "profit": 0.0,
                 "created_at": int(time.time()),
             },
         )
+
+        if ref_id:
+            inviter = await db.get(f"users/{ref_id}")
+            if isinstance(inviter, dict):
+                new_refs = int(inviter.get("referrals", 0)) + 1
+                bonus_stars = 5.0
+                new_bal = round(float(inviter.get("balance", 0)) + bonus_stars, 2)
+                await db.patch(
+                    f"users/{ref_id}",
+                    {"referrals": new_refs, "balance": new_bal},
+                )
+                try:
+                    await bot.send_message(
+                        int(ref_id),
+                        f"Новый реферал: **{u.first_name}**! Начислено +{bonus_stars} ★",
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -864,40 +801,181 @@ async def cmd_start(message: Message):
     )
     await message.answer(
         f"Добро пожаловать в **WINSTARS**, {u.first_name}!\n"
-        f"Live-линия, мгновенный расчёт купонов и статистика в одном приложении.",
+        f"Live-линия Fonbet, ставки в Telegram Stars и рублях, мгновенный расчёт купонов.",
         reply_markup=kb,
         parse_mode="Markdown",
     )
+
+
+@router.pre_checkout_query()
+async def on_pre_checkout(query: PreCheckoutQuery):
+    await query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def on_successful_payment(message: Message):
+    sp = message.successful_payment
+    if not sp or not message.from_user:
+        return
+    uid = str(message.from_user.id)
+    stars_paid = float(sp.total_amount)
+
+    user = await db.get(f"users/{uid}") or {"id": uid, "balance": 0.0}
+    new_bal = round(float(user.get("balance", 0)) + stars_paid, 2)
+    await db.patch(f"users/{uid}", {"balance": new_bal})
+
+    await db.push(
+        "transactions",
+        {
+            "type": "deposit",
+            "method": "Telegram Stars",
+            "user_id": uid,
+            "amount_stars": stars_paid,
+            "amount_rub": round(stars_paid * STAR_TO_RUB, 2),
+            "status": "completed",
+            "created_at": int(time.time()),
+        },
+    )
+    await message.answer(
+        f"Баланс пополнен на **{stars_paid:.0f} ★** ({stars_paid * STAR_TO_RUB:.2f} ₽)!",
+        parse_mode="Markdown",
+    )
+
+
+# --- АДМИН-КОМАНДЫ ---
+@router.message(Command("add_balance"))
+async def cmd_add_balance(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer("Формат: `/add_balance <user_id> <звёзды>`", parse_mode="Markdown")
+        return
+    uid, amt = parts[1], float(parts[2])
+    user = await db.get(f"users/{uid}") or {"id": uid, "balance": 0.0}
+    new_bal = round(float(user.get("balance", 0)) + amt, 2)
+    await db.patch(f"users/{uid}", {"balance": new_bal})
+    await message.answer(f"Игроку `{uid}` добавлено {amt} ★. Баланс: **{new_bal} ★**", parse_mode="Markdown")
+
+
+@router.message(Command("set_balance"))
+async def cmd_set_balance(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer("Формат: `/set_balance <user_id> <звёзды>`", parse_mode="Markdown")
+        return
+    uid, amt = parts[1], round(float(parts[2]), 2)
+    await db.patch(f"users/{uid}", {"balance": amt})
+    await message.answer(f"Баланс `{uid}` установлен: **{amt} ★**", parse_mode="Markdown")
+
+
+@router.message(Command("add_refs"))
+async def cmd_add_refs(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer("Формат: `/add_refs <user_id> <кол-во>`", parse_mode="Markdown")
+        return
+    uid, cnt = parts[1], int(parts[2])
+    user = await db.get(f"users/{uid}") or {}
+    new_refs = int(user.get("referrals", 0)) + cnt
+    await db.patch(f"users/{uid}", {"referrals": new_refs})
+    await message.answer(f"Рефералы `{uid}`: **{new_refs}**", parse_mode="Markdown")
+
+
+@router.message(Command("promo_create"))
+async def cmd_promo_create(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 4:
+        await message.answer(
+            "Формат: `/promo_create <КОД> <бонус_в_звёздах> <активаций>`",
+            parse_mode="Markdown",
+        )
+        return
+    code = parts[1].strip().upper()
+    bonus = float(parts[2])
+    uses = int(parts[3])
+    await db.put(
+        f"promos/{code}",
+        {"code": code, "bonus": bonus, "uses_left": uses, "created_at": int(time.time())},
+    )
+    await message.answer(
+        f"Промокод `{code}` создан: **+{bonus} ★** ({uses} активаций).",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(Command("promo_list"))
+async def cmd_promo_list(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    promos = await db.get("promos")
+    if not isinstance(promos, dict) or not promos:
+        await message.answer("Активных промокодов нет.")
+        return
+    lines = ["**Промокоды:**\n"]
+    for code, p in promos.items():
+        if isinstance(p, dict):
+            lines.append(f"• `{code}` — +{p.get('bonus')} ★ (осталось: {p.get('uses_left')})")
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+@router.message(Command("promo_delete"))
+async def cmd_promo_delete(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 2:
+        return
+    code = parts[1].strip().upper()
+    await db.delete(f"promos/{code}")
+    await message.answer(f"Промокод `{code}` удалён.", parse_mode="Markdown")
+
+
+@router.message(Command("broadcast"))
+async def cmd_broadcast(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    text = (message.text or "").partition(" ")[2].strip()
+    if not text:
+        await message.answer("Формат: `/broadcast Текст рассылки`", parse_mode="Markdown")
+        return
+    users = await db.get("users") or {}
+    sent = 0
+    for uid in users.keys():
+        if uid.isdigit():
+            try:
+                await bot.send_message(int(uid), text)
+                sent += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                pass
+    await message.answer(f"Рассылка завершена. Доставлено: **{sent}**.", parse_mode="Markdown")
 
 
 @router.message(Command("pending_matches"))
 async def cmd_pending_matches(message: Message):
     if not message.from_user or not is_admin(message.from_user.id):
         return
-
     active_list = await collect_all_active_bets()
     if not active_list:
-        await message.answer("Все ставки рассчитаны, зависших матчей нет.")
+        await message.answer("Все ставки рассчитаны.")
         return
-
     grouped: Dict[str, Dict[str, Any]] = {}
     for _, _, _, norm in active_list:
         key = norm["match_id"] or norm["match_title"].split()[0]
         if key not in grouped:
-            grouped[key] = {
-                "title": norm["match_title"],
-                "count": 0,
-                "sum": 0.0,
-            }
+            grouped[key] = {"title": norm["match_title"], "count": 0}
         grouped[key]["count"] += 1
-        grouped[key]["sum"] += norm["amount"]
 
     lines = ["**Активные нерассчитанные матчи:**\n"]
     for key, info in grouped.items():
-        lines.append(
-            f"• {info['title']} ({info['count']} ст. на {info['sum']:.0f} ₽)\n"
-            f"  Закрыть: `/settle {key} 0:0`"
-        )
+        lines.append(f"• {info['title']} ({info['count']} ст.) → `/settle {key} 0:0`")
     await message.answer("\n".join(lines), parse_mode="Markdown")
 
 
@@ -905,55 +983,30 @@ async def cmd_pending_matches(message: Message):
 async def cmd_recalc(message: Message):
     if not message.from_user or not is_admin(message.from_user.id):
         return
-
-    status_msg = await message.answer(
-        "Запускаю сверку с архивом и результатами Olimpbet..."
-    )
     res = await run_full_recalc(bot)
-
-    text = (
-        f"**Перерасчёт завершён**\n"
-        f"Проверено матчей: {res['checked']}\n"
-        f"Рассчитано ставок: {res['settled']}"
-    )
+    text = f"Проверено: {res['checked']} | Рассчитано: {res['settled']}"
     if res["unresolved"]:
-        text += "\n\n**Закройте вручную командой `/settle <слово_или_id> <счёт>`:**\n"
-        for key, title in res["unresolved"].items():
-            text += f"• `{key}` — {title}\n"
-
-    await status_msg.edit_text(text, parse_mode="Markdown")
+        text += "\nНе закрыты:\n" + "\n".join(
+            f"• `{k}` — {v}" for k, v in res["unresolved"].items()
+        )
+    await message.answer(text, parse_mode="Markdown")
 
 
 @router.message(Command("settle", "settle_bet"))
 async def cmd_settle(message: Message):
-    """Работает и по ID, и по названию команды: /settle Албания 1:3"""
     if not message.from_user or not is_admin(message.from_user.id):
         return
-
     parts = (message.text or "").split()
     if len(parts) < 3 or ":" not in parts[-1]:
-        await message.answer(
-            "Формат: `/settle <команда_или_id> <счёт1>:<счёт2>`\n"
-            "Пример для Албании: `/settle Албания 1:3`",
-            parse_mode="Markdown",
-        )
+        await message.answer("Пример: `/settle Албания 1:3`", parse_mode="Markdown")
         return
-
     score_part = parts[-1].strip()
     query = " ".join(parts[1:-1]).strip()
-
-    try:
-        s1_str, s2_str = score_part.split(":")
-        s1, s2 = int(s1_str.strip()), int(s2_str.strip())
-    except ValueError:
-        await message.answer(
-            "Счёт должен быть целыми числами, например `1:3`.", parse_mode="Markdown"
-        )
-        return
-
+    s1_str, s2_str = score_part.split(":")
+    s1, s2 = int(s1_str), int(s2_str)
     count = await settle_match_bets(query, s1, s2, bot)
     await message.answer(
-        f"Матч **{query}** закрыт со счётом **{s1}:{s2}**.\nРассчитано ставок: **{count}**.",
+        f"Матч **{query}** ({s1}:{s2}) рассчитан. Ставок: **{count}**.",
         parse_mode="Markdown",
     )
 
@@ -987,13 +1040,25 @@ class BetRequest(BaseModel):
     selection: str
     odd: float
     amount: float
+    currency: str = "STARS"  # STARS или RUB
+
+
+class InvoiceRequest(BaseModel):
+    user_id: str
+    stars: int
 
 
 class CashierRequest(BaseModel):
     user_id: str
     amount: float
+    currency: str = "STARS"
     method: str = "sbp"
     details: str = ""
+
+
+class PromoRequest(BaseModel):
+    user_id: str
+    code: str
 
 
 class ChatConnectionManager:
@@ -1027,8 +1092,8 @@ async def health_check():
     return {
         "status": "ok",
         "service": "WinStars API",
-        "live_count": len(LINE_CACHE["live"]),
-        "prematch_count": len(LINE_CACHE["prematch"]),
+        "live": len(LINE_CACHE["live"]),
+        "prematch": len(LINE_CACHE["prematch"]),
         "updated_at": LINE_CACHE["updated_at"],
     }
 
@@ -1041,15 +1106,18 @@ async def api_init(user_id: str, name: str = "Игрок"):
             "id": user_id,
             "name": name,
             "balance": 0.0,
+            "referrals": 0,
             "total_bets": 0,
             "won_bets": 0,
-            "net_profit": 0.0,
+            "profit": 0.0,
             "created_at": int(time.time()),
         }
         await db.put(f"users/{user_id}", user)
 
     return {
         "user": user,
+        "star_rate": STAR_TO_RUB,
+        "bot_username": BOT_USERNAME,
         "live": LINE_CACHE["live"],
         "prematch": LINE_CACHE["prematch"],
         "updated_at": LINE_CACHE["updated_at"],
@@ -1068,8 +1136,7 @@ async def api_matches():
 @app.get("/api/match/{match_id}/markets")
 async def api_match_markets(match_id: str):
     cached = LINE_CACHE["by_id"].get(match_id)
-    is_live = cached["is_live"] if cached else True
-    details = await scraper.fetch_event_details(match_id, is_live=is_live)
+    details = await scraper.fetch_event_details(match_id)
 
     if details and cached:
         cached["score1"] = details["score1"]
@@ -1085,26 +1152,29 @@ async def api_match_markets(match_id: str):
 
 @app.post("/api/bet")
 async def api_place_bet(req: BetRequest):
-    if req.amount < 10:
-        raise HTTPException(status_code=400, detail="Минимальная ставка 10 ₽")
     if req.odd <= 1.0:
         raise HTTPException(status_code=400, detail="Некорректный коэффициент")
+
+    cur = req.currency.upper()
+    stake_stars = (
+        round(req.amount / STAR_TO_RUB, 2) if cur == "RUB" else round(req.amount, 2)
+    )
+    if stake_stars < 1:
+        raise HTTPException(status_code=400, detail="Минимальная ставка 1 ★ (1.5 ₽)")
 
     user = await db.get(f"users/{req.user_id}")
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
     balance = float(user.get("balance", 0))
-    if balance < req.amount:
+    if balance < stake_stars:
         raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
 
     match = LINE_CACHE["by_id"].get(req.match_id)
     if not match:
-        raise HTTPException(
-            status_code=400, detail="Приём ставок на событие приостановлен"
-        )
+        raise HTTPException(status_code=400, detail="Приём ставок приостановлен")
 
-    new_balance = round(balance - req.amount, 2)
+    new_balance = round(balance - stake_stars, 2)
     total_bets = int(user.get("total_bets", 0)) + 1
 
     bet_data = {
@@ -1117,6 +1187,7 @@ async def api_place_bet(req: BetRequest):
         "total_coefficient": round(req.odd, 2),
         "odd": round(req.odd, 2),
         "amount": round(req.amount, 2),
+        "currency": cur,
         "potential_win": round(req.amount * req.odd, 2),
         "status": "active",
         "created_at": int(time.time()),
@@ -1130,7 +1201,6 @@ async def api_place_bet(req: BetRequest):
         f"users/{req.user_id}",
         {"balance": new_balance, "total_bets": total_bets},
     )
-
     return {"ok": True, "bet_id": bet_id, "balance": new_balance}
 
 
@@ -1164,6 +1234,24 @@ async def api_user_bets(user_id: str):
     return res
 
 
+@app.post("/api/invoice")
+async def api_create_stars_invoice(req: InvoiceRequest):
+    if req.stars < 1 or req.stars > 50000:
+        raise HTTPException(status_code=400, detail="Укажите от 1 до 50000 ★")
+    try:
+        link = await bot.create_invoice_link(
+            title=f"Пополнение WINSTARS ({req.stars} ★)",
+            description=f"Зачисление {req.stars} Telegram Stars на игровой баланс",
+            payload=f"stars_{req.user_id}_{req.stars}_{int(time.time())}",
+            currency="XTR",
+            prices=[LabeledPrice(label=f"{req.stars} Stars", amount=req.stars)],
+        )
+        return {"ok": True, "invoice_url": link}
+    except Exception as e:
+        logger.error(f"create_invoice_link error: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка создания счёта Stars")
+
+
 @app.post("/api/cashier/deposit")
 async def api_cashier_deposit(req: CashierRequest):
     if req.amount < 50:
@@ -1172,38 +1260,45 @@ async def api_cashier_deposit(req: CashierRequest):
         "transactions",
         {
             "type": "deposit",
+            "method": "СБП (Rolly Pay)",
             "user_id": req.user_id,
-            "amount": req.amount,
-            "method": req.method,
-            "status": "created",
+            "amount_rub": req.amount,
+            "amount_stars": round(req.amount / STAR_TO_RUB, 2),
+            "status": "pending",
             "created_at": int(time.time()),
         },
     )
     return {
         "ok": True,
         "tx_id": tx_id,
-        "payment_url": None,
-        "message": "Платёжный шлюз подключается перед релизом",
+        "message": "Шлюз СБП (Rolly Pay) подключается после активации ключа",
     }
 
 
 @app.post("/api/cashier/withdraw")
 async def api_cashier_withdraw(req: CashierRequest):
-    if req.amount < 100:
-        raise HTTPException(status_code=400, detail="Минимальный вывод 100 ₽")
+    cur = req.currency.upper()
+    stars_amt = (
+        round(req.amount / STAR_TO_RUB, 2) if cur == "RUB" else round(req.amount, 2)
+    )
+    if stars_amt < 50:
+        raise HTTPException(status_code=400, detail="Минимальный вывод 50 ★ (75 ₽)")
+
     user = await db.get(f"users/{req.user_id}")
-    if not user or float(user.get("balance", 0)) < req.amount:
+    if not user or float(user.get("balance", 0)) < stars_amt:
         raise HTTPException(status_code=400, detail="Недостаточно средств")
 
-    new_bal = round(float(user["balance"]) - req.amount, 2)
+    new_bal = round(float(user["balance"]) - stars_amt, 2)
     await db.patch(f"users/{req.user_id}", {"balance": new_bal})
+
     tx_id = await db.push(
         "transactions",
         {
             "type": "withdraw",
-            "user_id": req.user_id,
-            "amount": req.amount,
             "method": req.method,
+            "user_id": req.user_id,
+            "amount_stars": stars_amt,
+            "amount_rub": round(stars_amt * STAR_TO_RUB, 2),
             "details": req.details,
             "status": "pending",
             "created_at": int(time.time()),
@@ -1213,16 +1308,76 @@ async def api_cashier_withdraw(req: CashierRequest):
         try:
             await bot.send_message(
                 adm,
-                f"Заявка на вывод #{tx_id}\nИгрок: `{req.user_id}`\nСумма: {req.amount} ₽\nРеквизиты: {req.details}",
+                f"Вывод #{tx_id}\nИгрок: `{req.user_id}`\nСумма: {stars_amt} ★ ({stars_amt * STAR_TO_RUB:.0f} ₽)\nРеквизиты: {req.details}",
                 parse_mode="Markdown",
             )
         except Exception:
             pass
-    return {"ok": True, "tx_id": tx_id, "balance": new_bal}
+    return {"ok": True, "balance": new_bal}
+
+
+@app.get("/api/transactions/{user_id}")
+async def api_transactions(user_id: str):
+    raw = await db.get("transactions")
+    res = []
+    if isinstance(raw, dict):
+        for tid, t in raw.items():
+            if isinstance(t, dict) and str(t.get("user_id")) == str(user_id):
+                item = dict(t)
+                item["id"] = tid
+                res.append(item)
+    res.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return res[:30]
+
+
+@app.post("/api/promo/activate")
+async def api_promo_activate(req: PromoRequest):
+    code = req.code.strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Введите промокод")
+
+    promo = await db.get(f"promos/{code}")
+    if not isinstance(promo, dict):
+        raise HTTPException(status_code=404, detail="Промокод не найден")
+
+    uses_left = int(promo.get("uses_left", 0))
+    if uses_left <= 0:
+        raise HTTPException(status_code=400, detail="Лимит активаций исчерпан")
+
+    used = await db.get(f"promo_used/{req.user_id}/{code}")
+    if used:
+        raise HTTPException(status_code=400, detail="Вы уже активировали этот промокод")
+
+    bonus = float(promo.get("bonus", 0))
+    user = await db.get(f"users/{req.user_id}") or {"id": req.user_id, "balance": 0.0}
+    new_bal = round(float(user.get("balance", 0)) + bonus, 2)
+
+    await db.patch(f"users/{req.user_id}", {"balance": new_bal})
+    await db.patch(f"promos/{code}", {"uses_left": uses_left - 1})
+    await db.put(f"promo_used/{req.user_id}/{code}", int(time.time()))
+    await db.push(
+        "transactions",
+        {
+            "type": "promo",
+            "method": f"Промокод {code}",
+            "user_id": req.user_id,
+            "amount_stars": bonus,
+            "amount_rub": round(bonus * STAR_TO_RUB, 2),
+            "status": "completed",
+            "created_at": int(time.time()),
+        },
+    )
+    return {"ok": True, "bonus": bonus, "balance": new_bal}
 
 
 def normalize_chat_msg(m: dict) -> dict:
-    user = m.get("user") or m.get("username") or m.get("first_name") or m.get("name") or "Игрок"
+    user = (
+        m.get("user")
+        or m.get("username")
+        or m.get("first_name")
+        or m.get("name")
+        or "Игрок"
+    )
     text = m.get("text") or m.get("message") or ""
     raw_t = m.get("time") or m.get("timestamp") or m.get("created_at") or ""
     if isinstance(raw_t, (int, float)) and raw_t > 1_000_000_000:
