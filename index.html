@@ -874,6 +874,154 @@
       border-bottom: none;
     }
 
+    /* RECEIPT MODAL (ЧЕК ПРИНЯТОЙ СТАВКИ) */
+    .receipt-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      background: rgba(5, 4, 10, 0.82);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .receipt-overlay.open {
+      display: flex;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .receipt-card {
+      width: 100%;
+      max-width: 390px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 22px 18px 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+    }
+
+    .receipt-check {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.14);
+      color: var(--green);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 12px;
+    }
+
+    .receipt-heading {
+      text-align: center;
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--green);
+      margin-bottom: 18px;
+    }
+
+    .receipt-brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .receipt-brand {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      color: var(--text-main);
+    }
+
+    .receipt-badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--green);
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+
+    .receipt-meta {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .receipt-events-list {
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .receipt-event-box {
+      background: var(--bg-card-hover);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 14px;
+      padding: 11px 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .receipt-event-title {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+
+    .receipt-event-pick {
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .receipt-event-pick span {
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .receipt-event-odd {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: #c084fc;
+    }
+
+    .receipt-summary-box {
+      background: var(--bg-card-hover);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .receipt-sum-lbl {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .receipt-sum-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.98rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
     .toast {
       position: fixed;
       top: 66px;
@@ -1192,6 +1340,43 @@
     </div>
   </div>
 
+  <!-- MODAL: ЧЕК ПРИНЯТОЙ СТАВКИ -->
+  <div id="receipt-modal" class="receipt-overlay" onclick="if(event.target===this) closeReceiptModal()">
+    <div class="receipt-card">
+      <div class="receipt-check">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <div class="receipt-heading">Ставка принята!</div>
+
+      <div class="receipt-brand-row">
+        <div class="receipt-brand">WINSTARS</div>
+        <div class="receipt-badge">Принята</div>
+      </div>
+      <div id="receipt-meta" class="receipt-meta">Ординар · 1 соб.</div>
+
+      <div id="receipt-events-list" class="receipt-events-list"></div>
+
+      <div class="receipt-summary-box">
+        <div>
+          <div class="receipt-sum-lbl">Ставка</div>
+          <div id="receipt-stake" class="receipt-sum-val">0</div>
+        </div>
+        <div>
+          <div class="receipt-sum-lbl">Коэф</div>
+          <div id="receipt-coef" class="receipt-sum-val">1.00</div>
+        </div>
+        <div>
+          <div class="receipt-sum-lbl">Выплата</div>
+          <div id="receipt-payout" class="receipt-sum-val" style="color:var(--green);">0</div>
+        </div>
+      </div>
+
+      <button class="primary-btn" onclick="closeReceiptModal()">Закрыть</button>
+    </div>
+  </div>
+
   <script>
     const API_BASE_URL = 'https://winstarsbot.onrender.com';
     const BOT_USERNAME = 'WinStarsPlaybot';
@@ -1325,12 +1510,10 @@
       const refLink = `https://t.me/${BOT_USERNAME}?start=${uid}`;
       document.getElementById('ref-link-input').value = refLink;
 
-      // Прогресс реферальной программы
       const clampedRefs = Math.min(refs, 5);
       document.getElementById('ref-progress-label').innerText = `${refs} / 5 друзей`;
       document.getElementById('ref-progress-bar').style.width = `${(clampedRefs / 5) * 100}%`;
 
-      // Условия вывода в Кассе
       const condBalEl = document.getElementById('wd-cond-bal');
       const condRefsEl = document.getElementById('wd-cond-refs');
       if (condBalEl) {
@@ -1343,7 +1526,6 @@
       }
       updateWithdrawCalc();
 
-      // Аватарка в шапке
       const headerAvatarWrap = document.getElementById('header-avatar-wrap');
       if (photoUrl) {
         headerAvatarWrap.innerHTML = `<img src="${photoUrl}" class="header-avatar" onerror="this.outerHTML='<div class=\\'header-avatar\\'>${initials}</div>'">`;
@@ -1351,7 +1533,6 @@
         headerAvatarWrap.innerHTML = `<div class="header-avatar">${initials}</div>`;
       }
 
-      // Большая аватарка по центру в Профиле
       const profileAvatarWrap = document.getElementById('profile-avatar-wrap');
       if (photoUrl) {
         profileAvatarWrap.innerHTML = `<img src="${photoUrl}" class="profile-avatar-lg" onerror="this.outerHTML='<div class=\\'profile-avatar-lg\\'>${initials}</div>'">`;
@@ -1426,7 +1607,6 @@
         y: h - ((val - minVal) / range) * (h - 26) - 13
       }));
 
-      // Градиентная заливка под линией
       const grad = ctx.createLinearGradient(0, 0, 0, h);
       grad.addColorStop(0, cum >= 0 ? 'rgba(16, 185, 129, 0.24)' : 'rgba(239, 68, 68, 0.24)');
       grad.addColorStop(1, 'rgba(19, 15, 30, 0)');
@@ -1438,7 +1618,6 @@
       ctx.closePath();
       ctx.fill();
 
-      // Основная линия
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -1448,7 +1627,6 @@
       });
       ctx.stroke();
 
-      // Точки
       ctx.fillStyle = lineColor;
       coords.forEach(pt => {
         ctx.beginPath();
@@ -1733,6 +1911,42 @@
       document.getElementById('betslip-potential-win').innerHTML = `${fmtNum(amount * totalCoef)} ${starSvg(12)}`;
     }
 
+    function openReceiptModal(eventsSnapshot, amount, totalCoef) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const typeLabel = eventsSnapshot.length > 1 ? 'Экспресс' : 'Ординар';
+
+      document.getElementById('receipt-meta').innerText =
+        `${typeLabel} · ${eventsSnapshot.length} соб. · ${dd}.${mm} ${hh}:${min}`;
+
+      const listEl = document.getElementById('receipt-events-list');
+      listEl.innerHTML = '';
+      eventsSnapshot.forEach(ev => {
+        listEl.innerHTML += `
+          <div class="receipt-event-box">
+            <div>
+              <div class="receipt-event-title">${ev.matchTitle}</div>
+              <div class="receipt-event-pick">${ev.outcomeLabel} <span>(${ev.groupName || 'Исход'})</span></div>
+            </div>
+            <div class="receipt-event-odd">${Number(ev.coeff).toFixed(2)}</div>
+          </div>`;
+      });
+
+      const payout = amount * totalCoef;
+      document.getElementById('receipt-stake').innerHTML = `${fmtNum(amount)} ${starSvg(13)}`;
+      document.getElementById('receipt-coef').innerText = Number(totalCoef).toFixed(2);
+      document.getElementById('receipt-payout').innerHTML = `${fmtNum(payout)} ${starSvg(13)}`;
+
+      document.getElementById('receipt-modal').classList.add('open');
+    }
+
+    function closeReceiptModal() {
+      document.getElementById('receipt-modal').classList.remove('open');
+    }
+
     async function submitBet() {
       if (betSlip.length === 0) return;
       const amount = Number(document.getElementById('bet-amount-input').value || 0);
@@ -1744,19 +1958,22 @@
       btn.disabled = true;
       try {
         const auth = getUserAuthPayload();
-        const totalCoef = Number(betSlip.reduce((acc, i) => acc * i.coeff, 1).toFixed(2));
-        const first = betSlip[0];
+        const eventsSnapshot = betSlip.map(item => ({ ...item }));
+        const totalCoef = Number(eventsSnapshot.reduce((acc, i) => acc * i.coeff, 1).toFixed(2));
+        const first = eventsSnapshot[0];
         const payload = {
           ...auth,
-          type: betSlip.length > 1 ? 'express' : 'single',
+          type: eventsSnapshot.length > 1 ? 'express' : 'single',
           match_id: first.matchId,
-          match_title: betSlip.length > 1 ? `Экспресс (${betSlip.length})` : first.matchTitle,
+          match_title: eventsSnapshot.length > 1 ? `Экспресс (${eventsSnapshot.length})` : first.matchTitle,
           league: first.league,
-          outcome: betSlip.length > 1 ? betSlip.map(i => `${i.matchTitle}: ${i.outcomeLabel}`).join(' | ') : first.outcomeLabel,
+          outcome: eventsSnapshot.length > 1
+            ? eventsSnapshot.map(i => `${i.matchTitle}: ${i.outcomeLabel}`).join(' | ')
+            : first.outcomeLabel,
           odd: totalCoef,
           total_coefficient: totalCoef,
           amount,
-          events: betSlip
+          events: eventsSnapshot
         };
         const res = await fetch(`${API_BASE_URL}/api/bets/place`, {
           method: 'POST',
@@ -1772,7 +1989,7 @@
         updateBetSlipUI();
         closeBetSlipModal();
         renderMatches();
-        showToast('Ставка успешно принята!');
+        openReceiptModal(eventsSnapshot, amount, totalCoef);
         await syncUserProfile();
       } catch (e) {
         showToast('Ошибка соединения с сервером');
