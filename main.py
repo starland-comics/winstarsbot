@@ -11,6 +11,7 @@ import time
 import urllib.parse
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -54,8 +55,10 @@ ADMIN_IDS = {
 
 LIVE_POLL_SEC = 20
 FULL_LINE_MAX_PER_CYCLE = 150
+RESULTS_POLL_INTERVAL_SEC = 45
 FONBET_LANG = "ru"
 FONBET_SCOPE_MARKET = "1600"
+MSK_TZ = timezone(timedelta(hours=3))
 
 FONBET_ENDPOINTS = [
     "https://line01w.bk6bba-resources.com/events/listBase",
@@ -67,6 +70,13 @@ FONBET_ENDPOINTS = [
 FONBET_EVENT_VIEW_ENDPOINTS = [
     "https://line01w.bk6bba-resources.com/events/event",
     "https://line02w.bk6bba-resources.com/events/event",
+    "https://line03w.bk6bba-resources.com/events/event",
+]
+
+FONBET_RESULTS_ENDPOINTS = [
+    "https://line01w.bk6bba-resources.com/results/results.json.php",
+    "https://line02w.bk6bba-resources.com/results/results.json.php",
+    "https://line03w.bk6bba-resources.com/results/results.json.php",
 ]
 
 HEADERS = {
@@ -263,6 +273,7 @@ latest_matches_cache: Dict[str, Any] = {
     "updated_at": 0,
 }
 previous_live_matches: Dict[str, Dict[str, Any]] = {}
+last_results_sync_ts: float = 0.0
 active_websockets: set = set()
 chat_websockets: set = set()
 force_refresh_event = asyncio.Event()
@@ -582,7 +593,7 @@ async def cleanup_broken_logos() -> int:
 
 
 # =====================================================================
-# ПАРСИНГ ЛИНИЙ, LIVE-ДАННЫХ И АВТОРАСЧЁТ СТАВОК
+# ПАРСИНГ ЛИНИЙ, ТОЧНЫХ LIVE-МИНУТ И РЕЗУЛЬТАТОВ FONBET
 # =====================================================================
 
 def _is_allowed_league(league_name: str) -> bool:
@@ -593,6 +604,18 @@ def _is_allowed_league(league_name: str) -> bool:
         if bad in low:
             return False
     return any(rx.search(low) for rx in ALLOWED_LEAGUE_RES)
+
+
+def _norm_team_name(name: str) -> str:
+    s = (name or "").lower().replace("ё", "е").replace("’", "'").strip()
+    s = re.sub(r"\([^)]*\)", "", s)
+    s = re.sub(r"[^a-zа-я0-9]+", "", s)
+    return s
+
+
+def _norm_pair_key(t1: str, t2: str) -> str:
+    a, b = _norm_team_name(t1), _norm_team_name(t2)
+    return f"{a}__{b}" if a and b else ""
 
 
 def _extract_1x2_odds(factors: List[Dict[str, Any]]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
@@ -737,10 +760,119 @@ async def _fetch_fonbet_event_full(event_id: int) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _parse_score_string(score_raw: str) -> Optional[Tuple[int, int]]:
+    if not score_raw or not isinstance(score_raw, str):
+        return None
+    main_part = score_raw.split("(", 1)[0].strip()
+    m = re.match(r"^(\d+)\s*[:\-]\s*(\d+)$", main_part)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+async def _fetch_fonbet_daily_results() -> Dict[str, Dict[str, Any]]:
+    """
+    Забирает официальные завершённые результаты матчей Fonbet за сегодня и вчера (по МСК).
+    Возвращает словарь finished_matches по ключам fonbet_{id} и team_pair.
+    """
+    if not http_client:
+        return {}
+
+    now_msk = datetime.now(MSK_TZ)
+    dates_to_check = [
+        now_msk.strftime("%Y-%m-%d"),
+        (now_msk - timedelta(days=1)).strftime("%Y-%m-%d"),
+    ]
+
+    results_map: Dict[str, Dict[str, Any]] = {}
+    bad_statuses = ("отменен", "отменён", "перенесен", "перенесён", "прерван", "не состоялся", "cancel", "postpon")
+
+    for line_date in dates_to_check:
+        data = None
+        for url in FONBET_RESULTS_ENDPOINTS:
+            try:
+                r = await http_client.get(
+                    url,
+                    params={"lang": FONBET_LANG, "lineDate": line_date},
+                    timeout=12.0,
+                )
+                if r.status_code == 200:
+                    parsed = r.json()
+                    if isinstance(parsed, dict) and parsed.get("events"):
+                        data = parsed
+                        break
+            except Exception as e:
+                logger.debug(f"Results mirror {url} ({line_date}) failed: {e}")
+
+        if not data:
+            continue
+
+        # Собираем только футбольные секции (sportId == 1)
+        football_sections: set = set()
+        for sec in data.get("sections") or []:
+            if not isinstance(sec, dict):
+                continue
+            sid = sec.get("id")
+            sp_id = sec.get("sportId")
+            sec_name = (sec.get("name") or "").lower()
+            if sp_id == 1 or sec_name.startswith("футбол"):
+                if sid is not None:
+                    football_sections.add(sid)
+
+        for ev in data.get("events") or []:
+            if not isinstance(ev, dict):
+                continue
+            sec_id = ev.get("sectionId")
+            if football_sections and sec_id not in football_sections:
+                continue
+
+            status_val = ev.get("status")
+            comment_low = str(ev.get("comment") or ev.get("statusName") or "").lower()
+            # В Fonbet results.json.php status=2 или 3 — завершён; status=1 — идёт; 4/5 — отменён/перенесён
+            if status_val not in (2, 3, None):
+                continue
+            if any(b in comment_low for b in bad_statuses):
+                continue
+
+            score_str = str(ev.get("score") or "").strip()
+            parsed_sc = _parse_score_string(score_str)
+            if not parsed_sc:
+                continue
+
+            s1, s2 = parsed_sc
+            eid = ev.get("id")
+            raw_name = str(ev.get("name") or "").strip()
+            t1, t2 = "", ""
+            if " - " in raw_name:
+                t1, t2 = [x.strip() for x in raw_name.split(" - ", 1)]
+            elif " – " in raw_name:
+                t1, t2 = [x.strip() for x in raw_name.split(" – ", 1)]
+
+            entry = {
+                "score1": s1,
+                "score2": s2,
+                "score": f"{s1}:{s2}",
+                "team1": t1,
+                "team2": t2,
+                "finished_at": int(time.time()),
+                "source": "fonbet_results",
+            }
+            if eid is not None:
+                results_map[f"fonbet_{eid}"] = entry
+            pair_key = _norm_pair_key(t1, t2)
+            if pair_key:
+                results_map[f"pair_{pair_key}"] = entry
+
+    return results_map
+
+
 def _parse_live_status_and_score(
     event: Dict[str, Any],
     misc: Dict[str, Any],
 ) -> Tuple[int, int, str]:
+    """
+    Извлекает ТОЧНЫЙ счёт и реальное время матча из данных Fonbet (без выдуманных минут).
+    """
     score1 = 0
     score2 = 0
 
@@ -753,46 +885,49 @@ def _parse_live_status_and_score(
         if parts[0].strip().isdigit() and parts[1].strip().isdigit():
             score1, score2 = int(parts[0].strip()), int(parts[1].strip())
 
-    comment = (misc.get("comment") or event.get("comment") or "").strip()
+    comment = str(misc.get("comment") or event.get("comment") or "").strip()
     low_comment = comment.lower()
+    timer_dir = misc.get("timerDirection")
 
-    raw_sec = None
+    raw_sec: Optional[float] = None
     for key in ("timerSeconds", "timer"):
         val = misc.get(key)
-        if isinstance(val, (int, float)) and val > 0:
+        if isinstance(val, (int, float)) and val >= 0:
             raw_sec = float(val)
             break
 
+    # 1. Завершён / Перерыв по комментарию
+    if "завершен" in low_comment or "завершён" in low_comment or low_comment in ("ft", "матч завершен", "матч завершён"):
+        return score1, score2, "LIVE · FT"
     if "перерыв" in low_comment or low_comment in ("ht", "half time", "перерыв."):
-        status_str = "LIVE · HT"
-    elif "завершен" in low_comment or "завершён" in low_comment or low_comment == "ft":
-        status_str = "LIVE · FT"
-    elif raw_sec is not None and raw_sec > 0:
-        mins = max(1, int(raw_sec // 60) + 1)
-        status_str = f"LIVE · {mins}'"
-    else:
-        m_min = re.search(r"(\d{1,3})\s*(?:'|мин)", low_comment)
-        if m_min:
-            status_str = f"LIVE · {int(m_min.group(1))}'"
-        else:
-            start_ts = int(event.get("startTime") or 0)
-            now_ts = int(time.time())
-            if start_ts > 0 and now_ts >= start_ts:
-                elapsed = int((now_ts - start_ts) // 60)
-                if elapsed <= 45:
-                    status_str = f"LIVE · {max(1, elapsed)}'"
-                elif elapsed <= 60:
-                    status_str = "LIVE · HT"
-                elif elapsed <= 105:
-                    status_str = f"LIVE · {elapsed - 15}'"
-                else:
-                    status_str = "LIVE · 90+"
-            elif comment:
-                status_str = f"LIVE · {comment}"
-            else:
-                status_str = "LIVE"
+        return score1, score2, "LIVE · Перерыв"
 
-    return score1, score2, status_str
+    # 2. Точный таймер от Fonbet
+    if raw_sec is not None:
+        # Остановлен на 45:00 -> перерыв
+        if timer_dir == 0 and 2640 <= raw_sec <= 2760:
+            return score1, score2, "LIVE · Перерыв"
+        if raw_sec > 0:
+            mins = int(raw_sec // 60) + 1
+            if "1-й" in low_comment and mins > 45:
+                return score1, score2, "LIVE · 45+"
+            if mins > 90:
+                return score1, score2, "LIVE · 90+"
+            return score1, score2, f"LIVE · {mins}'"
+
+    # 3. Явная минута в комментарии ("34'", "67 мин")
+    m_min = re.search(r"\b(\d{1,3})\s*(?:'|мин)", low_comment)
+    if m_min:
+        mins = int(m_min.group(1))
+        return score1, score2, f"LIVE · {mins}'"
+
+    # 4. Тайм по комментарию без выдумывания минут
+    if "1-й" in low_comment or "1 тайм" in low_comment:
+        return score1, score2, "LIVE · 1-й тайм"
+    if "2-й" in low_comment or "2 тайм" in low_comment:
+        return score1, score2, "LIVE · 2-й тайм"
+
+    return score1, score2, "LIVE"
 
 
 def _evaluate_leg_outcome(outcome_label: str, s1: int, s2: int) -> Optional[str]:
@@ -841,6 +976,34 @@ def _evaluate_leg_outcome(outcome_label: str, s1: int, s2: int) -> Optional[str]
     return None
 
 
+def _lookup_finished_match(
+    finished_map: Dict[str, Dict[str, Any]],
+    match_id: str,
+    team1: str = "",
+    team2: str = "",
+    match_title: str = "",
+) -> Optional[Dict[str, Any]]:
+    mid = (match_id or "").strip()
+    if mid:
+        norm_mid = mid if mid.startswith("fonbet_") else f"fonbet_{mid.replace('fon_', '')}"
+        if norm_mid in finished_map:
+            return finished_map[norm_mid]
+
+    t1, t2 = team1.strip(), team2.strip()
+    if (not t1 or not t2) and match_title:
+        for sep in (" - ", " – ", " — ", " vs ", " VS "):
+            if sep in match_title:
+                parts = match_title.split(sep, 1)
+                t1, t2 = parts[0].strip(), parts[1].strip()
+                break
+
+    pk = _norm_pair_key(t1, t2)
+    if pk and f"pair_{pk}" in finished_map:
+        return finished_map[f"pair_{pk}"]
+
+    return None
+
+
 async def _apply_bet_settlement(
     uid: str,
     bet_id: str,
@@ -848,11 +1011,14 @@ async def _apply_bet_settlement(
     new_status: str,
     payout_amount: float,
     updated_events: Optional[List[Dict[str, Any]]] = None,
+    final_score: str = "",
 ) -> None:
     patch_data: Dict[str, Any] = {
         "status": new_status,
         "settled_at": int(time.time()),
     }
+    if final_score:
+        patch_data["final_score"] = final_score
     if updated_events is not None:
         patch_data["events"] = updated_events
     if new_status == "won":
@@ -899,16 +1065,20 @@ async def _apply_bet_settlement(
                 "created_at": int(time.time()),
             },
         )
-    logger.info(f"Авторасчёт ставки {bet_id} (user={uid}): status={new_status}, payout={payout_amount}")
+    logger.info(
+        f"Ставка рассчитана: bet={bet_id}, user={uid}, status={new_status}, "
+        f"score={final_score or '?'}, payout={payout_amount}"
+    )
 
 
-async def settle_active_bets(finished_map: Dict[str, Dict[str, Any]]) -> None:
+async def settle_active_bets(finished_map: Dict[str, Dict[str, Any]]) -> int:
     if not finished_map:
-        return
+        return 0
     users_raw = await firebase_get("users")
     if not isinstance(users_raw, dict):
-        return
+        return 0
 
+    settled_count = 0
     for uid, udata in users_raw.items():
         if not isinstance(udata, dict):
             continue
@@ -929,19 +1099,23 @@ async def settle_active_bets(finished_map: Dict[str, Dict[str, Any]]) -> None:
                 leg_results: List[Optional[str]] = []
                 updated_events: List[Dict[str, Any]] = []
                 eff_coef = 1.0
+                last_score_str = ""
 
                 for ev in events:
                     ev_copy = dict(ev)
-                    mid = str(ev_copy.get("matchId") or "")
-                    if not mid.startswith("fonbet_") and mid:
-                        mid = f"fonbet_{mid.replace('fon_', '')}"
-                    fin = finished_map.get(mid)
+                    fin = _lookup_finished_match(
+                        finished_map,
+                        match_id=str(ev_copy.get("matchId") or ""),
+                        match_title=str(ev_copy.get("matchTitle") or ""),
+                    )
                     if fin and isinstance(fin.get("score1"), int) and isinstance(fin.get("score2"), int):
                         res = _evaluate_leg_outcome(
                             str(ev_copy.get("outcomeLabel") or ev_copy.get("outcome") or ""),
                             fin["score1"],
                             fin["score2"],
                         )
+                        last_score_str = f"{fin['score1']}:{fin['score2']}"
+                        ev_copy["final_score"] = last_score_str
                     else:
                         res = ev_copy.get("status") if ev_copy.get("status") in ("won", "lost", "refund") else None
 
@@ -956,33 +1130,60 @@ async def settle_active_bets(finished_map: Dict[str, Dict[str, Any]]) -> None:
                         eff_coef *= 1.0
 
                 if "lost" in leg_results:
-                    await _apply_bet_settlement(uid, bet_id, bet, "lost", 0.0, updated_events)
+                    await _apply_bet_settlement(
+                        uid, bet_id, bet, "lost", 0.0, updated_events, last_score_str
+                    )
+                    settled_count += 1
                 elif all(r in ("won", "refund") for r in leg_results):
                     if all(r == "refund" for r in leg_results):
-                        await _apply_bet_settlement(uid, bet_id, bet, "refund", amount, updated_events)
+                        await _apply_bet_settlement(
+                            uid, bet_id, bet, "refund", amount, updated_events, last_score_str
+                        )
                     else:
                         payout = round(amount * eff_coef, 2)
-                        await _apply_bet_settlement(uid, bet_id, bet, "won", payout, updated_events)
+                        await _apply_bet_settlement(
+                            uid, bet_id, bet, "won", payout, updated_events, last_score_str
+                        )
+                    settled_count += 1
             else:
-                mid = str(bet.get("match_id") or "")
-                if not mid.startswith("fonbet_") and mid:
-                    mid = f"fonbet_{mid.replace('fon_', '')}"
-                fin = finished_map.get(mid)
+                fin = _lookup_finished_match(
+                    finished_map,
+                    match_id=str(bet.get("match_id") or ""),
+                    team1=str(bet.get("team1") or ""),
+                    team2=str(bet.get("team2") or ""),
+                    match_title=str(bet.get("match_title") or ""),
+                )
                 if not fin or not isinstance(fin.get("score1"), int) or not isinstance(fin.get("score2"), int):
                     continue
+                score_str = f"{fin['score1']}:{fin['score2']}"
                 res = _evaluate_leg_outcome(str(bet.get("outcome") or ""), fin["score1"], fin["score2"])
                 if res == "lost":
-                    await _apply_bet_settlement(uid, bet_id, bet, "lost", 0.0)
+                    await _apply_bet_settlement(uid, bet_id, bet, "lost", 0.0, final_score=score_str)
+                    settled_count += 1
                 elif res == "refund":
-                    await _apply_bet_settlement(uid, bet_id, bet, "refund", amount)
+                    await _apply_bet_settlement(uid, bet_id, bet, "refund", amount, final_score=score_str)
+                    settled_count += 1
                 elif res == "won":
                     coef = float(bet.get("total_coefficient") or bet.get("coefficient") or bet.get("odd") or 1.0)
                     payout = round(amount * coef, 2)
-                    await _apply_bet_settlement(uid, bet_id, bet, "won", payout)
+                    await _apply_bet_settlement(uid, bet_id, bet, "won", payout, final_score=score_str)
+                    settled_count += 1
+
+    return settled_count
 
 
-async def scrape_once() -> Dict[str, Any]:
-    global previous_live_matches
+def _is_late_second_half(status_str: str) -> bool:
+    low = (status_str or "").lower()
+    if "ft" in low or "90+" in low or "2-й тайм" in low:
+        return True
+    m = re.search(r"(\d{1,3})'", low)
+    if m and int(m.group(1)) >= 75:
+        return True
+    return False
+
+
+async def scrape_once(force_results: bool = False) -> Dict[str, Any]:
+    global previous_live_matches, last_results_sync_ts
     raw_data = await _fetch_fonbet_list_base()
     if not raw_data:
         logger.warning("Не удалось получить listBase от Fonbet")
@@ -1044,19 +1245,17 @@ async def scrape_once() -> Dict[str, Any]:
 
     filtered_events.sort(key=lambda x: (0 if x[4] else 1, x[0].get("startTime") or 0))
 
+    # Для ВСЕХ Live-матчей обязательно догружаем полную карточку, чтобы получить точный timerSeconds и comment
     events_needing_full_line: List[int] = []
     for ev, _, _, _, is_live in filtered_events:
         eid = ev["id"]
         factors = base_factors_by_event.get(eid, [])
         p1, px, p2 = _extract_1x2_odds(factors)
-        misc = misc_by_event.get(eid, {})
-        has_timer = isinstance(misc.get("timerSeconds"), (int, float)) and misc.get("timerSeconds", 0) > 0
-        need_live_timer = is_live and not has_timer
-        if (need_live_timer or not (p1 and px and p2)) and len(events_needing_full_line) < FULL_LINE_MAX_PER_CYCLE:
+        if is_live or (not (p1 and px and p2) and len(events_needing_full_line) < FULL_LINE_MAX_PER_CYCLE):
             events_needing_full_line.append(eid)
 
     if events_needing_full_line:
-        sem = asyncio.Semaphore(12)
+        sem = asyncio.Semaphore(15)
 
         async def _load_full(eid: int) -> Tuple[int, Optional[Dict[str, Any]]]:
             async with sem:
@@ -1081,6 +1280,7 @@ async def scrape_once() -> Dict[str, Any]:
     matches_by_id: Dict[str, Dict[str, Any]] = {}
     newly_finished: Dict[str, Dict[str, Any]] = {}
     current_live_snapshot: Dict[str, Dict[str, Any]] = {}
+    now_ts = int(time.time())
 
     for ev, league_name, t1, t2, is_live in filtered_events:
         eid = ev["id"]
@@ -1092,9 +1292,30 @@ async def scrape_once() -> Dict[str, Any]:
         if is_live:
             s1, s2, status_str = _parse_live_status_and_score(ev, misc)
             score_str = f"{s1}:{s2}"
-            current_live_snapshot[full_id] = {"raw_id": eid, "score1": s1, "score2": s2, "status": status_str}
+            snap = {
+                "raw_id": eid,
+                "team1": t1,
+                "team2": t2,
+                "score1": s1,
+                "score2": s2,
+                "status": status_str,
+                "updated_at": now_ts,
+            }
+            current_live_snapshot[full_id] = snap
             if status_str == "LIVE · FT":
-                newly_finished[full_id] = {"score1": s1, "score2": s2, "finished_at": int(time.time())}
+                fin_entry = {
+                    "score1": s1,
+                    "score2": s2,
+                    "score": score_str,
+                    "team1": t1,
+                    "team2": t2,
+                    "finished_at": now_ts,
+                    "source": "live_ft",
+                }
+                newly_finished[full_id] = fin_entry
+                pk = _norm_pair_key(t1, t2)
+                if pk:
+                    newly_finished[f"pair_{pk}"] = fin_entry
         else:
             s1, s2 = 0, 0
             status_str = "PREMATCH"
@@ -1154,25 +1375,46 @@ async def scrape_once() -> Dict[str, Any]:
         else:
             prematch_matches.append(match_obj)
 
-    # Проверяем матчи, которые были в Live на прошлом цикле, но уже исчезли после завершения
-    for prev_id, prev_info in previous_live_matches.items():
-        if prev_id not in current_live_snapshot and prev_id not in newly_finished:
-            raw_id = prev_info.get("raw_id")
-            if isinstance(raw_id, int):
-                full_ev = await _fetch_fonbet_event_full(raw_id)
-                if full_ev:
-                    for em in full_ev.get("eventMiscs") or []:
-                        if em.get("id") == raw_id:
-                            comm = (em.get("comment") or "").lower()
-                            if "завершен" in comm or "завершён" in comm or comm == "ft":
-                                sc1 = em.get("score1", prev_info.get("score1", 0))
-                                sc2 = em.get("score2", prev_info.get("score2", 0))
-                                if isinstance(sc1, int) and isinstance(sc2, int):
-                                    newly_finished[prev_id] = {
-                                        "score1": sc1,
-                                        "score2": sc2,
-                                        "finished_at": int(time.time()),
-                                    }
+    # Сохраняем актуальный лайв-снимок в Firebase, чтобы не терять счёт при перезапусках
+    if current_live_snapshot:
+        await firebase_patch("live_snapshots", current_live_snapshot)
+
+    # Регулярно подтягиваем официальные итоги дня из Fonbet results.json.php
+    had_disappeared_live = any(pid not in current_live_snapshot for pid in previous_live_matches)
+    if force_results or had_disappeared_live or (time.time() - last_results_sync_ts >= RESULTS_POLL_INTERVAL_SEC):
+        daily_results = await _fetch_fonbet_daily_results()
+        if daily_results:
+            newly_finished.update(daily_results)
+        last_results_sync_ts = time.time()
+
+    # Fallback по live_snapshots: если матч был во 2-м тайме (>=75') и пропал из лайва более 3 минут назад
+    stored_snapshots = await firebase_get("live_snapshots")
+    if isinstance(stored_snapshots, dict):
+        for snap_id, snap in stored_snapshots.items():
+            if not isinstance(snap, dict):
+                continue
+            if snap_id in current_live_snapshot or snap_id in newly_finished:
+                continue
+            age = now_ts - int(snap.get("updated_at") or 0)
+            if age >= 180 and _is_late_second_half(str(snap.get("status") or "")):
+                s1 = snap.get("score1")
+                s2 = snap.get("score2")
+                if isinstance(s1, int) and isinstance(s2, int):
+                    t1 = str(snap.get("team1") or "")
+                    t2 = str(snap.get("team2") or "")
+                    fin_entry = {
+                        "score1": s1,
+                        "score2": s2,
+                        "score": f"{s1}:{s2}",
+                        "team1": t1,
+                        "team2": t2,
+                        "finished_at": now_ts,
+                        "source": "live_snapshot_fallback",
+                    }
+                    newly_finished[snap_id] = fin_entry
+                    pk = _norm_pair_key(t1, t2)
+                    if pk:
+                        newly_finished[f"pair_{pk}"] = fin_entry
 
     previous_live_matches = current_live_snapshot
 
@@ -1192,7 +1434,7 @@ async def scrape_once() -> Dict[str, Any]:
         "matches": matches_by_id,
         "live": live_matches,
         "prematch": prematch_matches,
-        "updated_at": int(time.time()),
+        "updated_at": now_ts,
     }
 
     latest_matches_cache.update(payload)
@@ -1223,9 +1465,11 @@ async def _broadcast_ws(pool: set, message: Dict[str, Any]) -> None:
 
 async def fonbet_scraper_worker() -> None:
     await cleanup_broken_logos()
+    first_run = True
     while True:
         try:
-            await scrape_once()
+            await scrape_once(force_results=first_run)
+            first_run = False
         except Exception as e:
             logger.exception(f"Ошибка в fonbet_scraper_worker: {e}")
 
@@ -1344,6 +1588,19 @@ async def cmd_start(message: Message) -> None:
         parse_mode="HTML",
         reply_markup=kb,
     )
+
+
+@bot_router.message(Command("recalc"))
+async def cmd_recalc(message: Message) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    await message.answer("Запускаю синхронизацию результатов и перерасчёт ставок...")
+    daily = await _fetch_fonbet_daily_results()
+    if daily:
+        await firebase_patch("finished_matches", daily)
+    finished_cache = await firebase_get("finished_matches") or {}
+    count = await settle_active_bets(finished_cache if isinstance(finished_cache, dict) else {})
+    await message.answer(f"Готово! Рассчитано ставок: <b>{count}</b>.", parse_mode="HTML")
 
 
 @bot_router.message(Command("admin"))
@@ -1769,9 +2026,7 @@ async def get_match_markets(match_id: str) -> Dict[str, Any]:
                     factors = cf.get("factors") or []
 
     grouped_markets = _build_grouped_markets(factors)
-    if grouped_markets and isinstance(match_obj.get("odds"), dict):
-        pass
-    elif not grouped_markets and isinstance(match_obj.get("odds"), dict):
+    if not grouped_markets and isinstance(match_obj.get("odds"), dict):
         odds = match_obj["odds"]
         fallback_outcomes = []
         for k, label in (("1", "П1"), ("X", "Х"), ("2", "П2")):
