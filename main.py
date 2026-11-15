@@ -10,6 +10,7 @@ import time
 import urllib.parse
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -208,10 +209,11 @@ http_client: Optional[httpx.AsyncClient] = None
 bot_instance: Optional[Bot] = None
 
 latest_matches_cache: Dict[str, Any] = {
+    "status": "ok",
+    "ok": True,
+    "matches": {},
     "live": [],
     "prematch": [],
-    "matches": [],
-    "by_id": {},
     "updated_at": 0,
 }
 active_websockets: set = set()
@@ -629,11 +631,10 @@ async def _fetch_fonbet_event_full(event_id: int) -> Optional[Dict[str, Any]]:
 def _parse_live_timer_and_score(
     event: Dict[str, Any],
     misc: Dict[str, Any],
-) -> Tuple[int, int, str, str]:
+) -> Tuple[int, int, str]:
     score1 = 0
     score2 = 0
     minute_str = ""
-    status_str = ""
 
     sc1 = misc.get("score1")
     sc2 = misc.get("score2")
@@ -650,19 +651,25 @@ def _parse_live_timer_and_score(
 
     if "перерыв" in comment.lower() or "ht" in comment.lower():
         minute_str = "Перерыв"
-        status_str = "HT"
     elif isinstance(timer_sec, (int, float)) and timer_sec >= 0 and timer_dir != 0:
         mins = int(timer_sec // 60) + 1
         minute_str = f"{mins}'"
-        status_str = "LIVE"
     elif comment:
         minute_str = comment
-        status_str = "LIVE"
     else:
         minute_str = "LIVE"
-        status_str = "LIVE"
 
-    return score1, score2, minute_str, status_str
+    return score1, score2, minute_str
+
+
+def _format_prematch_time(start_ts: int) -> str:
+    if not start_ts:
+        return "Скоро"
+    try:
+        dt_msk = datetime.fromtimestamp(int(start_ts) + 3 * 3600, tz=timezone.utc)
+        return dt_msk.strftime("%d.%m %H:%M")
+    except Exception:
+        return "Скоро"
 
 
 async def scrape_once() -> Dict[str, Any]:
@@ -759,6 +766,7 @@ async def scrape_once() -> Dict[str, Any]:
 
     for ev, league_name, t1, t2, is_live in filtered_events:
         eid = ev["id"]
+        full_id = f"fonbet_{eid}"
         factors = base_factors_by_event.get(eid, [])
         p1, px, p2 = _extract_1x2_odds(factors)
 
@@ -778,13 +786,30 @@ async def scrape_once() -> Dict[str, Any]:
             seen_missing.add((t2, league_name))
             missing_logos.append((t2, league_name))
 
+        start_ts = int(ev.get("startTime") or 0)
         if is_live:
-            s1, s2, minute_str, status_str = _parse_live_timer_and_score(ev, misc)
+            s1, s2, minute_str = _parse_live_timer_and_score(ev, misc)
+            status_str = "live"
+            time_str = minute_str
         else:
-            s1, s2, minute_str, status_str = 0, 0, "", "PREMATCH"
+            s1, s2, minute_str = 0, 0, ""
+            status_str = "upcoming"
+            time_str = _format_prematch_time(start_ts)
+
+        odds_map = {
+            "1": p1,
+            "X": px,
+            "2": p2,
+            "П1": p1,
+            "Х": px,
+            "П2": p2,
+            **extra_markets,
+        }
 
         match_obj: Dict[str, Any] = {
-            "id": eid,
+            "id": full_id,
+            "raw_id": eid,
+            "sport": "football",
             "league": league_name,
             "team1": t1,
             "team2": t2,
@@ -793,27 +818,19 @@ async def scrape_once() -> Dict[str, Any]:
             "p1": p1,
             "px": px,
             "p2": p2,
-            "home": t1,
-            "away": t2,
-            "home_logo": h_logo,
-            "away_logo": a_logo,
-            "odds": {
-                "1": p1,
-                "X": px,
-                "2": p2,
-                **extra_markets,
-            },
+            "odds": odds_map,
             "markets": extra_markets,
-            "start_time": ev.get("startTime") or 0,
+            "start_time": start_ts,
+            "time": time_str,
+            "minute": minute_str,
             "is_live": is_live,
+            "status": status_str,
             "score1": s1,
             "score2": s2,
-            "score": f"{s1}:{s2}" if is_live else "",
-            "minute": minute_str,
-            "status": status_str,
+            "score": f"{s1}:{s2}",
         }
 
-        matches_by_id[str(eid)] = match_obj
+        matches_by_id[full_id] = match_obj
         if is_live:
             live_matches.append(match_obj)
         else:
@@ -822,12 +839,12 @@ async def scrape_once() -> Dict[str, Any]:
     for t, lg in missing_logos:
         asyncio.create_task(_resolve_and_cache_logo(t, lg))
 
-    all_matches = live_matches + prematch_matches
     payload = {
+        "status": "ok",
+        "ok": True,
+        "matches": matches_by_id,
         "live": live_matches,
         "prematch": prematch_matches,
-        "matches": all_matches,
-        "by_id": matches_by_id,
         "updated_at": int(time.time()),
     }
 
@@ -902,7 +919,10 @@ async def _ensure_user_in_db(
             "referred_by": None,
             "total_bets": 0,
             "won_bets": 0,
+            "wins": 0,
             "winrate": 0,
+            "profit": 0.0,
+            "subscribed": True,
             "created_at": now,
             "last_seen": now,
         }
@@ -1056,6 +1076,7 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     return {
+        "status": "ok",
         "ok": True,
         "bot_active": bot_instance is not None,
         "live_count": len(latest_matches_cache.get("live", [])),
@@ -1108,6 +1129,7 @@ async def sync_user(request: Request) -> Dict[str, Any]:
     user_data["winrate"] = winrate
 
     return {
+        "status": "ok",
         "ok": True,
         "user": user_data,
         "id": uid_int,
@@ -1127,16 +1149,17 @@ async def get_matches() -> Dict[str, Any]:
         return latest_matches_cache
     fb_data = await firebase_get("matches_feed")
     if isinstance(fb_data, dict):
-        return fb_data
+        return {"status": "ok", "ok": True, **fb_data}
     return latest_matches_cache
 
 
 @app.get("/api/match/{match_id}/markets")
 async def get_match_markets(match_id: str) -> Dict[str, Any]:
-    clean_id = match_id.replace("fonbet_", "").replace("fon_", "")
-    match_obj = (latest_matches_cache.get("by_id") or {}).get(clean_id)
+    full_id = match_id if match_id.startswith("fonbet_") else f"fonbet_{match_id.replace('fon_', '')}"
+    clean_id = full_id.replace("fonbet_", "")
+    match_obj = (latest_matches_cache.get("matches") or {}).get(full_id)
     if not match_obj:
-        match_obj = await firebase_get(f"matches/{clean_id}") or {}
+        match_obj = await firebase_get(f"matches/{full_id}") or {}
 
     full_payload = await _fetch_fonbet_event_full(int(clean_id)) if clean_id.isdigit() else None
     extra_markets: Dict[str, Any] = dict(match_obj.get("markets") or {})
@@ -1146,8 +1169,9 @@ async def get_match_markets(match_id: str) -> Dict[str, Any]:
                 extra_markets.update(_extract_extra_markets(cf.get("factors") or []))
 
     return {
+        "status": "ok",
         "ok": True,
-        "match_id": match_id,
+        "match_id": full_id,
         "match": match_obj,
         "markets": extra_markets,
     }
@@ -1160,7 +1184,7 @@ async def get_user_bets(request: Request) -> Dict[str, Any]:
     user_data = await firebase_get(f"users/{uid}") or {}
     fallback_bets = None if isinstance(user_data.get("bets"), dict) else await firebase_get(f"bets/{uid}")
     bets_list = _collect_user_bets(user_data if isinstance(user_data, dict) else {}, fallback_bets)
-    return {"ok": True, "bets": bets_list}
+    return {"status": "ok", "ok": True, "bets": bets_list}
 
 
 @app.get("/api/user/transactions")
@@ -1170,7 +1194,7 @@ async def get_user_transactions(request: Request) -> Dict[str, Any]:
     tx_raw = await firebase_get(f"transactions/{uid}") or {}
     tx_list = list(tx_raw.values()) if isinstance(tx_raw, dict) else []
     tx_list.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-    return {"ok": True, "transactions": tx_list}
+    return {"status": "ok", "ok": True, "transactions": tx_list}
 
 
 @app.post("/api/bets/place")
@@ -1183,7 +1207,8 @@ async def place_bet(request: Request) -> Dict[str, Any]:
     events = body.get("events")
     bet_type = str(body.get("type") or ("express" if isinstance(events, list) and len(events) > 1 else "single"))
 
-    match_id = str(body.get("match_id") or "")
+    raw_mid = str(body.get("match_id") or "")
+    full_id = raw_mid if raw_mid.startswith("fonbet_") else (f"fonbet_{raw_mid.replace('fon_', '')}" if raw_mid else "")
     outcome = str(body.get("outcome") or body.get("pick") or "")
     odd = round(float(body.get("total_coefficient") or body.get("odd") or body.get("coef") or 0), 2)
 
@@ -1198,8 +1223,7 @@ async def place_bet(request: Request) -> Dict[str, Any]:
     if balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно звёзд на балансе")
 
-    clean_id = match_id.replace("fonbet_", "").replace("fon_", "")
-    match_info = (latest_matches_cache.get("by_id") or {}).get(clean_id) or await firebase_get(f"matches/{clean_id}") or {}
+    match_info = (latest_matches_cache.get("matches") or {}).get(full_id) or await firebase_get(f"matches/{full_id}") or {}
 
     t1 = match_info.get("team1", body.get("team1", ""))
     t2 = match_info.get("team2", body.get("team2", ""))
@@ -1214,7 +1238,7 @@ async def place_bet(request: Request) -> Dict[str, Any]:
         "id": bet_id,
         "user_id": uid,
         "type": bet_type,
-        "match_id": match_id,
+        "match_id": full_id,
         "match_title": match_title,
         "team1": t1,
         "team2": t2,
@@ -1232,7 +1256,7 @@ async def place_bet(request: Request) -> Dict[str, Any]:
         bet_obj["events"] = events
 
     await firebase_put(f"users/{uid}/bets/{bet_id}", bet_obj)
-    return {"ok": True, "balance": new_balance, "stars": new_balance, "bet": bet_obj}
+    return {"status": "ok", "ok": True, "balance": new_balance, "stars": new_balance, "bet": bet_obj}
 
 
 @app.post("/api/cashier/invoice")
@@ -1253,7 +1277,7 @@ async def create_stars_invoice(request: Request) -> Dict[str, Any]:
         currency="XTR",
         prices=[LabeledPrice(label=f"{amount} Stars", amount=amount)],
     )
-    return {"ok": True, "invoice_link": link, "url": link}
+    return {"status": "ok", "ok": True, "invoice_link": link, "url": link}
 
 
 @app.post("/api/withdraw/request")
@@ -1304,7 +1328,7 @@ async def withdraw_stars(request: Request) -> Dict[str, Any]:
             "created_at": int(time.time()),
         },
     )
-    return {"ok": True, "balance": new_balance, "stars": new_balance, "payout": payout}
+    return {"status": "ok", "ok": True, "balance": new_balance, "stars": new_balance, "payout": payout}
 
 
 @app.post("/api/cashier/promo")
@@ -1332,7 +1356,7 @@ async def activate_promo(request: Request) -> Dict[str, Any]:
     await firebase_patch(f"users/{uid}", {"balance": new_balance})
     await firebase_patch(f"promos/{code}", {"uses": int(promo.get("uses", 1)) - 1})
     await firebase_put(f"promo_used/{uid}/{code}", int(time.time()))
-    return {"ok": True, "bonus": bonus, "balance": new_balance, "stars": new_balance}
+    return {"status": "ok", "ok": True, "bonus": bonus, "balance": new_balance, "stars": new_balance}
 
 
 @app.get("/api/chat/history")
@@ -1340,7 +1364,7 @@ async def get_chat_history() -> Dict[str, Any]:
     raw = await firebase_get("chat_messages") or {}
     msgs = list(raw.values()) if isinstance(raw, dict) else []
     msgs.sort(key=lambda x: x.get("ts", 0))
-    return {"ok": True, "messages": msgs[-50:]}
+    return {"status": "ok", "ok": True, "messages": msgs[-50:]}
 
 
 @app.post("/api/admin/force-refresh")
@@ -1367,7 +1391,7 @@ async def admin_set_logo(request: Request) -> Dict[str, Any]:
     key = _encode_logo_key(team, league)
     ok = await firebase_patch("team_logos", {key: logo_url})
     force_refresh_event.set()
-    return {"ok": ok, "key": key}
+    return {"status": "ok", "ok": ok, "key": key}
 
 
 @app.websocket("/ws/live")
