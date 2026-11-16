@@ -38,8 +38,8 @@
     .topbar {
       position: sticky;
       top: 0;
-      z-index: 30;
-      background: rgba(12, 9, 18, 0.92);
+      z-index: 35;
+      background: rgba(12, 9, 18, 0.94);
       backdrop-filter: blur(12px);
       display: flex;
       align-items: center;
@@ -56,6 +56,7 @@
     }
 
     .topbar-right {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 9px;
@@ -63,7 +64,7 @@
 
     .balance-pill {
       background: var(--card-inner);
-      border: 1px solid rgba(168, 85, 247, 0.35);
+      border: 1px solid rgba(168, 85, 247, 0.38);
       padding: 6px 13px;
       border-radius: 999px;
       font-size: 13px;
@@ -72,7 +73,55 @@
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
+      user-select: none;
+    }
+
+    /* ВЫПАДАЮЩЕЕ МЕНЮ ВЫБОРА ВАЛЮТЫ В ШАПКЕ */
+    .currency-dropdown {
+      position: absolute;
+      top: 42px;
+      right: 40px;
+      width: 225px;
+      background: #1a1326;
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      border-radius: 14px;
+      padding: 6px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75);
+      display: none;
+      z-index: 50;
+    }
+
+    .currency-dropdown.open {
+      display: block;
+      animation: fadeScale 0.14s ease-out;
+    }
+
+    .cur-option {
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 10px 11px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .cur-option.active {
+      background: rgba(168, 85, 247, 0.18);
+      color: #fff;
+    }
+
+    .cur-option-sub {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
     }
 
     .avatar {
@@ -129,22 +178,62 @@
       box-shadow: 0 2px 12px var(--accent-glow);
     }
 
-    .league-select-wrap {
+    /* КАСТОМНАЯ КНОПКА ВЫБОРА ЛИГ */
+    .league-picker-btn {
       flex: 1;
       min-width: 0;
+      background: var(--card);
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 9px 12px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
     }
 
-    .league-select {
+    .league-picker-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .league-list-item {
       width: 100%;
       background: var(--card);
       border: 1px solid var(--border);
       color: var(--text);
-      font-size: 13px;
-      font-weight: 500;
-      padding: 9px 12px;
+      padding: 11px 13px;
       border-radius: 12px;
-      outline: none;
-      text-overflow: ellipsis;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .league-list-item.active {
+      background: rgba(168, 85, 247, 0.18);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .league-count-pill {
+      background: var(--card-inner);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
     }
 
     .container {
@@ -351,14 +440,21 @@
       stroke-width: 1.9;
     }
 
+    /* МОДАЛЬНЫЕ ОКНА: ШТОРКА ДЛЯ РЫНКОВ И ЦЕНТРИРОВАННЫЕ ПРЯМОУГОЛЬНЫЕ ДЛЯ КУПОНОВ */
     .modal-backdrop {
       position: fixed;
       inset: 0;
       z-index: 60;
-      background: rgba(0, 0, 0, 0.72);
-      backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.76);
+      backdrop-filter: blur(5px);
       display: none;
       align-items: flex-end;
+    }
+
+    .modal-backdrop.center-modal {
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
     }
 
     .modal-backdrop.open {
@@ -376,9 +472,48 @@
       animation: slideUp 0.2s ease-out;
     }
 
+    .rect-modal {
+      width: 100%;
+      max-width: 400px;
+      max-height: 88dvh;
+      background: #150f21;
+      border: 1px solid rgba(168, 85, 247, 0.38);
+      border-radius: 18px;
+      padding: 18px 16px;
+      overflow-y: auto;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.8);
+      animation: fadeScale 0.18s ease-out;
+    }
+
+    .rect-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .modal-close-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
     @keyframes slideUp {
       from { transform: translateY(30px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes fadeScale {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
     }
 
     .sheet-handle {
@@ -538,6 +673,85 @@
       box-shadow: 0 4px 18px var(--accent-glow);
     }
 
+    /* КВАДРАТНЫЕ ПЛИТКИ ПЛАТЁЖЕК И ВЫБОР БАНКОВ В КАССЕ */
+    .pay-tiles-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .pay-tile {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 9px;
+      cursor: pointer;
+      transition: 0.18s;
+      aspect-ratio: 1 / 0.92;
+    }
+
+    .pay-tile.active {
+      background: linear-gradient(180deg, rgba(168, 85, 247, 0.18) 0%, var(--card) 100%);
+      border-color: var(--accent);
+      box-shadow: 0 0 18px rgba(168, 85, 247, 0.22);
+    }
+
+    .pay-tile-icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: var(--card-inner);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pay-tile-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .pay-tile-min {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .bank-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+
+    .bank-item {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 10px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .bank-item.active {
+      border-color: var(--accent);
+      background: rgba(168, 85, 247, 0.2);
+      color: #fff;
+    }
+
     .bet-item {
       background: var(--card);
       border: 1px solid var(--border);
@@ -558,21 +772,59 @@
     .badge.lost { background: rgba(239, 68, 68, 0.16); color: var(--red); }
     .badge.void, .badge.refund { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
 
+    /* ЧАТ С АВАТАРКАМИ И НИКАМИ */
     .chat-box {
       height: calc(100dvh - 205px);
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 9px;
       padding-bottom: 10px;
     }
 
     .chat-msg {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 9px 12px;
+      border-radius: 14px;
+      padding: 10px 12px;
       font-size: 13px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .chat-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6d28d9, #a855f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .chat-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .chat-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .chat-header-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 3px;
     }
 
     .chat-input-row {
@@ -609,6 +861,7 @@
       font-size: 13px;
       font-weight: 600;
       display: none;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -618,10 +871,31 @@
   <header class="topbar">
     <div class="brand">WINSTARS</div>
     <div class="topbar-right">
-      <div class="balance-pill" onclick="toggleCurrency()" title="Нажмите для смены валюты">
+      <div class="balance-pill" id="balancePillBtn" onclick="toggleCurrencyMenu(event)">
         <span id="balanceVal">0 ★</span>
-        <span style="font-size:10px;color:var(--muted);">⇄</span>
+        <span style="font-size:11px;color:var(--muted);">▾</span>
       </div>
+
+      <div class="currency-dropdown" id="currencyDropdown">
+        <button class="cur-option active" id="curOptStars" onclick="selectCurrency('STARS')">
+          <div>
+            <div>Telegram Stars (★)</div>
+            <div class="cur-option-sub" id="curMenuStarsBal">0 ★</div>
+          </div>
+          <span id="curCheckStars" style="color:var(--accent);font-weight:800;">✓</span>
+        </button>
+        <button class="cur-option" id="curOptRub" onclick="selectCurrency('RUB')">
+          <div>
+            <div>Рубли (₽)</div>
+            <div class="cur-option-sub" id="curMenuRubBal">0 ₽</div>
+          </div>
+          <span id="curCheckRub" style="color:var(--accent);font-weight:800;display:none;">✓</span>
+        </button>
+        <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 4px 2px;border-top:1px solid var(--border);margin-top:4px;">
+          Курс обмена: 1 ★ = 1.5 ₽
+        </div>
+      </div>
+
       <div class="avatar" id="userAvatar">W</div>
     </div>
   </header>
@@ -633,11 +907,10 @@
         <button class="seg-btn active" id="btnLive" onclick="setMode('live')">Live</button>
         <button class="seg-btn" id="btnPrematch" onclick="setMode('prematch')">Скоро</button>
       </div>
-      <div class="league-select-wrap">
-        <select id="leagueSelect" class="league-select" onchange="renderMatches()">
-          <option value="all">Все лиги</option>
-        </select>
-      </div>
+      <button class="league-picker-btn" onclick="openLeagueModal()">
+        <span class="league-picker-text" id="selectedLeagueLabel">Все лиги</span>
+        <span style="color:var(--muted);font-size:11px;flex-shrink:0;">▾</span>
+      </button>
     </div>
     <div class="container" id="matchesList">
       <div style="text-align:center;color:var(--muted);padding:40px 0;">Загрузка линии...</div>
@@ -647,7 +920,11 @@
   <!-- СТАВКИ -->
   <section id="tab-bets" class="tab-view">
     <div class="container" style="padding-top:14px;">
-      <h3 style="margin-bottom:12px;font-size:16px;">Мои купоны</h3>
+      <div class="seg-toggle" style="width:100%;margin-bottom:14px;">
+        <button class="seg-btn active" style="flex:1;padding:8px 6px;" id="bTabAll" onclick="setBetsFilter('all')">Все купоны</button>
+        <button class="seg-btn" style="flex:1;padding:8px 6px;" id="bTabPending" onclick="setBetsFilter('pending')">Ожидающие</button>
+        <button class="seg-btn" style="flex:1;padding:8px 6px;" id="bTabSettled" onclick="setBetsFilter('settled')">Рассчитанные</button>
+      </div>
       <div id="betsList"></div>
     </div>
   </section>
@@ -657,7 +934,7 @@
     <div class="container" style="padding-top:12px;">
       <div id="chatMessages" class="chat-box"></div>
       <div class="chat-input-row">
-        <input id="chatInput" class="slip-input" style="margin:0;" placeholder="Написать в чат..." />
+        <input id="chatInput" class="slip-input" style="margin:0;font-size:14px;font-weight:500;" placeholder="Написать в чат..." onkeydown="if(event.key==='Enter') sendChat()" />
         <button class="primary-btn" style="width:auto;padding:0 18px;" onclick="sendChat()">➤</button>
       </div>
     </div>
@@ -671,48 +948,177 @@
         <div style="font-size:26px;font-weight:800;margin:6px 0;" id="cashierBalance">0 ★ (0 ₽)</div>
       </div>
 
-      <div class="seg-toggle" style="width:100%;margin-bottom:12px;">
+      <div class="seg-toggle" style="width:100%;margin-bottom:14px;">
         <button class="seg-btn active" style="flex:1;" id="cTabDep" onclick="switchCashierSub('dep')">Пополнить</button>
         <button class="seg-btn" style="flex:1;" id="cTabWith" onclick="switchCashierSub('with')">Вывод</button>
         <button class="seg-btn" style="flex:1;" id="cTabHist" onclick="switchCashierSub('hist')">История</button>
       </div>
 
+      <!-- ПОПОЛНЕНИЕ -->
       <div id="cashierDep">
-        <div class="slip-box">
-          <div style="font-weight:700;margin-bottom:6px;">Telegram Stars (XTR)</div>
-          <input id="starsAmount" type="number" class="slip-input" placeholder="Количество ★" value="50" />
+        <div class="pay-tiles-grid">
+          <div class="pay-tile active" id="depTileStars" onclick="selectDepMethod('STARS')">
+            <div class="pay-tile-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <defs>
+                  <linearGradient id="tgStarGrad" x1="0" y1="0" x2="24" y2="24">
+                    <stop offset="0%" stop-color="#fde047"/>
+                    <stop offset="100%" stop-color="#f59e0b"/>
+                  </linearGradient>
+                </defs>
+                <path d="M12 2L14.9 8.6L22 9.3L16.6 14L18.2 21L12 17.3L5.8 21L7.4 14L2 9.3L9.1 8.6L12 2Z" fill="url(#tgStarGrad)"/>
+              </svg>
+            </div>
+            <div class="pay-tile-title">Telegram Звёзды</div>
+            <div class="pay-tile-min">Мин. 10 ★</div>
+          </div>
+
+          <div class="pay-tile" id="depTileSbp" onclick="selectDepMethod('SBP')">
+            <div class="pay-tile-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <polygon points="12,2 20,7 12,12" fill="#5B57A2"/>
+                <polygon points="20,7 20,17 12,12" fill="#D90751"/>
+                <polygon points="20,17 12,22 12,12" fill="#FAB718"/>
+                <polygon points="12,22 4,17 12,12" fill="#ED6F26"/>
+                <polygon points="4,17 4,7 12,12" fill="#63B22F"/>
+                <polygon points="4,7 12,2 12,12" fill="#1487C9"/>
+              </svg>
+            </div>
+            <div class="pay-tile-title">СБП</div>
+            <div class="pay-tile-min">Мин. 50 ₽</div>
+          </div>
+        </div>
+
+        <div id="depFormStars" class="slip-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-weight:700;">Пополнение Telegram Stars</span>
+            <span style="font-size:12px;color:var(--muted);">Мин. 10 ★</span>
+          </div>
+          <input id="starsAmount" type="number" min="10" class="slip-input" placeholder="Сумма от 10 ★" value="50" />
           <div class="quick-amounts">
-            <button class="q-btn" onclick="document.getElementById('starsAmount').value=25">25 ★</button>
+            <button class="q-btn" onclick="document.getElementById('starsAmount').value=10">10 ★</button>
             <button class="q-btn" onclick="document.getElementById('starsAmount').value=50">50 ★</button>
             <button class="q-btn" onclick="document.getElementById('starsAmount').value=100">100 ★</button>
             <button class="q-btn" onclick="document.getElementById('starsAmount').value=500">500 ★</button>
           </div>
-          <button class="primary-btn" onclick="payWithStars()">Оплатить Stars ★</button>
+          <button class="primary-btn" onclick="payWithStars()">Оплатить Telegram Stars ★</button>
         </div>
 
-        <div class="slip-box">
-          <div style="font-weight:700;margin-bottom:6px;">СБП / Карта РФ</div>
-          <input id="depRubAmount" type="number" class="slip-input" placeholder="Сумма от 50 ₽" value="300" />
-          <button class="primary-btn" style="background:var(--card-inner);box-shadow:none;border:1px solid var(--border);" onclick="requestSbpDeposit()">Пополнить через СБП</button>
+        <div id="depFormSbp" class="slip-box" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-weight:700;">Пополнение через СБП</span>
+            <span style="font-size:12px;color:var(--muted);">Мин. 50 ₽</span>
+          </div>
+          <input id="depRubAmount" type="number" min="50" class="slip-input" placeholder="Сумма от 50 ₽" value="300" />
+          <div class="quick-amounts">
+            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=50">50 ₽</button>
+            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=150">150 ₽</button>
+            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=500">500 ₽</button>
+            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=1500">1500 ₽</button>
+          </div>
+          <button class="primary-btn" onclick="requestSbpDeposit()">Перейти к оплате СБП</button>
         </div>
       </div>
 
+      <!-- ВЫВОД -->
       <div id="cashierWith" style="display:none;">
-        <div class="slip-box">
-          <div style="font-weight:700;margin-bottom:6px;">Заявка на вывод (от 50 ★ / 75 ₽)</div>
-          <input id="withAmount" type="number" class="slip-input" placeholder="Сумма в выбранной валюте" />
-          <input id="withDetails" type="text" class="slip-input" style="font-size:14px;font-weight:500;" placeholder="@username (для Stars) или СБП +7..." />
-          <button class="primary-btn" onclick="requestWithdraw()">Заказать вывод</button>
+        <div class="pay-tiles-grid">
+          <div class="pay-tile active" id="withTileStars" onclick="selectWithMethod('STARS')">
+            <div class="pay-tile-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2L14.9 8.6L22 9.3L16.6 14L18.2 21L12 17.3L5.8 21L7.4 14L2 9.3L9.1 8.6L12 2Z" fill="url(#tgStarGrad)"/>
+              </svg>
+            </div>
+            <div class="pay-tile-title">Telegram Звёзды</div>
+            <div class="pay-tile-min">Мин. 1000 ★</div>
+          </div>
+
+          <div class="pay-tile" id="withTileRub" onclick="selectWithMethod('RUB')">
+            <div class="pay-tile-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <polygon points="12,2 20,7 12,12" fill="#5B57A2"/>
+                <polygon points="20,7 20,17 12,12" fill="#D90751"/>
+                <polygon points="20,17 12,22 12,12" fill="#FAB718"/>
+                <polygon points="12,22 4,17 12,12" fill="#ED6F26"/>
+                <polygon points="4,17 4,7 12,12" fill="#63B22F"/>
+                <polygon points="4,7 12,2 12,12" fill="#1487C9"/>
+              </svg>
+            </div>
+            <div class="pay-tile-title">СБП / Карта</div>
+            <div class="pay-tile-min">Мин. 1500 ₽</div>
+          </div>
+        </div>
+
+        <!-- ВЫВОД ЗВЁЗДАМИ (БЕЗ ЮЗЕРНЕЙМА) -->
+        <div id="withFormStars" class="slip-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-weight:700;">Вывод Telegram Stars</span>
+            <span style="font-size:12px;color:var(--muted);">Мин. 1000 ★</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">
+            Звёзды будут отправлены напрямую на ваш аккаунт Telegram
+          </div>
+          <input id="withStarsAmount" type="number" min="1000" class="slip-input" placeholder="Сумма от 1000 ★" />
+          <button class="primary-btn" onclick="submitWithdrawStars()">Вывести звёзды ★</button>
+        </div>
+
+        <!-- ВЫВОД РУБЛЯМИ (ТЕЛЕФОН + БАНК С ЛОГОТИПОМ) -->
+        <div id="withFormRub" class="slip-box" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-weight:700;">Вывод на карту (СБП)</span>
+            <span style="font-size:12px;color:var(--muted);">Мин. 1500 ₽</span>
+          </div>
+          <input id="withRubAmount" type="number" min="1500" class="slip-input" placeholder="Сумма от 1500 ₽" />
+          <input id="withPhone" type="tel" class="slip-input" style="font-size:14px;font-weight:500;" placeholder="Номер телефона, привязанный к карте (+7...)" />
+
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Выберите банк для вывода:</div>
+          <div class="bank-grid">
+            <div class="bank-item active" data-bank="Сбербанк" onclick="selectBank(this, 'Сбербанк')">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" fill="#21A038"/>
+                <path d="M7.5 12.2L10.8 15.2L17.2 8.8" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Сбербанк</span>
+            </div>
+
+            <div class="bank-item" data-bank="Т-Банк" onclick="selectBank(this, 'Т-Банк')">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M4 4H20V13C20 17.5 12 21 12 21C12 21 4 17.5 4 13V4Z" fill="#FFDD2D"/>
+                <path d="M8.5 8H15.5V10.2H13.2V16H10.8V10.2H8.5V8Z" fill="#111"/>
+              </svg>
+              <span>Т-Банк</span>
+            </div>
+
+            <div class="bank-item" data-bank="Альфа-Банк" onclick="selectBank(this, 'Альфа-Банк')">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="2" width="20" height="20" rx="6" fill="#EF3124"/>
+                <path d="M12 6.5L8.2 15.5H10.3L11.1 13.5H12.9L13.7 15.5H15.8L12 6.5ZM11.7 11.7L12 10.8L12.3 11.7H11.7Z" fill="#fff"/>
+                <rect x="8" y="17" width="8" height="1.6" fill="#fff"/>
+              </svg>
+              <span>Альфа-Банк</span>
+            </div>
+
+            <div class="bank-item" data-bank="Озон Банк" onclick="selectBank(this, 'Озон Банк')">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="2" width="20" height="20" rx="6" fill="#005BFF"/>
+                <circle cx="12" cy="12" r="5" stroke="#fff" stroke-width="2.5"/>
+              </svg>
+              <span>Озон Банк</span>
+            </div>
+          </div>
+
+          <button class="primary-btn" onclick="submitWithdrawRub()">Заказать вывод ₽</button>
         </div>
       </div>
 
+      <!-- ИСТОРИЯ -->
       <div id="cashierHist" style="display:none;">
         <div id="txList"></div>
       </div>
     </div>
   </section>
 
-  <!-- ПРОФИЛЬ -->
+  <!-- ПРОФИЛЬ (НЕ ТРОГАЕМ) -->
   <section id="tab-profile" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <div class="slip-box" style="display:flex;align-items:center;gap:12px;">
@@ -742,7 +1148,6 @@
         </div>
       </div>
 
-      <!-- ДИНАМИЧЕСКИЙ ГРАФИК ПРИБЫЛИ -->
       <div class="slip-box" style="margin-top:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <span style="font-size:13px;font-weight:700;">График профита</span>
@@ -751,7 +1156,6 @@
         <svg id="profitChartSvg" viewBox="0 0 300 90" style="width:100%;height:90px;display:block;"></svg>
       </div>
 
-      <!-- ПРОМОКОД -->
       <div class="slip-box">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Активация промокода</div>
         <div style="display:flex;gap:8px;">
@@ -760,7 +1164,6 @@
         </div>
       </div>
 
-      <!-- РЕФЕРАЛЬНАЯ ССЫЛКА -->
       <div class="slip-box">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Пригласить друга (+5 ★ за друга)</div>
         <div style="display:flex;gap:8px;">
@@ -794,6 +1197,17 @@
     </button>
   </nav>
 
+  <!-- КАСТОМНОЕ МОДАЛЬНОЕ ОКНО ВЫБОРА ЛИГ -->
+  <div id="leagueModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'leagueModal')">
+    <div class="rect-modal">
+      <div class="rect-modal-header">
+        <div style="font-size:16px;font-weight:800;">Выбор лиги</div>
+        <button class="modal-close-btn" onclick="document.getElementById('leagueModal').classList.remove('open')">✕</button>
+      </div>
+      <div id="leagueOptionsContainer" style="max-height:60dvh;overflow-y:auto;"></div>
+    </div>
+  </div>
+
   <!-- МОДАЛКА ДОП. РЫНКОВ -->
   <div id="marketsModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'marketsModal')">
     <div class="sheet">
@@ -803,16 +1217,19 @@
     </div>
   </div>
 
-  <!-- МОДАЛКА КУПОНА СТАВКИ -->
-  <div id="betSlipModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'betSlipModal')">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div style="font-size:16px;font-weight:800;margin-bottom:10px;">Купон ставки (<span id="slipCurLabel">★</span>)</div>
+  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА КУПОНА СТАВКИ -->
+  <div id="betSlipModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betSlipModal')">
+    <div class="rect-modal">
+      <div class="rect-modal-header">
+        <div style="font-size:16px;font-weight:800;">Купон ставки (<span id="slipCurLabel">★</span>)</div>
+        <button class="modal-close-btn" onclick="document.getElementById('betSlipModal').classList.remove('open')">✕</button>
+      </div>
       <div class="slip-box">
-        <div id="slipMatchTitle" style="font-size:13px;color:var(--muted);margin-bottom:4px;"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span id="slipSelection" style="font-size:15px;font-weight:700;"></span>
-          <span id="slipOdd" style="background:var(--accent);padding:3px 9px;border-radius:8px;font-weight:800;font-size:13px;"></span>
+        <div id="slipLeagueTitle" style="font-size:11px;color:var(--muted);margin-bottom:4px;"></div>
+        <div id="slipMatchTitle" style="font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border);">
+          <span id="slipSelection" style="font-size:14px;font-weight:700;color:var(--accent);"></span>
+          <span id="slipOdd" style="background:var(--accent);color:#fff;padding:3px 10px;border-radius:8px;font-weight:800;font-size:13px;"></span>
         </div>
       </div>
       <input id="betAmount" type="number" class="slip-input" value="10" min="1" oninput="updatePotentialWin()" />
@@ -822,7 +1239,7 @@
         <button class="q-btn" onclick="setBetAmt(50)">50</button>
         <button class="q-btn" onclick="setMaxBet()">MAX</button>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:14px;">
         <span style="color:var(--muted);">Возможный выигрыш:</span>
         <span id="potentialWin" style="font-weight:800;color:var(--green);">0</span>
       </div>
@@ -830,10 +1247,13 @@
     </div>
   </div>
 
-  <!-- ДЕТАЛЬНАЯ МОДАЛКА СТАТУСА СТАВКИ -->
-  <div id="betDetailModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'betDetailModal')">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
+  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА СТАТУСА СТАВКИ -->
+  <div id="betDetailModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betDetailModal')">
+    <div class="rect-modal">
+      <div class="rect-modal-header">
+        <div style="font-size:15px;font-weight:800;color:var(--muted);">Детали купона</div>
+        <button class="modal-close-btn" onclick="document.getElementById('betDetailModal').classList.remove('open')">✕</button>
+      </div>
       <div id="betDetailContent"></div>
     </div>
   </div>
@@ -850,15 +1270,25 @@
       tg.setBackgroundColor("#0c0912");
     }
 
-    const tgUser = tg?.initDataUnsafe?.user || { id: 8543184091, first_name: "геноцидов" };
+    const tgUser = tg?.initDataUnsafe?.user || {
+      id: 8543184091,
+      first_name: "геноцидов",
+      username: "",
+      photo_url: "",
+    };
 
     const state = {
       userId: String(tgUser.id),
       userName: tgUser.first_name || "Игрок",
+      userUsername: tgUser.username || "",
+      userPhoto: tgUser.photo_url || "",
       botUsername: "WinStarsPlaybot",
       balanceStars: 0,
-      currency: "STARS", // STARS или RUB
+      currency: "STARS",
       mode: "live",
+      selectedLeague: "all",
+      betsFilter: "all",
+      selectedBank: "Сбербанк",
       live: [],
       prematch: [],
       betsCache: [],
@@ -898,13 +1328,30 @@
       const st = Number.isInteger(state.balanceStars) ? state.balanceStars : state.balanceStars.toFixed(2);
       document.getElementById("balanceVal").textContent = formatMoney(state.balanceStars);
       document.getElementById("cashierBalance").textContent = `${st} ★ (${rub} ₽)`;
+      document.getElementById("curMenuStarsBal").textContent = `${st} ★`;
+      document.getElementById("curMenuRubBal").textContent = `${rub} ₽`;
     }
 
-    function toggleCurrency() {
-      state.currency = state.currency === "STARS" ? "RUB" : "STARS";
-      updateBalanceUI(state.balanceStars);
-      showToast(`Валюта: ${state.currency === "STARS" ? "Telegram Stars (★)" : "Рубли (₽)"}`);
+    /* ВЫПАДАЮЩЕЕ МЕНЮ ВЫБОРА ВАЛЮТЫ */
+    function toggleCurrencyMenu(e) {
+      e.stopPropagation();
+      document.getElementById("currencyDropdown").classList.toggle("open");
     }
+
+    function selectCurrency(cur) {
+      state.currency = cur;
+      document.getElementById("curOptStars").classList.toggle("active", cur === "STARS");
+      document.getElementById("curOptRub").classList.toggle("active", cur === "RUB");
+      document.getElementById("curCheckStars").style.display = cur === "STARS" ? "inline" : "none";
+      document.getElementById("curCheckRub").style.display = cur === "RUB" ? "inline" : "none";
+      document.getElementById("currencyDropdown").classList.remove("open");
+      updateBalanceUI(state.balanceStars);
+      showToast(`Валюта: ${cur === "STARS" ? "Telegram Stars (★)" : "Рубли (₽)"}`);
+    }
+
+    document.addEventListener("click", () => {
+      document.getElementById("currencyDropdown").classList.remove("open");
+    });
 
     function getInitials(name) {
       const clean = (name || "КМ").replace(/[^а-яА-Яa-zA-Z0-9\s]/g, "").trim();
@@ -940,30 +1387,85 @@
       if (sub === "hist") loadTransactions();
     }
 
+    function selectDepMethod(method) {
+      document.getElementById("depTileStars").classList.toggle("active", method === "STARS");
+      document.getElementById("depTileSbp").classList.toggle("active", method === "SBP");
+      document.getElementById("depFormStars").style.display = method === "STARS" ? "block" : "none";
+      document.getElementById("depFormSbp").style.display = method === "SBP" ? "block" : "none";
+    }
+
+    function selectWithMethod(method) {
+      document.getElementById("withTileStars").classList.toggle("active", method === "STARS");
+      document.getElementById("withTileRub").classList.toggle("active", method === "RUB");
+      document.getElementById("withFormStars").style.display = method === "STARS" ? "block" : "none";
+      document.getElementById("withFormRub").style.display = method === "RUB" ? "block" : "none";
+    }
+
+    function selectBank(el, bankName) {
+      state.selectedBank = bankName;
+      document.querySelectorAll(".bank-item").forEach((b) => b.classList.remove("active"));
+      el.classList.add("active");
+    }
+
+    /* КАСТОМНЫЙ ВЫБОР ЛИГ */
     function setMode(mode) {
       state.mode = mode;
       document.getElementById("btnLive").classList.toggle("active", mode === "live");
       document.getElementById("btnPrematch").classList.toggle("active", mode === "prematch");
-      updateLeagueFilter();
+      updateLeagueLabel();
       renderMatches();
     }
 
-    function updateLeagueFilter() {
+    function updateLeagueLabel() {
       const list = state[state.mode] || [];
-      const select = document.getElementById("leagueSelect");
-      const current = select.value;
       const leagues = [...new Set(list.map((m) => m.league))];
-      select.innerHTML = `<option value="all">Все лиги (${leagues.length})</option>` +
-        leagues.map((l) => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
-      if (leagues.includes(current)) select.value = current;
+      if (state.selectedLeague !== "all" && !leagues.includes(state.selectedLeague)) {
+        state.selectedLeague = "all";
+      }
+      const labelEl = document.getElementById("selectedLeagueLabel");
+      labelEl.textContent = state.selectedLeague === "all"
+        ? `Все лиги (${leagues.length})`
+        : state.selectedLeague;
+    }
+
+    function openLeagueModal() {
+      const list = state[state.mode] || [];
+      const counts = {};
+      list.forEach((m) => {
+        counts[m.league] = (counts[m.league] || 0) + 1;
+      });
+      const leagues = Object.keys(counts);
+
+      const container = document.getElementById("leagueOptionsContainer");
+      let html = `
+        <button class="league-list-item ${state.selectedLeague === "all" ? "active" : ""}" onclick="chooseLeague('all')">
+          <span>Все лиги</span>
+          <span class="league-count-pill">${list.length}</span>
+        </button>
+      `;
+      html += leagues.map((l) => `
+        <button class="league-list-item ${state.selectedLeague === l ? "active" : ""}" onclick="chooseLeague('${escapeHtml(l).replace(/'/g, "\\'")}')">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(l)}</span>
+          <span class="league-count-pill">${counts[l]}</span>
+        </button>
+      `).join("");
+
+      container.innerHTML = html;
+      document.getElementById("leagueModal").classList.add("open");
+    }
+
+    function chooseLeague(league) {
+      state.selectedLeague = league;
+      document.getElementById("leagueModal").classList.remove("open");
+      updateLeagueLabel();
+      renderMatches();
     }
 
     function renderMatches() {
       const container = document.getElementById("matchesList");
-      const selectedLeague = document.getElementById("leagueSelect").value;
       let list = state[state.mode] || [];
-      if (selectedLeague !== "all") {
-        list = list.filter((m) => m.league === selectedLeague);
+      if (state.selectedLeague !== "all") {
+        list = list.filter((m) => m.league === state.selectedLeague);
       }
 
       if (!list.length) {
@@ -1090,6 +1592,7 @@
 
       state.slip = {
         matchId,
+        league: m.league,
         title: `${m.team1} - ${m.team2}`,
         selection,
         odd: Number(odd),
@@ -1097,6 +1600,7 @@
 
       const unit = state.currency === "RUB" ? "₽" : "★";
       document.getElementById("slipCurLabel").textContent = unit;
+      document.getElementById("slipLeagueTitle").textContent = state.slip.league;
       document.getElementById("slipMatchTitle").textContent = state.slip.title;
       document.getElementById("slipSelection").textContent = selection;
       document.getElementById("slipOdd").textContent = state.slip.odd.toFixed(2);
@@ -1153,17 +1657,38 @@
       }
     }
 
+    /* РАЗДЕЛ СТАВКИ: ВСЕ КУПОНЫ / ОЖИДАЮЩИЕ / РАССЧИТАННЫЕ */
+    function setBetsFilter(filter) {
+      state.betsFilter = filter;
+      document.getElementById("bTabAll").classList.toggle("active", filter === "all");
+      document.getElementById("bTabPending").classList.toggle("active", filter === "pending");
+      document.getElementById("bTabSettled").classList.toggle("active", filter === "settled");
+      renderBetsList();
+    }
+
     async function loadUserBets() {
       const box = document.getElementById("betsList");
       box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Загрузка...</div>`;
       const res = await fetch(`${API_BASE}/api/bets/${state.userId}`);
-      const bets = await res.json();
-      state.betsCache = bets;
+      state.betsCache = await res.json();
+      renderBetsList();
+    }
 
-      if (!bets.length) {
-        box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:30px;">У вас пока нет ставок</div>`;
+    function renderBetsList() {
+      const box = document.getElementById("betsList");
+      let list = state.betsCache || [];
+
+      if (state.betsFilter === "pending") {
+        list = list.filter((b) => b.status === "active" || b.status === "pending");
+      } else if (state.betsFilter === "settled") {
+        list = list.filter((b) => ["won", "lost", "void", "refund"].includes(b.status));
+      }
+
+      if (!list.length) {
+        box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:30px;">В этой вкладке пока нет купонов</div>`;
         return;
       }
+
       const labels = {
         active: "В ожидании",
         pending: "В ожидании",
@@ -1172,11 +1697,13 @@
         void: "Возврат",
         refund: "Возврат",
       };
-      box.innerHTML = bets.map((b, idx) => {
+
+      box.innerHTML = list.map((b) => {
+        const realIdx = state.betsCache.indexOf(b);
         const unit = b.currency === "STARS" ? "★" : "₽";
         const st = b.status || "active";
         return `
-          <div class="bet-item" onclick="openBetDetail(${idx})">
+          <div class="bet-item" onclick="openBetDetail(${realIdx})">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
               <span style="font-size:12px;color:var(--muted);">${escapeHtml(b.league || "")}</span>
               <span class="badge ${st}">${labels[st] || st}</span>
@@ -1197,30 +1724,33 @@
       const unit = b.currency === "STARS" ? "★" : "₽";
       const headers = {
         active: { title: "В ожидании!", color: "#facc15" },
+        pending: { title: "В ожидании!", color: "#facc15" },
         won: { title: "Ставка сыграла!", color: "var(--green)" },
         lost: { title: "Ставка проиграла!", color: "var(--red)" },
         void: { title: "Возврат ставки", color: "var(--muted)" },
       };
       const h = headers[b.status] || headers.active;
-      const winSum = b.status === "won" ? (b.payout || (b.amount * b.odd).toFixed(2)) : (b.amount * b.odd).toFixed(2);
+      const winSum = b.status === "won"
+        ? (b.payout || (b.amount * b.odd).toFixed(2))
+        : (b.amount * b.odd).toFixed(2);
 
       document.getElementById("betDetailContent").innerHTML = `
         <div style="text-align:center;margin-bottom:14px;">
           <div style="font-size:20px;font-weight:800;color:${h.color};">${h.title}</div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px;">${escapeHtml(b.league)}</div>
         </div>
-        <div class="slip-box">
-          <div style="font-weight:700;font-size:15px;margin-bottom:8px;">${escapeHtml(b.match_title)}</div>
-          ${b.final_score ? `<div style="font-size:13px;margin-bottom:6px;">Итоговый счёт: <b>${escapeHtml(b.final_score)}</b></div>` : ""}
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+        <div class="slip-box" style="margin-bottom:0;">
+          <div style="font-weight:700;font-size:15px;margin-bottom:10px;text-align:center;">${escapeHtml(b.match_title)}</div>
+          ${b.final_score ? `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;"><span style="color:var(--muted);">Итоговый счёт:</span><b>${escapeHtml(b.final_score)}</b></div>` : ""}
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
             <span style="color:var(--muted);">Выбранный исход:</span>
             <b>${escapeHtml(b.selection)} @ ${b.odd}</b>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
             <span style="color:var(--muted);">Сумма ставки:</span>
             <b>${b.amount} ${unit}</b>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:14px;padding-top:8px;border-top:1px solid var(--border);">
             <span style="color:var(--muted);">${b.status === "won" ? "Выплата:" : "Возможный выигрыш:"}</span>
             <b style="color:var(--green);">${winSum} ${unit}</b>
           </div>
@@ -1229,9 +1759,10 @@
       document.getElementById("betDetailModal").classList.add("open");
     }
 
+    /* КАССА: ПОПОЛНЕНИЕ, ВЫВОД И ИСТОРИЯ */
     async function payWithStars() {
       const stars = parseInt(document.getElementById("starsAmount").value || "0", 10);
-      if (stars < 1) return showToast("Введите количество Stars");
+      if (stars < 10) return showToast("Минимальное пополнение 10 ★");
       const res = await fetch(`${API_BASE}/api/invoice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1253,33 +1784,58 @@
 
     async function requestSbpDeposit() {
       const amount = Number(document.getElementById("depRubAmount").value || 0);
+      if (amount < 50) return showToast("Минимальное пополнение 50 ₽");
       const res = await fetch(`${API_BASE}/api/cashier/deposit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: state.userId, amount }),
+        body: JSON.stringify({ user_id: state.userId, amount, currency: "RUB", method: "Рубли" }),
       });
       const data = await res.json();
       showToast(data.message || data.detail || "Запрос создан");
     }
 
-    async function requestWithdraw() {
-      const amount = Number(document.getElementById("withAmount").value || 0);
-      const details = document.getElementById("withDetails").value.trim();
-      if (!details) return showToast("Укажите реквизиты");
+    async function submitWithdrawStars() {
+      const amount = Number(document.getElementById("withStarsAmount").value || 0);
+      if (amount < 1000) return showToast("Минимальный вывод 1000 ★");
       const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: state.userId,
           amount,
-          currency: state.currency,
-          details,
+          currency: "STARS",
+          method: "Telegram Stars",
         }),
       });
       const data = await res.json();
       if (!res.ok) return showToast(data.detail || "Ошибка вывода");
       updateBalanceUI(data.balance);
-      showToast("Заявка на вывод отправлена");
+      document.getElementById("withStarsAmount").value = "";
+      showToast("Заявка на вывод Stars создана!");
+    }
+
+    async function submitWithdrawRub() {
+      const amount = Number(document.getElementById("withRubAmount").value || 0);
+      const phone = document.getElementById("withPhone").value.trim();
+      if (amount < 1500) return showToast("Минимальный вывод 1500 ₽");
+      if (!phone) return showToast("Укажите номер телефона");
+      const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: state.userId,
+          amount,
+          currency: "RUB",
+          method: "Рубли",
+          bank: state.selectedBank,
+          details: phone,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showToast(data.detail || "Ошибка вывода");
+      updateBalanceUI(data.balance);
+      document.getElementById("withRubAmount").value = "";
+      showToast("Заявка на вывод ₽ создана!");
     }
 
     async function loadTransactions() {
@@ -1290,17 +1846,33 @@
         box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Операций пока нет</div>`;
         return;
       }
-      box.innerHTML = list.map((t) => `
-        <div class="bet-item">
-          <div style="display:flex;justify-content:space-between;font-size:13px;">
-            <b>${escapeHtml(t.method || t.type)}</b>
-            <span>${t.type === "withdraw" ? "-" : "+"}${t.amount_stars || 0} ★</span>
+      const statusLabels = { completed: "Выполнено", pending: "В обработке", created: "Создано" };
+      box.innerHTML = list.map((t) => {
+        const isWithdraw = t.type === "withdraw";
+        const isRub = t.currency === "RUB" || t.method === "Рубли" || String(t.method).includes("СБП");
+        const curLabel = isRub ? "Рубли" : "Telegram Stars";
+        const title = isWithdraw ? `Вывод (${curLabel})` : `Пополнение (${curLabel})`;
+        const amountStr = isRub
+          ? `${t.amount_rub ?? Math.round((t.amount_stars || 0) * STAR_RATE)} ₽`
+          : `${t.amount_stars || 0} ★`;
+        const color = isWithdraw ? "var(--red)" : "var(--green)";
+        const sign = isWithdraw ? "-" : "+";
+
+        return `
+          <div class="bet-item" style="cursor:default;">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
+              <b>${escapeHtml(title)}</b>
+              <b style="color:${color};font-size:14px;">${sign}${amountStr}</b>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">
+              Статус: ${escapeHtml(statusLabels[t.status] || t.status || "")}
+            </div>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Статус: ${escapeHtml(t.status || "")}</div>
-        </div>
-      `).join("");
+        `;
+      }).join("");
     }
 
+    /* ПРОФИЛЬ (БЕЗ ИЗМЕНЕНИЙ) */
     function renderProfitChart(bets, totalProfit) {
       const svg = document.getElementById("profitChartSvg");
       const badge = document.getElementById("chartBadge");
@@ -1386,34 +1958,89 @@
       showToast("Реферальная ссылка скопирована");
     }
 
-    function appendChatMsg(box, m) {
-      const u = escapeHtml(m.user || m.username || "Игрок");
+    /* ЧАТ: АВАТАРКА + НИК + НАДЁЖНАЯ ОТПРАВКА (WS + HTTP FALLBACK) */
+    function renderChatMsgHtml(m) {
+      const name = escapeHtml(m.user || m.username || "Игрок");
       const t = escapeHtml(m.time || "");
       const txt = escapeHtml(m.text || m.message || "");
-      box.innerHTML += `<div class="chat-msg"><b>${u}</b> <span style="color:var(--muted);font-size:11px;">${t}</span><div style="margin-top:3px;">${txt}</div></div>`;
+      const letter = (m.user || "И")[0]?.toUpperCase() || "И";
+      const avatarHtml = m.photo_url
+        ? `<div class="chat-avatar"><img src="${escapeHtml(m.photo_url)}" alt="" onerror="this.parentElement.textContent='${escapeHtml(letter)}'" /></div>`
+        : `<div class="chat-avatar">${escapeHtml(letter)}</div>`;
+
+      return `
+        <div class="chat-msg">
+          ${avatarHtml}
+          <div class="chat-body">
+            <div class="chat-header-line">
+              <b style="font-size:13px;color:#fff;">${name}</b>
+              <span style="color:var(--muted);font-size:11px;">${t}</span>
+            </div>
+            <div style="color:#e2e8f0;line-height:1.35;word-break:break-word;">${txt}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function appendChatMsg(box, m) {
+      box.insertAdjacentHTML("beforeend", renderChatMsgHtml(m));
     }
 
     function initChat() {
-      state.ws = new WebSocket(`${WS_BASE}/ws/chat`);
-      state.ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        const box = document.getElementById("chatMessages");
-        if (data.type === "history") {
-          box.innerHTML = "";
-          (data.messages || []).forEach((m) => appendChatMsg(box, m));
-        } else if (data.type === "message") {
-          appendChatMsg(box, data.message);
-        }
-        box.scrollTop = box.scrollHeight;
-      };
+      try {
+        state.ws = new WebSocket(`${WS_BASE}/ws/chat`);
+        state.ws.onmessage = (e) => {
+          const data = JSON.parse(e.data);
+          const box = document.getElementById("chatMessages");
+          if (data.type === "history") {
+            box.innerHTML = (data.messages || []).map((m) => renderChatMsgHtml(m)).join("");
+          } else if (data.type === "message") {
+            appendChatMsg(box, data.message);
+          }
+          box.scrollTop = box.scrollHeight;
+        };
+        state.ws.onclose = () => {
+          setTimeout(initChat, 4000);
+        };
+      } catch (e) {}
     }
 
-    function sendChat() {
+    async function sendChat() {
       const inp = document.getElementById("chatInput");
       const text = inp.value.trim();
-      if (!text || !state.ws || state.ws.readyState !== 1) return;
-      state.ws.send(JSON.stringify({ user: state.userName, text }));
+      if (!text) return;
+
+      const payload = {
+        user_id: state.userId,
+        user: state.userName,
+        username: state.userUsername,
+        photo_url: state.userPhoto,
+        text,
+      };
       inp.value = "";
+
+      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify(payload));
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (res.ok && data.message) {
+          const box = document.getElementById("chatMessages");
+          appendChatMsg(box, data.message);
+          box.scrollTop = box.scrollHeight;
+        } else {
+          showToast(data.detail || "Не удалось отправить");
+        }
+      } catch (e) {
+        showToast("Ошибка отправки сообщения");
+      }
     }
 
     function closeModalOnBackdrop(e, id) {
@@ -1427,15 +2054,16 @@
       document.getElementById("profileName").textContent = state.userName;
       document.getElementById("profileId").textContent = state.userId;
       const letter = state.userName[0]?.toUpperCase() || "W";
-      if (tgUser.photo_url) {
-        document.getElementById("userAvatar").innerHTML = `<img src="${escapeHtml(tgUser.photo_url)}" />`;
-        document.getElementById("profileAvatar").innerHTML = `<img src="${escapeHtml(tgUser.photo_url)}" />`;
+      if (state.userPhoto) {
+        document.getElementById("userAvatar").innerHTML = `<img src="${escapeHtml(state.userPhoto)}" />`;
+        document.getElementById("profileAvatar").innerHTML = `<img src="${escapeHtml(state.userPhoto)}" />`;
       } else {
         document.getElementById("userAvatar").textContent = letter;
         document.getElementById("profileAvatar").textContent = letter;
       }
 
-      const res = await fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`);
+      const initUrl = `${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}&username=${encodeURIComponent(state.userUsername)}&photo_url=${encodeURIComponent(state.userPhoto)}`;
+      const res = await fetch(initUrl);
       const data = await res.json();
       state.botUsername = data.bot_username || "WinStarsPlaybot";
       document.getElementById("refLinkInput").value = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
@@ -1443,7 +2071,7 @@
       updateBalanceUI(data.user?.balance || 0);
       state.live = data.live || [];
       state.prematch = data.prematch || [];
-      updateLeagueFilter();
+      updateLeagueLabel();
       renderMatches();
       initChat();
 
@@ -1453,7 +2081,7 @@
           const d = await r.json();
           state.live = d.live || [];
           state.prematch = d.prematch || [];
-          updateLeagueFilter();
+          updateLeagueLabel();
           renderMatches();
 
           if (state.activeMatchId) {
