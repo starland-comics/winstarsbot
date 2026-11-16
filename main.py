@@ -53,6 +53,9 @@ ADMIN_IDS = {
 STAR_TO_RUB = 1.5  # 1 ★ = 1.5 ₽
 MSK_TZ = timezone(timedelta(hours=3))
 
+PREMATCH_HORIZON_SEC = 10 * 86400  # Ровно 10 дней вперёд
+PREMATCH_GRACE_SEC = 1800          # 30 минут допуска на задержку старта
+
 LINE_CACHE: Dict[str, Any] = {
     "live": [],
     "prematch": [],
@@ -64,8 +67,37 @@ LOGO_CACHE: Dict[str, str] = {}
 LOGO_FAIL_TS: Dict[str, float] = {}
 ADMIN_REJECT_STATE: Dict[int, str] = {}
 
-# ================= 1. ЖЁСТКИЙ ФИЛЬТР ЛИГ (ЧЁРНЫЙ + БЕЛЫЙ СПИСОК) =================
+# ================= 1. ЖЁСТКИЙ ФИЛЬТР: ТОЛЬКО НАСТОЯЩИЙ ФУТБОЛ =================
 FORBIDDEN_LEAGUE_WORDS = (
+    # Другие виды спорта и форматы (гандбол, мини-футбол, футзал, пляжный, 3x3..8x8)
+    "гандбол",
+    "handball",
+    "футзал",
+    "futsal",
+    "мини-футбол",
+    "мини футбол",
+    "mini-football",
+    "пляжн",
+    "beach",
+    "3x3",
+    "4x4",
+    "5x5",
+    "6x6",
+    "7x7",
+    "8x8",
+    "3х3",
+    "4х4",
+    "5х5",
+    "6х6",
+    "7х7",
+    "8х8",
+    "индор",
+    "indoor",
+    "сокращ",
+    "по 40",
+    "по 35",
+    "по 30",
+    # Женский, молодёжный, кибер, любители, статистика
     "жен",
     "женщин",
     "women",
@@ -78,6 +110,7 @@ FORBIDDEN_LEAGUE_WORDS = (
     "fifa",
     "fc 24",
     "fc 25",
+    "fc 26",
     "u14",
     "u15",
     "u16",
@@ -111,17 +144,6 @@ FORBIDDEN_LEAGUE_WORDS = (
     "любител",
     "amateur",
     "регионал",
-    "3x3",
-    "4x4",
-    "5x5",
-    "6x6",
-    "7x7",
-    "8x8",
-    "футзал",
-    "futsal",
-    "мини-футбол",
-    "пляжн",
-    "beach",
     "статистика",
     "углов",
     "карточк",
@@ -133,6 +155,8 @@ FORBIDDEN_LEAGUE_WORDS = (
     "сейвы",
     "пенальти",
     "штанги",
+    "итоги",
+    "специальн",
 )
 
 FORBIDDEN_TEAM_WORDS = (
@@ -150,9 +174,10 @@ FORBIDDEN_TEAM_WORDS = (
     "(мол)",
     "молодеж",
     "молодёж",
+    "футзал",
+    "гандбол",
 )
 
-# Белый список: международные турниры сборных, еврокубки, товарищеские
 GLOBAL_ALLOWED_TOURNAMENTS = (
     "лига чемпионов",
     "лига европы",
@@ -173,7 +198,6 @@ GLOBAL_ALLOWED_TOURNAMENTS = (
     "товарищеские матчи",
 )
 
-# Белый список стран: Топ-5, СНГ, популярные лиги + их кубки и вторые дивизионы
 COUNTRY_ALLOWED_RULES: Dict[str, Tuple[str, ...]] = {
     "англия": ("премьер-лига", "чемпионшип", "кубок", "суперкубок"),
     "испания": ("примера дивизион", "ла лига", "сегунда", "кубок", "суперкубок"),
@@ -222,8 +246,9 @@ def is_allowed_event(league_name: str, t1: str, t2: str) -> bool:
     return False
 
 
-# ================= 2. СПРАВОЧНИКИ ЛОГОТИПОВ (СБОРНЫЕ + КЛУБЫ) =================
+# ================= 2. КРУГЛЫЕ ФЛАГИ СБОРНЫХ (CIRCLE-FLAGS) И БАЗА КЛУБОВ =================
 NATIONAL_TEAM_ISO: Dict[str, str] = {
+    # СНГ и Европа
     "россия": "ru",
     "казахстан": "kz",
     "беларусь": "by",
@@ -233,9 +258,11 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "азербайджан": "az",
     "узбекистан": "uz",
     "кыргызстан": "kg",
+    "киргизия": "kg",
     "таджикистан": "tj",
     "туркменистан": "tm",
     "молдова": "md",
+    "молдавия": "md",
     "латвия": "lv",
     "литва": "lt",
     "эстония": "ee",
@@ -268,6 +295,7 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "ирландия": "ie",
     "португалия": "pt",
     "нидерланды": "nl",
+    "голландия": "nl",
     "бельгия": "be",
     "швейцария": "ch",
     "австрия": "at",
@@ -283,6 +311,7 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "лихтенштейн": "li",
     "гибралтар": "gi",
     "израиль": "il",
+    # Южная и Северная Америка + Карибы (КОНКАКАФ)
     "бразилия": "br",
     "аргентина": "ar",
     "уругвай": "uy",
@@ -302,11 +331,51 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "гондурас": "hn",
     "сальвадор": "sv",
     "гватемала": "gt",
+    "куба": "cu",
+    "гренада": "gd",
+    "гваделупа": "gp",
+    "бермуды": "bm",
+    "бермудские острова": "bm",
+    "мартиника": "mq",
+    "французская гвиана": "gf",
+    "кюрасао": "cw",
+    "суринам": "sr",
+    "тринидад и тобаго": "tt",
+    "гаити": "ht",
+    "доминиканская республика": "do",
+    "пуэрто-рико": "pr",
+    "никарагуа": "ni",
+    "белиз": "bz",
+    "гайана": "gy",
+    "аруба": "aw",
+    "барбадос": "bb",
+    "сент-люсия": "lc",
+    "сент-винсент и гренадины": "vc",
+    "антигуа и барбуда": "ag",
+    "сент-китс и невис": "kn",
+    "доминика": "dm",
+    "багамы": "bs",
+    "багамские острова": "bs",
+    "каймановы острова": "ky",
+    "теркс и кайкос": "tc",
+    "британские виргинские острова": "vg",
+    "американские виргинские острова": "vi",
+    "ангилья": "ai",
+    "монтсеррат": "ms",
+    "синт-мартен": "sx",
+    "сен-мартен": "mf",
+    "бонэйр": "bq",
+    # Азия и Океания
     "япония": "jp",
     "южная корея": "kr",
     "республика корея": "kr",
     "кндр": "kp",
+    "северная корея": "kp",
     "китай": "cn",
+    "тайвань": "tw",
+    "китайский тайбэй": "tw",
+    "гонконг": "hk",
+    "макао": "mo",
     "австралия": "au",
     "новая зеландия": "nz",
     "иран": "ir",
@@ -321,11 +390,39 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "сирия": "sy",
     "ливан": "lb",
     "палестина": "ps",
+    "йемен": "ye",
     "таиланд": "th",
     "вьетнам": "vn",
     "индонезия": "id",
     "малайзия": "my",
+    "сингапур": "sg",
+    "филиппины": "ph",
+    "мьянма": "mm",
+    "камбоджа": "kh",
+    "лаос": "la",
+    "бруней": "bn",
+    "восточный тимор": "tl",
     "индия": "in",
+    "непал": "np",
+    "бутан": "bt",
+    "бангладеш": "bd",
+    "шри-ланка": "lk",
+    "мальдивы": "mv",
+    "афганистан": "af",
+    "монголия": "mn",
+    "гуам": "gu",
+    "фиджи": "fj",
+    "новая каледония": "nc",
+    "таити": "pf",
+    "папуа — новая гвинея": "pg",
+    "папуа - новая гвинея": "pg",
+    "соломоновы острова": "sb",
+    "вануату": "vu",
+    "самоа": "ws",
+    "американское самоа": "as",
+    "тонга": "to",
+    "острова кука": "ck",
+    # Африка
     "сомали": "so",
     "гана": "gh",
     "судан": "sd",
@@ -373,15 +470,18 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "либерия": "lr",
     "сьерра-леоне": "sl",
     "цар": "cf",
+    "центральноафриканская республика": "cf",
     "чад": "td",
     "джибути": "dj",
     "эритрея": "er",
     "коморы": "km",
     "маврикий": "mu",
     "сейшелы": "sc",
+    "сан-томе и принсипи": "st",
 }
 
 CLUB_FOTMOB_IDS: Dict[str, int] = {
+    # Россия
     "зенит": 8706,
     "спартак москва": 8698,
     "цска москва": 8701,
@@ -405,6 +505,19 @@ CLUB_FOTMOB_IDS: Dict[str, int] = {
     "торпедо москва": 8702,
     "арсенал тула": 203382,
     "родина": 1072690,
+    "черноморец новороссийск": 8718,
+    "алания": 8703,
+    "ротор": 8713,
+    "чайка": 444577,
+    "енисей": 203384,
+    "ска-хабаровск": 8717,
+    "шинник": 8708,
+    "нефтехимик": 203386,
+    "камаз": 8716,
+    "тюмень": 203387,
+    "сокол саратов": 8712,
+    "уфа": 259516,
+    # Испания (Ла Лига + Сегунда)
     "реал мадрид": 8633,
     "барселона": 8634,
     "атлетико мадрид": 9906,
@@ -415,6 +528,33 @@ CLUB_FOTMOB_IDS: Dict[str, int] = {
     "атлетик бильбао": 8315,
     "бетис": 8603,
     "жирона": 7732,
+    "сельта": 9910,
+    "сельта 2": 10202,
+    "сельта фортуна": 10202,
+    "альбасете": 8393,
+    "расинг сантандер": 8696,
+    "спортинг хихон": 9869,
+    "реал сарагоса": 8394,
+    "малага": 9864,
+    "депортиво ла-корунья": 9783,
+    "депортиво": 9783,
+    "реал овьедо": 8670,
+    "кадис": 8385,
+    "альмерия": 9865,
+    "гранада": 7878,
+    "эльче": 10268,
+    "леванте": 8581,
+    "эйбар": 8372,
+    "тенерифе": 9867,
+    "бургос": 8371,
+    "уэска": 9866,
+    "мирандес": 10281,
+    "картахена": 8399,
+    "кастельон": 8388,
+    "кордоба": 8386,
+    "расинг ферроль": 8390,
+    "эльденсе": 161775,
+    # Англия (АПЛ + Чемпионшип)
     "манчестер сити": 8456,
     "манчестер юнайтед": 10260,
     "ливерпуль": 8650,
@@ -425,18 +565,54 @@ CLUB_FOTMOB_IDS: Dict[str, int] = {
     "астон вилла": 10252,
     "вест хэм": 8654,
     "брайтон": 10204,
+    "лидс": 8463,
+    "бернли": 8191,
+    "шеффилд юнайтед": 8657,
+    "сандерленд": 8472,
+    "мидлсбро": 8549,
+    "вест бромвич": 8659,
+    "норвич": 9850,
+    "уотфорд": 9817,
+    "ковентри": 8669,
+    "халл сити": 8667,
+    "сток сити": 10194,
+    "блекберн": 8655,
+    "блэкберн": 8655,
+    "престон": 8411,
+    "суонси": 10003,
+    "кардифф": 8344,
+    "бристоль сити": 8427,
+    "миллуолл": 10004,
+    "кпр": 10172,
+    "лутон": 8346,
+    # Германия
     "бавария": 9823,
     "боруссия дортмунд": 9789,
     "байер": 8178,
     "рб лейпциг": 178475,
     "айнтрахт франкфурт": 9810,
     "штутгарт": 10269,
+    "гамбург": 9790,
+    "шальке 04": 10189,
+    "кельн": 8721,
+    "кёльн": 8721,
+    "герта": 8177,
+    "фортуна дюссельдорф": 8194,
+    "ганновер 96": 9904,
+    "нюрнберг": 8165,
+    "кайзерслаутерн": 8350,
+    # Франция
     "псж": 9847,
     "пари сен-жермен": 9847,
     "марсель": 8592,
     "монако": 9829,
     "лион": 9748,
     "лилль": 8639,
+    "бордо": 9827,
+    "париж": 6379,
+    "мец": 8550,
+    "лорьян": 8689,
+    # Италия
     "ювентус": 9885,
     "интер": 8636,
     "милан": 8564,
@@ -445,6 +621,14 @@ CLUB_FOTMOB_IDS: Dict[str, int] = {
     "лацио": 8543,
     "аталанта": 8524,
     "фиорентина": 8535,
+    "сассуоло": 7943,
+    "пиза": 6479,
+    "специя": 9881,
+    "кремонезе": 7801,
+    "палермо": 8540,
+    "сампдория": 9882,
+    "бари": 9976,
+    # Португалия, Нидерланды, Турция, Саудовская Аравия, США
     "бенфика": 9772,
     "порту": 9773,
     "спортинг": 9768,
@@ -473,6 +657,8 @@ TEAM_EN_DICT = {
     "реал мадрид": "Real Madrid",
     "барселона": "Barcelona",
     "атлетико мадрид": "Atletico Madrid",
+    "альбасете": "Albacete",
+    "сельта 2": "Celta Vigo B",
     "манчестер сити": "Manchester City",
     "манчестер юнайтед": "Manchester United",
     "ливерпуль": "Liverpool",
@@ -504,7 +690,8 @@ def get_instant_logo(team_name: str) -> str:
 
     low = clean.lower()
     if low in NATIONAL_TEAM_ISO:
-        url = f"https://flagcdn.com/w80/{NATIONAL_TEAM_ISO[low]}.png"
+        # Круглый векторный флаг 1:1 — полностью заполняет круг
+        url = f"https://hatscripts.github.io/circle-flags/flags/{NATIONAL_TEAM_ISO[low]}.svg"
         LOGO_CACHE[clean] = url
         return url
 
@@ -580,17 +767,27 @@ class FirebaseDB:
 db = FirebaseDB(FIREBASE_URL, FIREBASE_SECRET)
 
 
-# ================= РЕЗОЛВЕР ЛОГОТИПОВ (CURL_CFFI + FOTMOB + WIKI + DB) =================
+# ================= РЕЗОЛВЕР ЛОГОТИПОВ (ТОЛЬКО СПОРТИВНЫЕ API, БЕЗ WIKIPEDIA) =================
 async def load_logo_cache_from_db():
     saved = await db.get("team_logos")
     if isinstance(saved, dict):
         for k, v in saved.items():
-            if isinstance(v, dict) and v.get("url"):
-                name = v.get("name") or k
-                LOGO_CACHE[name] = v["url"]
-            elif isinstance(v, str) and v.startswith("http"):
-                LOGO_CACHE[k] = v
-    logger.info(f"Loaded {len(LOGO_CACHE)} cached team logos from Firebase")
+            url = v.get("url") if isinstance(v, dict) else (v if isinstance(v, str) else "")
+            name = v.get("name") if isinstance(v, dict) else k
+            if not url or not name:
+                continue
+            # Автоочистка старых фото из Wikipedia и прямоугольных флагов flagcdn
+            if "wikimedia.org" in url or "flagcdn.com" in url:
+                await db.delete(f"team_logos/{k}")
+                continue
+            if name.lower() in NATIONAL_TEAM_ISO:
+                LOGO_CACHE[name] = (
+                    f"https://hatscripts.github.io/circle-flags/flags/"
+                    f"{NATIONAL_TEAM_ISO[name.lower()]}.svg"
+                )
+            else:
+                LOGO_CACHE[name] = url
+    logger.info(f"Loaded {len(LOGO_CACHE)} clean team logos from Firebase")
 
 
 async def translate_team_to_en(session: AsyncSession, clean_name: str) -> str:
@@ -598,13 +795,16 @@ async def translate_team_to_en(session: AsyncSession, clean_name: str) -> str:
     if low in TEAM_EN_DICT:
         return TEAM_EN_DICT[low]
 
-    if re.fullmatch(r"[A-Za-z0-9\s\.\-&']+", clean_name):
-        return clean_name
+    # Приводим дубли "Команда 2" -> "Команда B" для корректного поиска в FotMob
+    norm_name = re.sub(r"\s+(?:2|II|Б)$", " B", clean_name, flags=re.IGNORECASE)
+
+    if re.fullmatch(r"[A-Za-z0-9\s\.\-&']+", norm_name):
+        return norm_name
 
     try:
         url = (
             "https://translate.googleapis.com/translate_a/single"
-            f"?client=gtx&sl=ru&tl=en&dt=t&q={quote(clean_name)}"
+            f"?client=gtx&sl=ru&tl=en&dt=t&q={quote(norm_name)}"
         )
         r = await session.get(url, timeout=5)
         if r.status_code == 200:
@@ -615,7 +815,7 @@ async def translate_team_to_en(session: AsyncSession, clean_name: str) -> str:
                     return translated.strip()
     except Exception:
         pass
-    return clean_name
+    return norm_name
 
 
 async def fetch_fotmob_logo(session: AsyncSession, query_name: str) -> str:
@@ -647,27 +847,9 @@ async def fetch_sportsdb_logo(session: AsyncSession, en_name: str) -> str:
             data = r.json()
             teams = data.get("teams") if isinstance(data, dict) else None
             if teams and isinstance(teams, list):
-                return teams[0].get("strBadge") or teams[0].get("strTeamBadge") or ""
-    except Exception:
-        pass
-    return ""
-
-
-async def fetch_wikipedia_logo(session: AsyncSession, en_name: str) -> str:
-    try:
-        q = quote(f"{en_name} F.C.")
-        url = (
-            "https://en.wikipedia.org/w/api.php?action=query&generator=search"
-            f"&gsrsearch={q}&gsrlimit=1&prop=pageimages&format=json&pithumbsize=120"
-        )
-        r = await session.get(url, timeout=6)
-        if r.status_code == 200:
-            data = r.json()
-            pages = (data.get("query") or {}).get("pages") or {}
-            for page in pages.values():
-                thumb = (page.get("thumbnail") or {}).get("source") or ""
-                if thumb and thumb.startswith("http"):
-                    return thumb
+                sport = str(teams[0].get("strSport") or "").lower()
+                if not sport or sport == "soccer":
+                    return teams[0].get("strBadge") or teams[0].get("strTeamBadge") or ""
     except Exception:
         pass
     return ""
@@ -685,18 +867,16 @@ async def resolve_team_logo(
         return ""
 
     last_fail = LOGO_FAIL_TS.get(clean, 0)
-    if time.time() - last_fail < 300:
+    if time.time() - last_fail < 600:
         return ""
 
-    async def _search_with_session(s: AsyncSession) -> str:
+    async def _search_with_session(s: AsyncSession) -> Tuple[str, str]:
         en_name = await translate_team_to_en(s, clean)
         url = await fetch_fotmob_logo(s, en_name)
         if not url and en_name != clean:
             url = await fetch_fotmob_logo(s, clean)
         if not url:
             url = await fetch_sportsdb_logo(s, en_name)
-        if not url:
-            url = await fetch_wikipedia_logo(s, en_name)
         return url, en_name
 
     if session is not None:
@@ -717,7 +897,7 @@ async def resolve_team_logo(
     return ""
 
 
-# ================= 3. ПАРСЕР FONBET (МИНУТЫ + РЫНКИ ОЗ ВЕСЬ МАТЧ / 1Т / 2Т) =================
+# ================= 3. ПАРСЕР FONBET =================
 def format_fonbet_time(ev: dict, misc: dict, is_live: bool) -> str:
     start_ts = ev.get("startTime") or 0
     if not is_live:
@@ -786,7 +966,6 @@ def parse_fonbet_factors(
             seen_labels.add(label)
             target.append({"label": label, "odd": odd})
 
-    # 1. Основные факторы матча (весь матч)
     for f_obj in factors_list:
         fid = f_obj.get("f")
         val = f_obj.get("v")
@@ -820,12 +999,10 @@ def parse_fonbet_factors(
             add_unique(handicap_outcomes, f"Ф1 ({pt})", odd)
         elif fid in (928, 938) and pt:
             add_unique(handicap_outcomes, f"Ф2 ({pt})", odd)
-        # 4241 / 4242 — ОБЕ ЗАБЬЮТ (ВЕСЬ МАТЧ)
         elif fid == 4241:
             add_unique(btts_full_outcomes, "ОЗ Да", odd)
         elif fid == 4242:
             add_unique(btts_full_outcomes, "ОЗ Нет", odd)
-        # 1805 / 1806 — ОБЕ ЗАБЬЮТ (1-Й ТАЙМ)
         elif fid == 1805:
             add_unique(btts_1h_outcomes, "1Т: ОЗ Да", odd)
         elif fid == 1806:
@@ -836,7 +1013,6 @@ def parse_fonbet_factors(
                 label = f"{name} {pt}".strip()
                 add_unique(other_outcomes, label, odd)
 
-    # 2. Дочернее событие 1-го тайма (если передано)
     for f_obj in half1_factors or []:
         fid = f_obj.get("f")
         val = f_obj.get("v")
@@ -853,7 +1029,6 @@ def parse_fonbet_factors(
         elif fid in (4242, 1806):
             add_unique(btts_1h_outcomes, "1Т: ОЗ Нет", odd)
 
-    # 3. Дочернее событие 2-го тайма (если передано)
     for f_obj in half2_factors or []:
         fid = f_obj.get("f")
         val = f_obj.get("v")
@@ -948,8 +1123,9 @@ class FonbetScraper:
         if not data:
             return [], []
 
+        # 1. Строго находим только классический Футбол (kind == "sport", id == 1)
         sports_map: Dict[int, dict] = {}
-        football_comp_ids: set[int] = {1}
+        root_football_ids: set[int] = set()
 
         for s in data.get("sports") or []:
             sid = s.get("id")
@@ -957,23 +1133,44 @@ class FonbetScraper:
                 continue
             sid_int = int(sid)
             sports_map[sid_int] = s
+            kind = str(s.get("kind") or "").lower()
+            s_name = str(s.get("name") or "").strip().lower()
+            if (kind == "sport" or not s.get("parentId")) and s_name == "футбол":
+                root_football_ids.add(sid_int)
 
-            parent_id = s.get("parentId")
-            parent_ids = s.get("parentIds") or []
+        if not root_football_ids:
+            root_football_ids = {1}
+
+        # Собираем только дочерние турниры классического футбола без футзала/гандбола/мини-футбола
+        football_comp_ids: set[int] = set()
+        for s in data.get("sports") or []:
+            sid = s.get("id")
+            if sid is None:
+                continue
+            sid_int = int(sid)
             s_name = str(s.get("name") or "").lower()
-            if (
-                sid_int == 1
-                or parent_id == 1
-                or 1 in parent_ids
-                or s.get("sportCategoryId") == 1
-                or s_name == "футбол"
+            if any(bad in s_name for bad in FORBIDDEN_LEAGUE_WORDS):
+                continue
+
+            pid = s.get("parentId")
+            pids = [int(x) for x in (s.get("parentIds") or []) if str(x).isdigit()]
+            if (pid is not None and int(pid) in root_football_ids) or (
+                pids and pids[0] in root_football_ids
             ):
                 football_comp_ids.add(sid_int)
 
+        # Второй проход для вложенных подкатегорий внутри разрешённых футбольных турниров
         for s in data.get("sports") or []:
             sid = s.get("id")
-            if sid is not None and s.get("parentId") in football_comp_ids:
-                football_comp_ids.add(int(sid))
+            if sid is None:
+                continue
+            sid_int = int(sid)
+            s_name = str(s.get("name") or "").lower()
+            if any(bad in s_name for bad in FORBIDDEN_LEAGUE_WORDS):
+                continue
+            pid = s.get("parentId")
+            if pid is not None and int(pid) in football_comp_ids:
+                football_comp_ids.add(sid_int)
 
         misc_map: Dict[int, dict] = {}
         for m in data.get("eventMiscs") or []:
@@ -987,7 +1184,6 @@ class FonbetScraper:
             if eid is not None:
                 factors_map[int(eid)] = cf.get("factors") or []
 
-        # Индекс дочерних событий (1-й тайм, 2-й тайм) по parentId
         half1_by_parent: Dict[int, List[dict]] = {}
         half2_by_parent: Dict[int, List[dict]] = {}
         for ev in data.get("events") or []:
@@ -1022,14 +1218,21 @@ class FonbetScraper:
             comp = sports_map.get(int(sport_id))
             league_name = str(comp.get("name") if comp else "Футбол").strip()
 
-            # Строгая фильтрация: только белый список лиг без мусора
             if not is_allowed_event(league_name, t1, t2):
                 continue
 
-            eid = int(ev["id"])
             place = str(ev.get("place") or "line").lower()
             is_live = place == "live"
+            start_ts = int(ev.get("startTime") or 0)
 
+            # Строгий диапазон 10 дней для прематча
+            if not is_live and start_ts > 0:
+                if start_ts < (now_ts - PREMATCH_GRACE_SEC) or start_ts > (
+                    now_ts + PREMATCH_HORIZON_SEC
+                ):
+                    continue
+
+            eid = int(ev["id"])
             f_list = factors_map.get(eid) or []
             odds_1x2, markets = parse_fonbet_factors(
                 f_list,
@@ -1055,7 +1258,7 @@ class FonbetScraper:
                 "score1": s1,
                 "score2": s2,
                 "time_label": time_label,
-                "start_time": int(ev.get("startTime") or 0),
+                "start_time": start_ts,
                 "odds": odds_1x2,
                 "markets": markets,
                 "updated_at": now_ts,
@@ -1068,9 +1271,9 @@ class FonbetScraper:
 
         prematch_matches.sort(key=lambda x: x.get("start_time", 0))
         logger.info(
-            f"Fonbet parsed (filtered): {len(live_matches)} live, {len(prematch_matches)} prematch"
+            f"Fonbet parsed (10d football): {len(live_matches)} live, {len(prematch_matches)} prematch"
         )
-        return live_matches, prematch_matches[:80]
+        return live_matches, prematch_matches[:250]
 
     async def fetch_event_details(self, match_id: str) -> Optional[Dict[str, Any]]:
         data = await self._fetch_json(
@@ -1113,9 +1316,11 @@ class FonbetScraper:
             half1_factors=half1_factors,
             half2_factors=half2_factors,
         )
-        is_live = (main_ev or {}).get("place") == "live"
+        place = str((main_ev or {}).get("place") or "").lower()
+        is_live = place == "live"
 
         return {
+            "place": place,
             "score1": int(misc.get("score1") or 0),
             "score2": int(misc.get("score2") or 0),
             "time_label": format_fonbet_time(main_ev or {}, misc, is_live=is_live),
@@ -1126,7 +1331,7 @@ class FonbetScraper:
 scraper = FonbetScraper()
 
 
-# ================= ДВИЖОК СТАВОК И РАСЧЁТОВ =================
+# ================= ДВИЖОК СТАВОК И АВТОРАСЧЁТА =================
 def normalize_bet(bet: dict) -> dict:
     events = bet.get("events")
     first_ev = events[0] if isinstance(events, list) and events else {}
@@ -1161,8 +1366,8 @@ def normalize_bet(bet: dict) -> dict:
         bet.get("amount_stars")
         or (round(amount / STAR_TO_RUB, 2) if currency == "RUB" else amount)
     )
-    status = str(bet.get("status") or "active")
-    if status == "pending":
+    status = str(bet.get("status") or "active").lower()
+    if status in ("pending", "open", "wait"):
         status = "active"
     if status == "refund":
         status = "void"
@@ -1190,8 +1395,37 @@ def normalize_bet(bet: dict) -> dict:
     }
 
 
-def evaluate_outcome(selection: str, s1: int, s2: int) -> str:
+def evaluate_outcome(
+    selection: str,
+    s1: int,
+    s2: int,
+    ht1: Optional[int] = None,
+    ht2: Optional[int] = None,
+) -> str:
     sel = selection.strip().upper()
+
+    # Ставки на 1-й тайм
+    if sel.startswith("1Т:"):
+        if ht1 is None or ht2 is None:
+            return "active"
+        sub = sel.replace("1Т:", "").strip()
+        if sub in ("ОЗ ДА", "ДА"):
+            return "won" if (ht1 > 0 and ht2 > 0) else "lost"
+        if sub in ("ОЗ НЕТ", "НЕТ"):
+            return "won" if (ht1 == 0 or ht2 == 0) else "lost"
+
+    # Ставки на 2-й тайм
+    if sel.startswith("2Т:"):
+        if ht1 is None or ht2 is None:
+            return "active"
+        g1_2h = max(0, s1 - ht1)
+        g2_2h = max(0, s2 - ht2)
+        sub = sel.replace("2Т:", "").strip()
+        if sub in ("ОЗ ДА", "ДА"):
+            return "won" if (g1_2h > 0 and g2_2h > 0) else "lost"
+        if sub in ("ОЗ НЕТ", "НЕТ"):
+            return "won" if (g1_2h == 0 or g2_2h == 0) else "lost"
+
     total = s1 + s2
 
     if sel in ("П1", "1"):
@@ -1264,12 +1498,30 @@ async def collect_all_active_bets() -> List[Tuple[str, str, str, Dict[str, Any]]
                 uid = str(raw_bet.get("user_id", ""))
                 path = f"users/{uid}/bets/{b_id}" if uid else f"active_bets/{b_id}"
                 found.append((path, b_id, uid, norm))
+                seen_ids.add(b_id)
+
+    root_bets = await db.get("bets")
+    if isinstance(root_bets, dict):
+        for b_id, raw_bet in root_bets.items():
+            if b_id in seen_ids or not isinstance(raw_bet, dict):
+                continue
+            norm = normalize_bet(raw_bet)
+            if norm["status"] == "active":
+                uid = str(raw_bet.get("user_id", ""))
+                path = f"bets/{b_id}"
+                found.append((path, b_id, uid, norm))
+                seen_ids.add(b_id)
 
     return found
 
 
 async def settle_match_bets(
-    target_query: str, s1: int, s2: int, notify_bot: Optional[Bot] = None
+    target_query: str,
+    s1: int,
+    s2: int,
+    notify_bot: Optional[Bot] = None,
+    ht1: Optional[int] = None,
+    ht2: Optional[int] = None,
 ) -> int:
     active_list = await collect_all_active_bets()
     q_low = target_query.strip().lower()
@@ -1281,7 +1533,7 @@ async def settle_match_bets(
         if not (by_id or by_name):
             continue
 
-        result = evaluate_outcome(norm["selection"], s1, s2)
+        result = evaluate_outcome(norm["selection"], s1, s2, ht1=ht1, ht2=ht2)
         if result == "active":
             continue
 
@@ -1308,6 +1560,7 @@ async def settle_match_bets(
         await db.patch(bet_path, patch_payload)
         if user_id:
             await db.patch(f"users/{user_id}/bets/{b_id}", patch_payload)
+        await db.patch(f"bets/{b_id}", patch_payload)
         await db.delete(f"active_bets/{b_id}")
 
         if user_id:
@@ -1355,37 +1608,76 @@ async def settle_match_bets(
 
 async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
     active_list = await collect_all_active_bets()
-    pending_matches: Dict[str, str] = {}
+    pending_matches: Dict[str, Dict[str, Any]] = {}
 
     for _, _, _, norm in active_list:
         key = norm["match_id"] or norm["match_title"]
-        if key:
-            pending_matches[key] = norm["match_title"]
+        if key and key not in pending_matches:
+            pending_matches[key] = {
+                "title": norm["match_title"],
+                "created_at": int(norm.get("created_at") or 0),
+            }
 
     if not pending_matches:
         return {"checked": 0, "settled": 0, "unresolved": {}}
 
+    live_ids = {m["id"] for m in LINE_CACHE["live"]}
+    prematch_ids = {m["id"] for m in LINE_CACHE["prematch"]}
     archive = await db.get("match_archive") or {}
+    now_ts = int(time.time())
+
     total_settled = 0
     unresolved: Dict[str, str] = {}
 
-    for key, title in pending_matches.items():
+    for key, info in pending_matches.items():
+        title = info["title"]
+        # Если матч сейчас идёт в Live или ещё не начался в Prematch — не трогаем
+        if key in live_ids or key in prematch_ids:
+            continue
+
         arch_item = archive.get(key) if isinstance(archive, dict) else None
+        if not isinstance(arch_item, dict) and isinstance(archive, dict):
+            # Поиск по названию матча в архиве, если match_id не совпал
+            t_low = title.lower().strip()
+            for a_id, a_val in archive.items():
+                if isinstance(a_val, dict) and str(a_val.get("title", "")).lower().strip() == t_low:
+                    arch_item = a_val
+                    key = a_id
+                    break
+
         if isinstance(arch_item, dict):
+            ht1 = arch_item.get("ht_score1")
+            ht2 = arch_item.get("ht_score2")
+
             if arch_item.get("status") == "finished":
                 s1 = int(arch_item.get("score1", 0))
                 s2 = int(arch_item.get("score2", 0))
-                total_settled += await settle_match_bets(key, s1, s2, notify_bot)
+                total_settled += await settle_match_bets(key, s1, s2, notify_bot, ht1=ht1, ht2=ht2)
                 continue
 
+            # Пробуем уточнить финальный счёт напрямую из карточки события Fonbet
+            if key.isdigit():
+                det = await scraper.fetch_event_details(key)
+                if det and det.get("place") not in ("live", "line"):
+                    s1 = int(det.get("score1", arch_item.get("score1", 0)))
+                    s2 = int(det.get("score2", arch_item.get("score2", 0)))
+                    total_settled += await settle_match_bets(key, s1, s2, notify_bot, ht1=ht1, ht2=ht2)
+                    continue
+
             last_seen = int(arch_item.get("updated_at", 0))
+            start_ts = int(arch_item.get("start_time", 0))
             last_min_str = str(arch_item.get("time_label", ""))
             m_num = re.search(r"(\d+)", last_min_str)
             last_min = int(m_num.group(1)) if m_num else 0
-            if last_min >= 85 and (time.time() - last_seen) > 1500:
+
+            # Матч пропал из Live после 80-й минуты или прошло 105+ минут с начала игры
+            elapsed_since_kickoff = (now_ts - start_ts) if start_ts > 0 else 0
+            if (last_min >= 80 and (now_ts - last_seen) >= 45) or (
+                elapsed_since_kickoff >= 6300 and (now_ts - last_seen) >= 60
+            ):
                 s1 = int(arch_item.get("score1", 0))
                 s2 = int(arch_item.get("score2", 0))
-                total_settled += await settle_match_bets(key, s1, s2, notify_bot)
+                total_settled += await settle_match_bets(key, s1, s2, notify_bot, ht1=ht1, ht2=ht2)
                 continue
 
         unresolved[key] = title
@@ -1400,7 +1692,7 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
 # ================= ФОНОВЫЙ ПАРСЕР И ДОГРУЗЧИК ЛОГОТИПОВ =================
 async def logo_background_loader(matches: List[Dict[str, Any]]):
     missing = [
-        m for m in matches[:80] if not m.get("logo1") or not m.get("logo2")
+        m for m in matches[:120] if not m.get("logo1") or not m.get("logo2")
     ]
     if not missing:
         return
@@ -1421,6 +1713,7 @@ async def scraper_loop(bot: Bot):
     await load_logo_cache_from_db()
     prev_live_ids: set[str] = set()
     first_pass = True
+    last_recalc_ts = 0
 
     while True:
         try:
@@ -1436,7 +1729,9 @@ async def scraper_loop(bot: Bot):
             LINE_CACHE["updated_at"] = int(time.time())
 
             if first_pass:
-                await logo_background_loader(live_list + prematch_list[:20])
+                await logo_background_loader(live_list + prematch_list[:40])
+                await run_full_recalc(bot)
+                last_recalc_ts = int(time.time())
                 first_pass = False
             else:
                 asyncio.create_task(logo_background_loader(live_list + prematch_list))
@@ -1444,20 +1739,25 @@ async def scraper_loop(bot: Bot):
             current_live_ids = set()
             for m in live_list:
                 current_live_ids.add(m["id"])
-                await db.patch(
-                    f"match_archive/{m['id']}",
-                    {
-                        "title": f"{m['team1']} - {m['team2']}",
-                        "score1": m["score1"],
-                        "score2": m["score2"],
-                        "time_label": m["time_label"],
-                        "updated_at": m["updated_at"],
-                    },
-                )
+                arch_patch: Dict[str, Any] = {
+                    "title": f"{m['team1']} - {m['team2']}",
+                    "score1": m["score1"],
+                    "score2": m["score2"],
+                    "time_label": m["time_label"],
+                    "start_time": m["start_time"],
+                    "updated_at": m["updated_at"],
+                }
+                if m["time_label"] == "Перерыв":
+                    arch_patch["ht_score1"] = m["score1"]
+                    arch_patch["ht_score2"] = m["score2"]
+                await db.patch(f"match_archive/{m['id']}", arch_patch)
 
+            # Перерасчёт при завершении live-матча И регулярно каждые 30 секунд
             disappeared = prev_live_ids - current_live_ids
-            if disappeared:
+            now_ts = int(time.time())
+            if disappeared or (now_ts - last_recalc_ts) >= 30:
                 await run_full_recalc(bot)
+                last_recalc_ts = now_ts
 
             prev_live_ids = current_live_ids
         except Exception as e:
@@ -1600,7 +1900,6 @@ async def on_successful_payment(message: Message):
     )
 
 
-# --- МОДЕРАЦИЯ ЗАЯВОК НА ВЫВОД В АДМИН-ПАНЕЛИ ---
 @router.message(Command("withdraws"))
 async def cmd_withdraws(message: Message):
     if not message.from_user or not is_admin(message.from_user.id):
@@ -1728,7 +2027,6 @@ async def cmd_set_logo(message: Message):
     await message.answer(f"Логотип для **{team_name}** сохранён.", parse_mode="Markdown")
 
 
-# --- ОСТАЛЬНЫЕ АДМИН-КОМАНДЫ ---
 @router.message(Command("add_balance"))
 async def cmd_add_balance(message: Message):
     if not message.from_user or not is_admin(message.from_user.id):
@@ -1884,7 +2182,7 @@ async def cmd_settle(message: Message):
         return
     parts = (message.text or "").split()
     if len(parts) < 3 or ":" not in parts[-1]:
-        await message.answer("Пример: `/settle Албания 1:3`", parse_mode="Markdown")
+        await message.answer("Пример: `/settle Казахстан 1:0`", parse_mode="Markdown")
         return
     score_part = parts[-1].strip()
     query = " ".join(parts[1:-1]).strip()
