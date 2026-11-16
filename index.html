@@ -15,6 +15,7 @@
       --accent-glow: rgba(168, 85, 247, 0.35);
       --green: #22c55e;
       --red: #ef4444;
+      --red-glow: rgba(239, 68, 68, 0.45);
       --text: #f8fafc;
       --muted: #94a3b8;
     }
@@ -77,7 +78,6 @@
       user-select: none;
     }
 
-    /* ВЫПАДАЮЩЕЕ МЕНЮ ВЫБОРА ВАЛЮТЫ В ШАПКЕ */
     .currency-dropdown {
       position: absolute;
       top: 42px;
@@ -178,7 +178,6 @@
       box-shadow: 0 2px 12px var(--accent-glow);
     }
 
-    /* КАСТОМНАЯ КНОПКА ВЫБОРА ЛИГ */
     .league-picker-btn {
       flex: 1;
       min-width: 0;
@@ -264,6 +263,7 @@
       margin-bottom: 12px;
     }
 
+    /* КРАСНЫЙ ПУЛЬСИРУЮЩИЙ СТАТУС LIVE */
     .match-status {
       flex-shrink: 0;
       white-space: nowrap;
@@ -271,22 +271,54 @@
       align-items: center;
       gap: 6px;
       font-size: 12px;
-      font-weight: 700;
-      color: var(--green);
+      font-weight: 800;
+      color: #ff4d5e;
+      background: rgba(239, 68, 68, 0.13);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 3px 9px;
+      border-radius: 999px;
+      animation: liveBadgeGlow 2s ease-in-out infinite;
     }
 
     .match-status.prematch {
       color: var(--muted);
       font-weight: 600;
+      background: transparent;
+      border: none;
+      padding: 0;
+      animation: none;
     }
 
     .live-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 8px var(--green);
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
       flex-shrink: 0;
+      animation: liveDotPulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes liveDotPulse {
+      0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+        box-shadow: 0 0 8px #ef4444;
+      }
+      50% {
+        opacity: 0.35;
+        transform: scale(0.8);
+        box-shadow: 0 0 2px #ef4444;
+      }
+    }
+
+    @keyframes liveBadgeGlow {
+      0%, 100% {
+        border-color: rgba(239, 68, 68, 0.35);
+      }
+      50% {
+        border-color: rgba(239, 68, 68, 0.12);
+      }
     }
 
     .match-league {
@@ -319,10 +351,11 @@
     }
 
     .team-logo-box {
-      width: 40px;
-      height: 40px;
+      width: 42px;
+      height: 42px;
       border-radius: 50%;
       background: var(--card-inner);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -334,8 +367,8 @@
     }
 
     .team-logo-box img {
-      width: 34px;
-      height: 34px;
+      width: 32px;
+      height: 32px;
       object-fit: contain;
     }
 
@@ -440,12 +473,11 @@
       stroke-width: 1.9;
     }
 
-    /* МОДАЛЬНЫЕ ОКНА: ШТОРКА ДЛЯ РЫНКОВ И ЦЕНТРИРОВАННЫЕ ПРЯМОУГОЛЬНЫЕ ДЛЯ КУПОНОВ */
     .modal-backdrop {
       position: fixed;
       inset: 0;
       z-index: 60;
-      background: rgba(0, 0, 0, 0.76);
+      background: rgba(0, 0, 0, 0.78);
       backdrop-filter: blur(5px);
       display: none;
       align-items: flex-end;
@@ -481,7 +513,7 @@
       border-radius: 18px;
       padding: 18px 16px;
       overflow-y: auto;
-      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.85);
       animation: fadeScale 0.18s ease-out;
     }
 
@@ -558,22 +590,22 @@
     }
 
     .hero-team .team-logo-box {
-      width: 46px;
-      height: 46px;
+      width: 48px;
+      height: 48px;
       font-size: 15px;
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .hero-team .team-logo-box img {
-      width: 38px;
-      height: 38px;
+      width: 36px;
+      height: 36px;
     }
 
     .hero-center {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
     }
 
     .hero-score {
@@ -586,18 +618,22 @@
     .hero-time-badge {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      background: rgba(34, 197, 94, 0.14);
-      color: var(--green);
-      padding: 3px 10px;
+      gap: 6px;
+      background: rgba(239, 68, 68, 0.16);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #ff4d5e;
+      padding: 3px 11px;
       border-radius: 999px;
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 800;
+      animation: liveBadgeGlow 2s ease-in-out infinite;
     }
 
     .hero-time-badge.prematch {
       background: rgba(148, 163, 184, 0.14);
+      border-color: transparent;
       color: var(--muted);
+      animation: none;
     }
 
     .market-group {
@@ -673,7 +709,11 @@
       box-shadow: 0 4px 18px var(--accent-glow);
     }
 
-    /* КВАДРАТНЫЕ ПЛИТКИ ПЛАТЁЖЕК И ВЫБОР БАНКОВ В КАССЕ */
+    .primary-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     .pay-tiles-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -704,8 +744,8 @@
     }
 
     .pay-tile-icon {
-      width: 46px;
-      height: 46px;
+      width: 48px;
+      height: 48px;
       border-radius: 14px;
       background: var(--card-inner);
       display: flex;
@@ -772,7 +812,6 @@
     .badge.lost { background: rgba(239, 68, 68, 0.16); color: var(--red); }
     .badge.void, .badge.refund { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
 
-    /* ЧАТ С АВАТАРКАМИ И НИКАМИ */
     .chat-box {
       height: calc(100dvh - 205px);
       overflow-y: auto;
@@ -862,6 +901,18 @@
       font-weight: 600;
       display: none;
       white-space: nowrap;
+    }
+
+    .receipt-icon-circle {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      margin: 0 auto 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 800;
     }
   </style>
 </head>
@@ -960,13 +1011,8 @@
           <div class="pay-tile active" id="depTileStars" onclick="selectDepMethod('STARS')">
             <div class="pay-tile-icon">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <defs>
-                  <linearGradient id="tgStarGrad" x1="0" y1="0" x2="24" y2="24">
-                    <stop offset="0%" stop-color="#fde047"/>
-                    <stop offset="100%" stop-color="#f59e0b"/>
-                  </linearGradient>
-                </defs>
-                <path d="M12 2L14.9 8.6L22 9.3L16.6 14L18.2 21L12 17.3L5.8 21L7.4 14L2 9.3L9.1 8.6L12 2Z" fill="url(#tgStarGrad)"/>
+                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35L5.94 20.7L7.25 13.9L2.2 9.15L9.05 8.26L12 2Z" fill="#FBBF24"/>
+                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35V2Z" fill="#F59E0B"/>
               </svg>
             </div>
             <div class="pay-tile-title">Telegram Звёзды</div>
@@ -975,13 +1021,13 @@
 
           <div class="pay-tile" id="depTileSbp" onclick="selectDepMethod('SBP')">
             <div class="pay-tile-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <polygon points="12,2 20,7 12,12" fill="#5B57A2"/>
-                <polygon points="20,7 20,17 12,12" fill="#D90751"/>
-                <polygon points="20,17 12,22 12,12" fill="#FAB718"/>
-                <polygon points="12,22 4,17 12,12" fill="#ED6F26"/>
-                <polygon points="4,17 4,7 12,12" fill="#63B22F"/>
-                <polygon points="4,7 12,2 12,12" fill="#1487C9"/>
+              <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
+                <path d="M20 4L32.5 11.2L20 18.4V4Z" fill="#5B57A2"/>
+                <path d="M32.5 11.2V25.6L20 18.4L32.5 11.2Z" fill="#D90751"/>
+                <path d="M32.5 25.6L20 32.8V18.4L32.5 25.6Z" fill="#FAB718"/>
+                <path d="M20 32.8L7.5 25.6L20 18.4V32.8Z" fill="#ED6F26"/>
+                <path d="M7.5 25.6V11.2L20 18.4L7.5 25.6Z" fill="#63B22F"/>
+                <path d="M7.5 11.2L20 4V18.4L7.5 11.2Z" fill="#1487C9"/>
               </svg>
             </div>
             <div class="pay-tile-title">СБП</div>
@@ -1026,7 +1072,8 @@
           <div class="pay-tile active" id="withTileStars" onclick="selectWithMethod('STARS')">
             <div class="pay-tile-icon">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L14.9 8.6L22 9.3L16.6 14L18.2 21L12 17.3L5.8 21L7.4 14L2 9.3L9.1 8.6L12 2Z" fill="url(#tgStarGrad)"/>
+                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35L5.94 20.7L7.25 13.9L2.2 9.15L9.05 8.26L12 2Z" fill="#FBBF24"/>
+                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35V2Z" fill="#F59E0B"/>
               </svg>
             </div>
             <div class="pay-tile-title">Telegram Звёзды</div>
@@ -1035,13 +1082,13 @@
 
           <div class="pay-tile" id="withTileRub" onclick="selectWithMethod('RUB')">
             <div class="pay-tile-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <polygon points="12,2 20,7 12,12" fill="#5B57A2"/>
-                <polygon points="20,7 20,17 12,12" fill="#D90751"/>
-                <polygon points="20,17 12,22 12,12" fill="#FAB718"/>
-                <polygon points="12,22 4,17 12,12" fill="#ED6F26"/>
-                <polygon points="4,17 4,7 12,12" fill="#63B22F"/>
-                <polygon points="4,7 12,2 12,12" fill="#1487C9"/>
+              <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
+                <path d="M20 4L32.5 11.2L20 18.4V4Z" fill="#5B57A2"/>
+                <path d="M32.5 11.2V25.6L20 18.4L32.5 11.2Z" fill="#D90751"/>
+                <path d="M32.5 25.6L20 32.8V18.4L32.5 25.6Z" fill="#FAB718"/>
+                <path d="M20 32.8L7.5 25.6L20 18.4V32.8Z" fill="#ED6F26"/>
+                <path d="M7.5 25.6V11.2L20 18.4L7.5 25.6Z" fill="#63B22F"/>
+                <path d="M7.5 11.2L20 4V18.4L7.5 11.2Z" fill="#1487C9"/>
               </svg>
             </div>
             <div class="pay-tile-title">СБП / Карта</div>
@@ -1049,7 +1096,7 @@
           </div>
         </div>
 
-        <!-- ВЫВОД ЗВЁЗДАМИ (БЕЗ ЮЗЕРНЕЙМА) -->
+        <!-- ВЫВОД ЗВЁЗДАМИ -->
         <div id="withFormStars" class="slip-box">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
             <span style="font-weight:700;">Вывод Telegram Stars</span>
@@ -1059,10 +1106,10 @@
             Звёзды будут отправлены напрямую на ваш аккаунт Telegram
           </div>
           <input id="withStarsAmount" type="number" min="1000" class="slip-input" placeholder="Сумма от 1000 ★" />
-          <button class="primary-btn" onclick="submitWithdrawStars()">Вывести звёзды ★</button>
+          <button class="primary-btn" id="btnWithdrawStars" onclick="submitWithdrawStars()">Вывести звёзды ★</button>
         </div>
 
-        <!-- ВЫВОД РУБЛЯМИ (ТЕЛЕФОН + БАНК С ЛОГОТИПОМ) -->
+        <!-- ВЫВОД РУБЛЯМИ -->
         <div id="withFormRub" class="slip-box" style="display:none;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
             <span style="font-weight:700;">Вывод на карту (СБП)</span>
@@ -1107,7 +1154,7 @@
             </div>
           </div>
 
-          <button class="primary-btn" onclick="submitWithdrawRub()">Заказать вывод ₽</button>
+          <button class="primary-btn" id="btnWithdrawRub" onclick="submitWithdrawRub()">Заказать вывод ₽</button>
         </div>
       </div>
 
@@ -1118,7 +1165,7 @@
     </div>
   </section>
 
-  <!-- ПРОФИЛЬ (НЕ ТРОГАЕМ) -->
+  <!-- ПРОФИЛЬ -->
   <section id="tab-profile" class="tab-view">
     <div class="container" style="padding-top:14px;">
       <div class="slip-box" style="display:flex;align-items:center;gap:12px;">
@@ -1197,7 +1244,7 @@
     </button>
   </nav>
 
-  <!-- КАСТОМНОЕ МОДАЛЬНОЕ ОКНО ВЫБОРА ЛИГ -->
+  <!-- МОДАЛКА ВЫБОРА ЛИГ -->
   <div id="leagueModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'leagueModal')">
     <div class="rect-modal">
       <div class="rect-modal-header">
@@ -1217,7 +1264,7 @@
     </div>
   </div>
 
-  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА КУПОНА СТАВКИ -->
+  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА ОФОРМЛЕНИЯ СТАВКИ -->
   <div id="betSlipModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betSlipModal')">
     <div class="rect-modal">
       <div class="rect-modal-header">
@@ -1243,11 +1290,49 @@
         <span style="color:var(--muted);">Возможный выигрыш:</span>
         <span id="potentialWin" style="font-weight:800;color:var(--green);">0</span>
       </div>
-      <button class="primary-btn" onclick="submitBet()">Сделать ставку</button>
+      <button class="primary-btn" id="btnSubmitBet" onclick="submitBet()">Сделать ставку</button>
     </div>
   </div>
 
-  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА СТАТУСА СТАВКИ -->
+  <!-- ПРЯМОУГОЛЬНИК ПОДТВЕРЖДЕНИЯ СТАВКИ ("СТАВКА ПРИНЯТА") -->
+  <div id="betSuccessModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betSuccessModal')">
+    <div class="rect-modal">
+      <div class="rect-modal-header">
+        <div style="font-size:14px;font-weight:700;color:var(--muted);">Чек купона</div>
+        <button class="modal-close-btn" onclick="document.getElementById('betSuccessModal').classList.remove('open')">✕</button>
+      </div>
+      <div style="text-align:center;margin-bottom:14px;">
+        <div class="receipt-icon-circle" style="background:rgba(34,197,94,0.16);color:var(--green);">✓</div>
+        <div style="font-size:20px;font-weight:800;color:var(--green);">Ставка принята!</div>
+      </div>
+      <div class="slip-box" id="betSuccessBody"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <button class="q-btn" style="padding:13px;font-size:13px;" onclick="document.getElementById('betSuccessModal').classList.remove('open'); switchTab('bets');">Мои ставки</button>
+        <button class="primary-btn" style="padding:13px;font-size:14px;" onclick="document.getElementById('betSuccessModal').classList.remove('open')">Отлично</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ПРЯМОУГОЛЬНИК ПОДТВЕРЖДЕНИЯ ЗАЯВКИ НА ВЫВОД (5 РАБОЧИХ ДНЕЙ) -->
+  <div id="withdrawSuccessModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'withdrawSuccessModal')">
+    <div class="rect-modal">
+      <div class="rect-modal-header">
+        <div style="font-size:14px;font-weight:700;color:var(--muted);">Заявка на вывод</div>
+        <button class="modal-close-btn" onclick="document.getElementById('withdrawSuccessModal').classList.remove('open')">✕</button>
+      </div>
+      <div style="text-align:center;margin-bottom:14px;">
+        <div class="receipt-icon-circle" style="background:rgba(168,85,247,0.18);color:var(--accent);">⏳</div>
+        <div style="font-size:19px;font-weight:800;color:#fff;">Заявка принята в обработку</div>
+      </div>
+      <div class="slip-box" id="withdrawSuccessBody"></div>
+      <div style="background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.3);border-radius:12px;padding:11px 12px;font-size:12px;color:#fde047;line-height:1.4;margin-bottom:14px;text-align:center;">
+        Вывод средств осуществляется в течение <b>5 рабочих дней</b>. Уведомление о статусе придёт в бот.
+      </div>
+      <button class="primary-btn" onclick="document.getElementById('withdrawSuccessModal').classList.remove('open')">Понятно</button>
+    </div>
+  </div>
+
+  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА ДЕТАЛЕЙ СТАВКИ -->
   <div id="betDetailModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betDetailModal')">
     <div class="rect-modal">
       <div class="rect-modal-header">
@@ -1277,9 +1362,11 @@
       photo_url: "",
     };
 
+    const fullTgName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ").trim() || "Игрок";
+
     const state = {
       userId: String(tgUser.id),
-      userName: tgUser.first_name || "Игрок",
+      userName: fullTgName,
       userUsername: tgUser.username || "",
       userPhoto: tgUser.photo_url || "",
       botUsername: "WinStarsPlaybot",
@@ -1293,8 +1380,11 @@
       prematch: [],
       betsCache: [],
       activeMatchId: null,
+      activeBetDetailIdx: null,
       slip: null,
       ws: null,
+      placingBet: false,
+      withdrawing: false,
     };
 
     function escapeHtml(str) {
@@ -1332,7 +1422,6 @@
       document.getElementById("curMenuRubBal").textContent = `${rub} ₽`;
     }
 
-    /* ВЫПАДАЮЩЕЕ МЕНЮ ВЫБОРА ВАЛЮТЫ */
     function toggleCurrencyMenu(e) {
       e.stopPropagation();
       document.getElementById("currencyDropdown").classList.toggle("open");
@@ -1346,6 +1435,16 @@
       document.getElementById("curCheckRub").style.display = cur === "RUB" ? "inline" : "none";
       document.getElementById("currencyDropdown").classList.remove("open");
       updateBalanceUI(state.balanceStars);
+
+      // Онлайн пересчёт валюты в разделе Ставки и в открытом окне деталей купона
+      renderBetsList();
+      if (
+        document.getElementById("betDetailModal").classList.contains("open") &&
+        state.activeBetDetailIdx !== null
+      ) {
+        openBetDetail(state.activeBetDetailIdx);
+      }
+
       showToast(`Валюта: ${cur === "STARS" ? "Telegram Stars (★)" : "Рубли (₽)"}`);
     }
 
@@ -1375,6 +1474,7 @@
       if (tab === "bets") loadUserBets();
       if (tab === "profile") refreshProfile();
       if (tab === "cashier") loadTransactions();
+      if (tab === "chat") loadChatHistoryHttp();
     }
 
     function switchCashierSub(sub) {
@@ -1407,7 +1507,6 @@
       el.classList.add("active");
     }
 
-    /* КАСТОМНЫЙ ВЫБОР ЛИГ */
     function setMode(mode) {
       state.mode = mode;
       document.getElementById("btnLive").classList.toggle("active", mode === "live");
@@ -1475,7 +1574,7 @@
 
       container.innerHTML = list.map((m) => {
         const statusHtml = m.is_live
-          ? `<div class="match-status"><span class="live-dot"></span><span>${escapeHtml(m.time_label)}</span></div>`
+          ? `<div class="match-status"><span class="live-dot"></span><span>LIVE • ${escapeHtml(m.time_label)}</span></div>`
           : `<div class="match-status prematch"><span>${escapeHtml(m.time_label)}</span></div>`;
 
         const scoreHtml = m.is_live
@@ -1522,6 +1621,7 @@
       const scoreText = m.is_live ? `${m.score1} : ${m.score2}` : "VS";
       const badgeClass = m.is_live ? "hero-time-badge" : "hero-time-badge prematch";
       const dot = m.is_live ? `<span class="live-dot"></span>` : "";
+      const timeText = m.is_live ? `LIVE • ${m.time_label}` : m.time_label;
 
       document.getElementById("marketsHeroContainer").innerHTML = `
         <div class="market-match-hero">
@@ -1533,7 +1633,7 @@
             </div>
             <div class="hero-center">
               <div class="hero-score">${scoreText}</div>
-              <div class="${badgeClass}">${dot}<span>${escapeHtml(m.time_label)}</span></div>
+              <div class="${badgeClass}">${dot}<span>${escapeHtml(timeText)}</span></div>
             </div>
             <div class="hero-team">
               ${logoHtml(m.logo2, m.team2)}
@@ -1629,8 +1729,12 @@
     }
 
     async function submitBet() {
-      if (!state.slip) return;
+      if (!state.slip || state.placingBet) return;
       const amount = Number(document.getElementById("betAmount").value || 0);
+      const btn = document.getElementById("btnSubmitBet");
+      state.placingBet = true;
+      btn.disabled = true;
+
       try {
         const res = await fetch(`${API_BASE}/api/bet`, {
           method: "POST",
@@ -1649,15 +1753,69 @@
           showToast(data.detail || "Ошибка ставки");
           return;
         }
+
         updateBalanceUI(data.balance);
         document.getElementById("betSlipModal").classList.remove("open");
-        showToast("Ставка принята!");
+
+        const unit = state.currency === "RUB" ? "₽" : "★";
+        const potWin = (amount * state.slip.odd).toFixed(2);
+        document.getElementById("betSuccessBody").innerHTML = `
+          <div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:4px;">${escapeHtml(state.slip.league)}</div>
+          <div style="font-size:15px;font-weight:800;text-align:center;margin-bottom:10px;">${escapeHtml(state.slip.title)}</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;">
+            <span style="color:var(--muted);">Выбранный исход:</span>
+            <b>${escapeHtml(state.slip.selection)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;">
+            <span style="color:var(--muted);">Итоговый кэф:</span>
+            <b style="color:var(--accent);">@ ${state.slip.odd.toFixed(2)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;">
+            <span style="color:var(--muted);">Сумма ставки:</span>
+            <b>${amount} ${unit}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;padding-top:8px;border-top:1px solid var(--border);">
+            <span style="color:var(--muted);">Возможный выигрыш:</span>
+            <b style="color:var(--green);">${potWin} ${unit}</b>
+          </div>
+        `;
+        document.getElementById("betSuccessModal").classList.add("open");
       } catch (e) {
         showToast("Ошибка соединения с сервером");
+      } finally {
+        state.placingBet = false;
+        btn.disabled = false;
       }
     }
 
-    /* РАЗДЕЛ СТАВКИ: ВСЕ КУПОНЫ / ОЖИДАЮЩИЕ / РАССЧИТАННЫЕ */
+    /* РАЗДЕЛ СТАВКИ: ДИНАМИЧЕСКАЯ ВАЛЮТА ПО ВЫБОРУ ПОЛЬЗОВАТЕЛЯ */
+    function getBetDisplayAmounts(b) {
+      const stakeStars = b.amount_stars != null
+        ? Number(b.amount_stars)
+        : (b.currency === "RUB" ? Number(b.amount) / STAR_RATE : Number(b.amount));
+
+      const rawPayoutStars = b.payout_stars != null
+        ? Number(b.payout_stars)
+        : (b.currency === "RUB" ? Number(b.payout || 0) / STAR_RATE : Number(b.payout || 0));
+
+      const potWinStars = b.status === "won" && rawPayoutStars > 0
+        ? rawPayoutStars
+        : stakeStars * Number(b.odd || 1);
+
+      if (state.currency === "RUB") {
+        return {
+          unit: "₽",
+          stake: (stakeStars * STAR_RATE).toFixed(2).replace(/\.00$/, ""),
+          win: (potWinStars * STAR_RATE).toFixed(2),
+        };
+      }
+      return {
+        unit: "★",
+        stake: stakeStars.toFixed(2).replace(/\.00$/, ""),
+        win: potWinStars.toFixed(2),
+      };
+    }
+
     function setBetsFilter(filter) {
       state.betsFilter = filter;
       document.getElementById("bTabAll").classList.toggle("active", filter === "all");
@@ -1676,6 +1834,7 @@
 
     function renderBetsList() {
       const box = document.getElementById("betsList");
+      if (!box) return;
       let list = state.betsCache || [];
 
       if (state.betsFilter === "pending") {
@@ -1700,7 +1859,7 @@
 
       box.innerHTML = list.map((b) => {
         const realIdx = state.betsCache.indexOf(b);
-        const unit = b.currency === "STARS" ? "★" : "₽";
+        const vals = getBetDisplayAmounts(b);
         const st = b.status || "active";
         return `
           <div class="bet-item" onclick="openBetDetail(${realIdx})">
@@ -1711,7 +1870,7 @@
             <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(b.match_title)} ${b.final_score ? `(${escapeHtml(b.final_score)})` : ""}</div>
             <div style="display:flex;justify-content:space-between;font-size:13px;">
               <span>${escapeHtml(b.selection)} @ <b>${b.odd}</b></span>
-              <span>Ставка: <b>${b.amount} ${unit}</b></span>
+              <span>Ставка: <b>${vals.stake} ${vals.unit}</b></span>
             </div>
           </div>
         `;
@@ -1721,7 +1880,8 @@
     function openBetDetail(idx) {
       const b = state.betsCache[idx];
       if (!b) return;
-      const unit = b.currency === "STARS" ? "★" : "₽";
+      state.activeBetDetailIdx = idx;
+      const vals = getBetDisplayAmounts(b);
       const headers = {
         active: { title: "В ожидании!", color: "#facc15" },
         pending: { title: "В ожидании!", color: "#facc15" },
@@ -1730,9 +1890,6 @@
         void: { title: "Возврат ставки", color: "var(--muted)" },
       };
       const h = headers[b.status] || headers.active;
-      const winSum = b.status === "won"
-        ? (b.payout || (b.amount * b.odd).toFixed(2))
-        : (b.amount * b.odd).toFixed(2);
 
       document.getElementById("betDetailContent").innerHTML = `
         <div style="text-align:center;margin-bottom:14px;">
@@ -1748,18 +1905,18 @@
           </div>
           <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
             <span style="color:var(--muted);">Сумма ставки:</span>
-            <b>${b.amount} ${unit}</b>
+            <b>${vals.stake} ${vals.unit}</b>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:14px;padding-top:8px;border-top:1px solid var(--border);">
             <span style="color:var(--muted);">${b.status === "won" ? "Выплата:" : "Возможный выигрыш:"}</span>
-            <b style="color:var(--green);">${winSum} ${unit}</b>
+            <b style="color:var(--green);">${vals.win} ${vals.unit}</b>
           </div>
         </div>
       `;
       document.getElementById("betDetailModal").classList.add("open");
     }
 
-    /* КАССА: ПОПОЛНЕНИЕ, ВЫВОД И ИСТОРИЯ */
+    /* КАССА: ПОПОЛНЕНИЕ, ВЫВОД (С ЗАЩИТОЙ И ЧЕКОМ) И ИСТОРИЯ */
     async function payWithStars() {
       const stars = parseInt(document.getElementById("starsAmount").value || "0", 10);
       if (stars < 10) return showToast("Минимальное пополнение 10 ★");
@@ -1794,48 +1951,92 @@
       showToast(data.message || data.detail || "Запрос создан");
     }
 
+    function showWithdrawReceipt(data) {
+      document.getElementById("withdrawSuccessBody").innerHTML = `
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
+          <span style="color:var(--muted);">Способ вывода:</span>
+          <b>${escapeHtml(data.method || "")}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
+          <span style="color:var(--muted);">Сумма вывода:</span>
+          <b style="color:var(--accent);font-size:15px;">${escapeHtml(data.amount_display || "")}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;">
+          <span style="color:var(--muted);">Реквизиты:</span>
+          <b>${escapeHtml(data.details || "")}</b>
+        </div>
+      `;
+      document.getElementById("withdrawSuccessModal").classList.add("open");
+    }
+
     async function submitWithdrawStars() {
+      if (state.withdrawing) return;
       const amount = Number(document.getElementById("withStarsAmount").value || 0);
       if (amount < 1000) return showToast("Минимальный вывод 1000 ★");
-      const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: state.userId,
-          amount,
-          currency: "STARS",
-          method: "Telegram Stars",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) return showToast(data.detail || "Ошибка вывода");
-      updateBalanceUI(data.balance);
-      document.getElementById("withStarsAmount").value = "";
-      showToast("Заявка на вывод Stars создана!");
+
+      const btn = document.getElementById("btnWithdrawStars");
+      state.withdrawing = true;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: state.userId,
+            amount,
+            currency: "STARS",
+            method: "Telegram Stars",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) return showToast(data.detail || "Ошибка вывода");
+        updateBalanceUI(data.balance);
+        document.getElementById("withStarsAmount").value = "";
+        showWithdrawReceipt(data);
+      } catch (e) {
+        showToast("Ошибка соединения с сервером");
+      } finally {
+        state.withdrawing = false;
+        btn.disabled = false;
+      }
     }
 
     async function submitWithdrawRub() {
+      if (state.withdrawing) return;
       const amount = Number(document.getElementById("withRubAmount").value || 0);
       const phone = document.getElementById("withPhone").value.trim();
       if (amount < 1500) return showToast("Минимальный вывод 1500 ₽");
       if (!phone) return showToast("Укажите номер телефона");
-      const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: state.userId,
-          amount,
-          currency: "RUB",
-          method: "Рубли",
-          bank: state.selectedBank,
-          details: phone,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) return showToast(data.detail || "Ошибка вывода");
-      updateBalanceUI(data.balance);
-      document.getElementById("withRubAmount").value = "";
-      showToast("Заявка на вывод ₽ создана!");
+
+      const btn = document.getElementById("btnWithdrawRub");
+      state.withdrawing = true;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: state.userId,
+            amount,
+            currency: "RUB",
+            method: "Рубли",
+            bank: state.selectedBank,
+            details: phone,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) return showToast(data.detail || "Ошибка вывода");
+        updateBalanceUI(data.balance);
+        document.getElementById("withRubAmount").value = "";
+        showWithdrawReceipt(data);
+      } catch (e) {
+        showToast("Ошибка соединения с сервером");
+      } finally {
+        state.withdrawing = false;
+        btn.disabled = false;
+      }
     }
 
     async function loadTransactions() {
@@ -1846,7 +2047,12 @@
         box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Операций пока нет</div>`;
         return;
       }
-      const statusLabels = { completed: "Выполнено", pending: "В обработке", created: "Создано" };
+      const statusLabels = {
+        completed: "Выполнено",
+        pending: "В обработке (до 5 раб. дней)",
+        rejected: "Отклонено (возврат)",
+        created: "Создано",
+      };
       box.innerHTML = list.map((t) => {
         const isWithdraw = t.type === "withdraw";
         const isRub = t.currency === "RUB" || t.method === "Рубли" || String(t.method).includes("СБП");
@@ -1857,6 +2063,7 @@
           : `${t.amount_stars || 0} ★`;
         const color = isWithdraw ? "var(--red)" : "var(--green)";
         const sign = isWithdraw ? "-" : "+";
+        const reasonStr = t.reject_reason ? ` • Причина: ${escapeHtml(t.reject_reason)}` : "";
 
         return `
           <div class="bet-item" style="cursor:default;">
@@ -1865,14 +2072,14 @@
               <b style="color:${color};font-size:14px;">${sign}${amountStr}</b>
             </div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px;">
-              Статус: ${escapeHtml(statusLabels[t.status] || t.status || "")}
+              Статус: ${escapeHtml(statusLabels[t.status] || t.status || "")}${reasonStr}
             </div>
           </div>
         `;
       }).join("");
     }
 
-    /* ПРОФИЛЬ (БЕЗ ИЗМЕНЕНИЙ) */
+    /* ПРОФИЛЬ */
     function renderProfitChart(bets, totalProfit) {
       const svg = document.getElementById("profitChartSvg");
       const badge = document.getElementById("chartBadge");
@@ -1958,7 +2165,7 @@
       showToast("Реферальная ссылка скопирована");
     }
 
-    /* ЧАТ: АВАТАРКА + НИК + НАДЁЖНАЯ ОТПРАВКА (WS + HTTP FALLBACK) */
+    /* ЧАТ */
     function renderChatMsgHtml(m) {
       const name = escapeHtml(m.user || m.username || "Игрок");
       const t = escapeHtml(m.time || "");
@@ -1986,7 +2193,20 @@
       box.insertAdjacentHTML("beforeend", renderChatMsgHtml(m));
     }
 
+    async function loadChatHistoryHttp() {
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/history`);
+        if (res.ok) {
+          const msgs = await res.json();
+          const box = document.getElementById("chatMessages");
+          box.innerHTML = msgs.map((m) => renderChatMsgHtml(m)).join("");
+          box.scrollTop = box.scrollHeight;
+        }
+      } catch (e) {}
+    }
+
     function initChat() {
+      loadChatHistoryHttp();
       try {
         state.ws = new WebSocket(`${WS_BASE}/ws/chat`);
         state.ws.onmessage = (e) => {
@@ -2047,6 +2267,7 @@
       if (e.target.id === id) {
         document.getElementById(id).classList.remove("open");
         if (id === "marketsModal") state.activeMatchId = null;
+        if (id === "betDetailModal") state.activeBetDetailIdx = null;
       }
     }
 
