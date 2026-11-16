@@ -151,7 +151,7 @@ async def resolve_team_logo(team_name: str) -> str:
     return ""
 
 
-# ================= ПАРСЕР FONBET (ЗЕРКАЛА LINE-LB51..53) =================
+# ================= ПАРСЕР FONBET (ЗЕРКАЛА BK6BBA) =================
 def format_fonbet_time(ev: dict, misc: dict, is_live: bool) -> str:
     if not is_live:
         start_ts = ev.get("startTime") or 0
@@ -255,11 +255,13 @@ def parse_fonbet_factors(
 
 class FonbetScraper:
     MIRRORS = [
+        "https://line-lb51.bk6bba-resources.com",
+        "https://line-lb52.bk6bba-resources.com",
+        "https://line-lb53.bk6bba-resources.com",
+        "https://line01w.bk6bba-resources.com",
+        "https://line02w.bk6bba-resources.com",
         "https://line-lb51.bkfon-resources.com",
         "https://line-lb52.bkfon-resources.com",
-        "https://line-lb53.bkfon-resources.com",
-        "https://line01w.bkfon-resources.com",
-        "https://line02w.bkfon-resources.com",
     ]
 
     def __init__(self):
@@ -267,8 +269,6 @@ class FonbetScraper:
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-            "Origin": "https://www.fon.bet",
-            "Referer": "https://www.fon.bet/",
             "User-Agent": (
                 "Mozilla/5.0 (Linux; Android 14; Pixel 8) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
@@ -280,7 +280,9 @@ class FonbetScraper:
         return [self.MIRRORS[(self._mirror_idx + i) % n] for i in range(n)]
 
     async def _fetch_json(self, path: str) -> Optional[dict]:
-        async with AsyncSession(impersonate="chrome120", timeout=15) as session:
+        async with AsyncSession(
+            impersonate="chrome120", verify=False, timeout=15
+        ) as session:
             for idx, base in enumerate(self._ordered_mirrors()):
                 url = f"{base}{path}"
                 try:
@@ -293,19 +295,43 @@ class FonbetScraper:
                             self._mirror_idx = (self._mirror_idx + idx) % len(self.MIRRORS)
                             return data
                 except Exception as e:
-                    logger.warning(f"Mirror {base} failed: {e}")
+                    logger.warning(f"Mirror {base}{path} failed: {e}")
         return None
 
     async def fetch_full_line(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         data = await self._fetch_json("/events/listBase?lang=ru&scopeMarket=1600")
+        if not data or not data.get("events"):
+            data = await self._fetch_json("/events/list?lang=ru&scopeMarket=1600")
         if not data:
             return [], []
 
         sports_map: Dict[int, dict] = {}
+        football_comp_ids: set[int] = {1}
+
         for s in data.get("sports") or []:
             sid = s.get("id")
-            if sid is not None:
-                sports_map[int(sid)] = s
+            if sid is None:
+                continue
+            sid_int = int(sid)
+            sports_map[sid_int] = s
+
+            parent_id = s.get("parentId")
+            parent_ids = s.get("parentIds") or []
+            s_name = str(s.get("name") or "").lower()
+            if (
+                sid_int == 1
+                or parent_id == 1
+                or 1 in parent_ids
+                or s.get("sportCategoryId") == 1
+                or s_name == "футбол"
+            ):
+                football_comp_ids.add(sid_int)
+
+        # Второй проход на случай вложенных подкатегорий
+        for s in data.get("sports") or []:
+            sid = s.get("id")
+            if sid is not None and s.get("parentId") in football_comp_ids:
+                football_comp_ids.add(int(sid))
 
         misc_map: Dict[int, dict] = {}
         for m in data.get("eventMiscs") or []:
@@ -324,13 +350,12 @@ class FonbetScraper:
         now_ts = int(time.time())
 
         for ev in data.get("events") or []:
-            if ev.get("level") != 1:
+            # Пропускаем статистические подсобытия (угловые, жёлтые карточки и т.д.)
+            if ev.get("parentId"):
                 continue
 
             sport_id = ev.get("sportId")
-            comp = sports_map.get(int(sport_id)) if sport_id is not None else None
-            root_sport_id = comp.get("parentId") if comp else None
-            if sport_id != 1 and root_sport_id != 1:
+            if sport_id is None or int(sport_id) not in football_comp_ids:
                 continue
 
             t1 = str(ev.get("team1") or "").strip()
@@ -338,7 +363,7 @@ class FonbetScraper:
             if not t1 or not t2:
                 continue
 
-            # Исключаем киберфутбол / виртуальные лиги при необходимости, оставляя реальный футбол
+            comp = sports_map.get(int(sport_id))
             league_name = str(comp.get("name") if comp else "Футбол").strip()
             if "кибер" in league_name.lower() or "esports" in league_name.lower():
                 continue
@@ -383,6 +408,9 @@ class FonbetScraper:
                 prematch_matches.append(match_obj)
 
         prematch_matches.sort(key=lambda x: x.get("start_time", 0))
+        logger.info(
+            f"Fonbet parsed: {len(live_matches)} live, {len(prematch_matches)} prematch"
+        )
         return live_matches, prematch_matches[:80]
 
     async def fetch_event_details(self, match_id: str) -> Optional[Dict[str, Any]]:
@@ -571,7 +599,6 @@ async def settle_match_bets(
             else (round(amount, 2) if result == "void" else 0.0)
         )
 
-        # Перевод выплаты в базовую валюту баланса (Stars)
         payout_stars = (
             round(payout / STAR_TO_RUB, 2) if norm["currency"] == "RUB" else payout
         )
@@ -788,6 +815,11 @@ async def cmd_start(message: Message, command: CommandObject):
                     )
                 except Exception:
                     pass
+    else:
+        await db.patch(
+            f"users/{uid}",
+            {"name": u.first_name or existing.get("name", "Игрок"), "username": u.username or ""},
+        )
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -801,7 +833,7 @@ async def cmd_start(message: Message, command: CommandObject):
     )
     await message.answer(
         f"Добро пожаловать в **WINSTARS**, {u.first_name}!\n"
-        f"Live-линия Fonbet, ставки в Telegram Stars и рублях, мгновенный расчёт купонов.",
+        f"Live-линия, ставки в Telegram Stars и рублях, мгновенный расчёт купонов.",
         reply_markup=kb,
         parse_mode="Markdown",
     )
@@ -829,6 +861,7 @@ async def on_successful_payment(message: Message):
         {
             "type": "deposit",
             "method": "Telegram Stars",
+            "currency": "STARS",
             "user_id": uid,
             "amount_stars": stars_paid,
             "amount_rub": round(stars_paid * STAR_TO_RUB, 2),
@@ -1040,7 +1073,7 @@ class BetRequest(BaseModel):
     selection: str
     odd: float
     amount: float
-    currency: str = "STARS"  # STARS или RUB
+    currency: str = "STARS"
 
 
 class InvoiceRequest(BaseModel):
@@ -1053,12 +1086,21 @@ class CashierRequest(BaseModel):
     amount: float
     currency: str = "STARS"
     method: str = "sbp"
+    bank: str = ""
     details: str = ""
 
 
 class PromoRequest(BaseModel):
     user_id: str
     code: str
+
+
+class ChatMessageRequest(BaseModel):
+    user_id: str = ""
+    user: str = "Игрок"
+    username: str = ""
+    photo_url: str = ""
+    text: str
 
 
 class ChatConnectionManager:
@@ -1099,12 +1141,19 @@ async def health_check():
 
 
 @app.get("/api/init/{user_id}")
-async def api_init(user_id: str, name: str = "Игрок"):
+async def api_init(
+    user_id: str,
+    name: str = "Игрок",
+    username: str = "",
+    photo_url: str = "",
+):
     user = await db.get(f"users/{user_id}")
     if not user:
         user = {
             "id": user_id,
             "name": name,
+            "username": username,
+            "photo_url": photo_url,
             "balance": 0.0,
             "referrals": 0,
             "total_bets": 0,
@@ -1113,6 +1162,17 @@ async def api_init(user_id: str, name: str = "Игрок"):
             "created_at": int(time.time()),
         }
         await db.put(f"users/{user_id}", user)
+    else:
+        patch_u: Dict[str, Any] = {}
+        if name and name != "Игрок":
+            patch_u["name"] = name
+        if username:
+            patch_u["username"] = username
+        if photo_url:
+            patch_u["photo_url"] = photo_url
+        if patch_u:
+            await db.patch(f"users/{user_id}", patch_u)
+            user.update(patch_u)
 
     return {
         "user": user,
@@ -1236,8 +1296,8 @@ async def api_user_bets(user_id: str):
 
 @app.post("/api/invoice")
 async def api_create_stars_invoice(req: InvoiceRequest):
-    if req.stars < 1 or req.stars > 50000:
-        raise HTTPException(status_code=400, detail="Укажите от 1 до 50000 ★")
+    if req.stars < 10 or req.stars > 50000:
+        raise HTTPException(status_code=400, detail="Минимальное пополнение 10 ★")
     try:
         link = await bot.create_invoice_link(
             title=f"Пополнение WINSTARS ({req.stars} ★)",
@@ -1260,7 +1320,8 @@ async def api_cashier_deposit(req: CashierRequest):
         "transactions",
         {
             "type": "deposit",
-            "method": "СБП (Rolly Pay)",
+            "method": "Рубли",
+            "currency": "RUB",
             "user_id": req.user_id,
             "amount_rub": req.amount,
             "amount_stars": round(req.amount / STAR_TO_RUB, 2),
@@ -1278,15 +1339,32 @@ async def api_cashier_deposit(req: CashierRequest):
 @app.post("/api/cashier/withdraw")
 async def api_cashier_withdraw(req: CashierRequest):
     cur = req.currency.upper()
-    stars_amt = (
-        round(req.amount / STAR_TO_RUB, 2) if cur == "RUB" else round(req.amount, 2)
-    )
-    if stars_amt < 50:
-        raise HTTPException(status_code=400, detail="Минимальный вывод 50 ★ (75 ₽)")
-
     user = await db.get(f"users/{req.user_id}")
-    if not user or float(user.get("balance", 0)) < stars_amt:
-        raise HTTPException(status_code=400, detail="Недостаточно средств")
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    if cur == "STARS":
+        if req.amount < 1000:
+            raise HTTPException(status_code=400, detail="Минимальный вывод 1000 ★")
+        stars_amt = round(req.amount, 2)
+        rub_amt = round(stars_amt * STAR_TO_RUB, 2)
+        method_label = "Telegram Stars"
+        tg_username = user.get("username", "")
+        details_text = f"@{tg_username}" if tg_username else f"ID {req.user_id}"
+    else:
+        if req.amount < 1500:
+            raise HTTPException(status_code=400, detail="Минимальный вывод 1500 ₽")
+        if not req.details.strip():
+            raise HTTPException(status_code=400, detail="Укажите номер телефона")
+        if not req.bank.strip():
+            raise HTTPException(status_code=400, detail="Выберите банк для вывода")
+        rub_amt = round(req.amount, 2)
+        stars_amt = round(rub_amt / STAR_TO_RUB, 2)
+        method_label = "Рубли"
+        details_text = f"{req.bank} • {req.details.strip()}"
+
+    if float(user.get("balance", 0)) < stars_amt:
+        raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
 
     new_bal = round(float(user["balance"]) - stars_amt, 2)
     await db.patch(f"users/{req.user_id}", {"balance": new_bal})
@@ -1295,20 +1373,31 @@ async def api_cashier_withdraw(req: CashierRequest):
         "transactions",
         {
             "type": "withdraw",
-            "method": req.method,
+            "method": method_label,
+            "currency": cur,
             "user_id": req.user_id,
             "amount_stars": stars_amt,
-            "amount_rub": round(stars_amt * STAR_TO_RUB, 2),
-            "details": req.details,
+            "amount_rub": rub_amt,
+            "bank": req.bank,
+            "details": details_text,
             "status": "pending",
             "created_at": int(time.time()),
         },
     )
+
+    u_name = user.get("name", "Игрок")
+    u_tag = f" (@{user['username']})" if user.get("username") else ""
+    sum_str = f"{stars_amt:.0f} ★" if cur == "STARS" else f"{rub_amt:.0f} ₽ ({stars_amt:.1f} ★)"
+
     for adm in ADMIN_IDS:
         try:
             await bot.send_message(
                 adm,
-                f"Вывод #{tx_id}\nИгрок: `{req.user_id}`\nСумма: {stars_amt} ★ ({stars_amt * STAR_TO_RUB:.0f} ₽)\nРеквизиты: {req.details}",
+                f"Заявка на вывод #{tx_id}\n"
+                f"Игрок: {u_name}{u_tag} (`{req.user_id}`)\n"
+                f"Способ: {method_label}\n"
+                f"Сумма: **{sum_str}**\n"
+                f"Реквизиты: {details_text}",
                 parse_mode="Markdown",
             )
         except Exception:
@@ -1358,8 +1447,9 @@ async def api_promo_activate(req: PromoRequest):
     await db.push(
         "transactions",
         {
-            "type": "promo",
-            "method": f"Промокод {code}",
+            "type": "deposit",
+            "method": "Telegram Stars",
+            "currency": "STARS",
             "user_id": req.user_id,
             "amount_stars": bonus,
             "amount_rub": round(bonus * STAR_TO_RUB, 2),
@@ -1379,12 +1469,60 @@ def normalize_chat_msg(m: dict) -> dict:
         or "Игрок"
     )
     text = m.get("text") or m.get("message") or ""
+    photo_url = m.get("photo_url") or ""
     raw_t = m.get("time") or m.get("timestamp") or m.get("created_at") or ""
     if isinstance(raw_t, (int, float)) and raw_t > 1_000_000_000:
         t_str = datetime.fromtimestamp(int(raw_t), tz=MSK_TZ).strftime("%H:%M")
     else:
         t_str = str(raw_t)
-    return {"user": str(user), "text": str(text), "time": t_str}
+    return {
+        "user_id": str(m.get("user_id") or ""),
+        "user": str(user),
+        "username": str(m.get("username") or ""),
+        "photo_url": str(photo_url),
+        "text": str(text),
+        "time": t_str,
+    }
+
+
+async def save_and_broadcast_chat(data: dict) -> Optional[dict]:
+    text = str(data.get("text", "")).strip()[:300]
+    if not text:
+        return None
+    now_str = datetime.now(MSK_TZ).strftime("%H:%M")
+    user_str = str(data.get("user") or "Игрок")[:32]
+    username_str = str(data.get("username") or "")[:32]
+    photo_url = str(data.get("photo_url") or "")
+    user_id = str(data.get("user_id") or "")
+
+    msg_obj = {
+        "user_id": user_id,
+        "user": user_str,
+        "username": username_str,
+        "photo_url": photo_url,
+        "text": text,
+        "time": now_str,
+        "timestamp": int(time.time()),
+    }
+    await db.push("chat_messages", msg_obj)
+    clean_msg = {
+        "user_id": user_id,
+        "user": user_str,
+        "username": username_str,
+        "photo_url": photo_url,
+        "text": text,
+        "time": now_str,
+    }
+    await chat_manager.broadcast({"type": "message", "message": clean_msg})
+    return clean_msg
+
+
+@app.post("/api/chat/send")
+async def api_chat_send(req: ChatMessageRequest):
+    msg = await save_and_broadcast_chat(req.model_dump())
+    if not msg:
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+    return {"ok": True, "message": msg}
 
 
 @app.websocket("/ws/chat")
@@ -1395,7 +1533,7 @@ async def ws_chat(ws: WebSocket):
         if isinstance(history, dict):
             msgs = [
                 normalize_chat_msg(v)
-                for v in list(history.values())[-30:]
+                for v in list(history.values())[-35:]
                 if isinstance(v, dict)
             ]
             await ws.send_json({"type": "history", "messages": msgs})
@@ -1403,25 +1541,7 @@ async def ws_chat(ws: WebSocket):
         while True:
             raw = await ws.receive_text()
             data = json.loads(raw)
-            text = str(data.get("text", "")).strip()[:300]
-            if not text:
-                continue
-            now_str = datetime.now(MSK_TZ).strftime("%H:%M")
-            user_str = str(data.get("user", "Игрок"))[:24]
-            msg_obj = {
-                "user": user_str,
-                "username": user_str,
-                "text": text,
-                "time": now_str,
-                "timestamp": int(time.time()),
-            }
-            await db.push("chat_messages", msg_obj)
-            await chat_manager.broadcast(
-                {
-                    "type": "message",
-                    "message": {"user": user_str, "text": text, "time": now_str},
-                }
-            )
+            await save_and_broadcast_chat(data)
     except WebSocketDisconnect:
         chat_manager.disconnect(ws)
     except Exception:
