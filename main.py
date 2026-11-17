@@ -1,3215 +1,3121 @@
-import asyncio
-import base64
-import json
-import logging
-import math
-import os
-import re
-import time
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote
-
-import httpx
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import Command, CommandObject
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    LabeledPrice,
-    Message,
-    PreCheckoutQuery,
-    WebAppInfo,
-)
-from curl_cffi.requests import AsyncSession
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("WinStars")
-
-# ================= КОНФИГУРАЦИЯ =================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-BOT_USERNAME = os.getenv("BOT_USERNAME", "WinStarsPlaybot")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://starland-comics.github.io/winstarsbot/")
-FIREBASE_URL = os.getenv(
-    "FIREBASE_URL", "https://winstars-435f1-default-rtdb.firebaseio.com"
-).rstrip("/")
-FIREBASE_SECRET = os.getenv("FIREBASE_SECRET", "")
-ADMIN_IDS = {
-    int(x.strip())
-    for x in os.getenv("ADMIN_IDS", "").split(",")
-    if x.strip().isdigit()
-}
-
-STAR_TO_RUB = 1.5  # 1 ★ = 1.5 ₽
-MSK_TZ = timezone(timedelta(hours=3))
-
-PREMATCH_HORIZON_SEC = 10 * 86400  # 10 дней вперёд
-PREMATCH_GRACE_SEC = 1800          # 30 минут допуска на задержку старта
-
-LINE_CACHE: Dict[str, Any] = {
-    "live": [],
-    "prematch": [],
-    "by_id": {},
-    "updated_at": 0,
-}
-
-LOGO_CACHE: Dict[str, str] = {}
-LOGO_FAIL_TS: Dict[str, float] = {}
-ADMIN_REJECT_STATE: Dict[int, str] = {}
-
-# ================= 1. ЖЁСТКИЙ ФИЛЬТР ЛИГ: ТОЛЬКО НУЖНЫЙ МУЖСКОЙ ФУТБОЛ =================
-FORBIDDEN_LEAGUE_WORDS = (
-    # Другие виды спорта и форматы
-    "гандбол",
-    "handball",
-    "футзал",
-    "futsal",
-    "мини-футбол",
-    "мини футбол",
-    "mini-football",
-    "пляжн",
-    "beach",
-    "3x3",
-    "4x4",
-    "5x5",
-    "6x6",
-    "7x7",
-    "8x8",
-    "3х3",
-    "4х4",
-    "5х5",
-    "6х6",
-    "7х7",
-    "8х8",
-    "индор",
-    "indoor",
-    "сокращ",
-    "по 40",
-    "по 35",
-    "по 30",
-    # Любительские и низшие полупрофессиональные лиги
-    "северн",
-    "northern",
-    "южн",
-    "southern",
-    "истмиан",
-    "истмийск",
-    "isthmian",
-    "национальная лига",
-    "national league",
-    "трофей фа",
-    "трофей фл",
-    "fa trophy",
-    "efl trophy",
-    "rfef",
-    "терсера",
-    "серия c",
-    "серия с",
-    "серия d",
-    "серия д",
-    "serie c",
-    "serie d",
-    # Женский, молодёжный, кибер, любители, статистика
-    "жен",
-    "женщин",
-    "women",
-    "ladies",
-    "fem",
-    "кибер",
-    "esports",
-    "e-football",
-    "efootball",
-    "fifa",
-    "fc 24",
-    "fc 25",
-    "fc 26",
-    "u14",
-    "u15",
-    "u16",
-    "u17",
-    "u18",
-    "u19",
-    "u20",
-    "u21",
-    "u22",
-    "u23",
-    "u-17",
-    "u-18",
-    "u-19",
-    "u-20",
-    "u-21",
-    "u-23",
-    "до 15",
-    "до 16",
-    "до 17",
-    "до 18",
-    "до 19",
-    "до 20",
-    "до 21",
-    "до 23",
-    "юношеск",
-    "молодеж",
-    "молодёж",
-    "youth",
-    "junior",
-    "резерв",
-    "дубл",
-    "любител",
-    "amateur",
-    "регионал",
-    "статистика",
-    "углов",
-    "карточк",
-    "штрафн",
-    "удары",
-    "офсайд",
-    "фолы",
-    "ауты",
-    "сейвы",
-    "пенальти",
-    "штанги",
-    "итоги",
-    "специальн",
-)
-
-FORBIDDEN_TEAM_WORDS = (
-    "(ж)",
-    "(жен)",
-    "women",
-    "u15",
-    "u16",
-    "u17",
-    "u18",
-    "u19",
-    "u20",
-    "u21",
-    "u23",
-    "(мол)",
-    "молодеж",
-    "молодёж",
-    "футзал",
-    "гандбол",
-)
-
-GLOBAL_ALLOWED_TOURNAMENTS = (
-    # Все мужские еврокубки
-    "лига чемпионов",
-    "лига европы",
-    "лига конференций",
-    "суперкубок уефа",
-    # Сборные и крупные международные турниры
-    "лига наций",
-    "чемпионат мира",
-    "чемпионат европы",
-    "кубок африканских наций",
-    "кубок америки",
-    "кубок азии",
-    "золотой кубок",
-    "отборочные матчи",
-    "квалификация",
-    "кубок либертадорес",
-    "южноамериканский кубок",
-    "клубный чемпионат мира",
-    "товарищеские матчи",
-)
-
-COUNTRY_ALLOWED_RULES: Dict[str, Tuple[str, ...]] = {
-    "англия": ("премьер-лига", "чемпионшип", "кубок", "суперкубок"),
-    "испания": ("примера дивизион", "ла лига", "сегунда", "кубок", "суперкубок"),
-    "италия": ("серия a", "серия а", "кубок", "суперкубок"),
-    "германия": ("бундеслига", "кубок", "суперкубок"),
-    "франция": ("лига 1", "кубок", "суперкубок"),
-    "россия": ("премьер-лига", "фнл", "первая лига", "кубок", "суперкубок"),
-    "беларусь": ("высшая лига", "первая лига", "кубок", "суперкубок"),
-    "казахстан": ("премьер-лига", "первая лига", "кубок", "суперкубок"),
-    "украина": ("премьер-лига", "первая лига", "кубок", "суперкубок"),
-    "португалия": ("примейра", "сегунда", "лига 2", "кубок", "суперкубок"),
-    "нидерланды": ("эредивизи", "эрстедивизи", "первый дивизион", "кубок", "суперкубок"),
-    "турция": ("суперлига", "кубок", "суперкубок"),
-    "бельгия": ("про-лига", "высшая лига", "челленджер", "первый дивизион", "кубок", "суперкубок"),
-    "шотландия": ("премьершип", "премьер-лига", "чемпионшип", "кубок", "суперкубок"),
-    "греция": ("суперлига", "суперлига 2", "кубок", "суперкубок"),
-    "австрия": ("бундеслига", "2-я лига", "кубок", "суперкубок"),
-    "швейцария": ("суперлига", "челлендж-лига", "кубок", "суперкубок"),
-    "саудовская аравия": ("про-лига", "премьер-лига", "первый дивизион", "кубок", "суперкубок"),
-    "сша": ("mls", "млс", "кубок", "usl"),
-    "бразилия": ("серия a", "серия а", "серия b", "серия б", "кубок", "суперкубок"),
-    "аргентина": ("примера", "профессиональная лига", "насьональ", "кубок", "суперкубок"),
-}
-
-COUNTRY_FORBIDDEN_SUBS: Dict[str, Tuple[str, ...]] = {
-    "англия": ("северн", "южн", "истмиан", "истмийск", "националь", "1-я лига", "2-я лига", "трофей"),
-    "испания": ("rfef", "федерасьон", "терсера"),
-    "италия": ("серия b", "серия б", "серия c", "серия с", "серия d", "серия д"),
-    "германия": ("2-я бундеслига", "бундеслига 2", "2. бундеслига", "3-я", "региональ"),
-    "франция": ("лига 2", "насьональ"),
-    "турция": ("1-я лига", "2-я лига", "3-я лига"),
-    "россия": ("вторая лига", "дивизион а", "дивизион б", "мфл"),
-    "португалия": ("лига 3",),
-    "шотландия": ("1-я лига", "2-я лига"),
-}
-
-LEAGUE_COUNTRY_EN: Dict[str, Tuple[str, ...]] = {
-    "англия": ("england", "united kingdom"),
-    "испания": ("spain",),
-    "италия": ("italy",),
-    "германия": ("germany",),
-    "франция": ("france",),
-    "россия": ("russia",),
-    "беларусь": ("belarus",),
-    "казахстан": ("kazakhstan",),
-    "украина": ("ukraine",),
-    "португалия": ("portugal",),
-    "нидерланды": ("netherlands",),
-    "турция": ("turkey", "türkiye"),
-    "бельгия": ("belgium",),
-    "шотландия": ("scotland", "united kingdom"),
-    "греция": ("greece",),
-    "австрия": ("austria",),
-    "швейцария": ("switzerland",),
-    "саудовская аравия": ("saudi arabia",),
-    "сша": ("usa", "united states"),
-    "бразилия": ("brazil",),
-    "аргентина": ("argentina",),
-}
-
-
-def detect_league_countries(league_name: str) -> Tuple[str, ...]:
-    l_low = league_name.lower().strip()
-    for ru_country, en_names in LEAGUE_COUNTRY_EN.items():
-        if l_low.startswith(f"{ru_country}.") or l_low.startswith(f"{ru_country} "):
-            return en_names
-    return ()
-
-
-def is_allowed_event(league_name: str, t1: str, t2: str) -> bool:
-    l_low = league_name.lower().strip()
-    if any(w in l_low for w in FORBIDDEN_LEAGUE_WORDS):
-        return False
-
-    t1_low = t1.lower()
-    t2_low = t2.lower()
-    if any(w in t1_low or w in t2_low for w in FORBIDDEN_TEAM_WORDS):
-        return False
-
-    if any(g in l_low for g in GLOBAL_ALLOWED_TOURNAMENTS):
-        return True
-
-    for country, allowed_subs in COUNTRY_ALLOWED_RULES.items():
-        if l_low.startswith(f"{country}.") or l_low.startswith(f"{country} "):
-            bad_subs = COUNTRY_FORBIDDEN_SUBS.get(country, ())
-            if any(bad in l_low for bad in bad_subs):
-                return False
-            return any(sub in l_low for sub in allowed_subs)
-
-    return False
-
-
-# ================= 2. КРУГЛЫЕ ФЛАГИ СБОРНЫХ (CIRCLE-FLAGS) =================
-NATIONAL_TEAM_ISO: Dict[str, str] = {
-    "россия": "ru",
-    "казахстан": "kz",
-    "беларусь": "by",
-    "украина": "ua",
-    "армения": "am",
-    "грузия": "ge",
-    "азербайджан": "az",
-    "узбекистан": "uz",
-    "кыргызстан": "kg",
-    "киргизия": "kg",
-    "таджикистан": "tj",
-    "туркменистан": "tm",
-    "молдова": "md",
-    "молдавия": "md",
-    "латвия": "lv",
-    "литва": "lt",
-    "эстония": "ee",
-    "фарерские острова": "fo",
-    "словакия": "sk",
-    "словения": "si",
-    "чехия": "cz",
-    "польша": "pl",
-    "венгрия": "hu",
-    "румыния": "ro",
-    "болгария": "bg",
-    "сербия": "rs",
-    "хорватия": "hr",
-    "босния и герцеговина": "ba",
-    "черногория": "me",
-    "северная македония": "mk",
-    "албания": "al",
-    "косово": "xk",
-    "греция": "gr",
-    "турция": "tr",
-    "кипр": "cy",
-    "испания": "es",
-    "франция": "fr",
-    "германия": "de",
-    "италия": "it",
-    "англия": "gb-eng",
-    "шотландия": "gb-sct",
-    "уэльс": "gb-wls",
-    "северная ирландия": "gb-nir",
-    "ирландия": "ie",
-    "португалия": "pt",
-    "нидерланды": "nl",
-    "голландия": "nl",
-    "бельгия": "be",
-    "швейцария": "ch",
-    "австрия": "at",
-    "дания": "dk",
-    "швеция": "se",
-    "норвегия": "no",
-    "финляндия": "fi",
-    "исландия": "is",
-    "люксембург": "lu",
-    "мальта": "mt",
-    "андорра": "ad",
-    "сан-марино": "sm",
-    "лихтенштейн": "li",
-    "гибралтар": "gi",
-    "израиль": "il",
-    "бразилия": "br",
-    "аргентина": "ar",
-    "уругвай": "uy",
-    "колумбия": "co",
-    "чили": "cl",
-    "перу": "pe",
-    "эквадор": "ec",
-    "венесуэла": "ve",
-    "парагвай": "py",
-    "боливия": "bo",
-    "сша": "us",
-    "канада": "ca",
-    "мексика": "mx",
-    "коста-рика": "cr",
-    "панама": "pa",
-    "ямайка": "jm",
-    "гондурас": "hn",
-    "сальвадор": "sv",
-    "гватемала": "gt",
-    "куба": "cu",
-    "гренада": "gd",
-    "гваделупа": "gp",
-    "бермуды": "bm",
-    "бермудские острова": "bm",
-    "мартиника": "mq",
-    "французская гвиана": "gf",
-    "кюрасао": "cw",
-    "суринам": "sr",
-    "тринидад и тобаго": "tt",
-    "гаити": "ht",
-    "доминиканская республика": "do",
-    "пуэрто-рико": "pr",
-    "никарагуа": "ni",
-    "белиз": "bz",
-    "гайана": "gy",
-    "аруба": "aw",
-    "барбадос": "bb",
-    "сент-люсия": "lc",
-    "сент-винсент и гренадины": "vc",
-    "антигуа и барбуда": "ag",
-    "сент-китс и невис": "kn",
-    "доминика": "dm",
-    "багамы": "bs",
-    "багамские острова": "bs",
-    "каймановы острова": "ky",
-    "теркс и кайкос": "tc",
-    "британские виргинские острова": "vg",
-    "американские виргинские острова": "vi",
-    "ангилья": "ai",
-    "монтсеррат": "ms",
-    "синт-мартен": "sx",
-    "сен-мартен": "mf",
-    "бонэйр": "bq",
-    "япония": "jp",
-    "южная корея": "kr",
-    "республика корея": "kr",
-    "кндр": "kp",
-    "северная корея": "kp",
-    "китай": "cn",
-    "тайвань": "tw",
-    "китайский тайбэй": "tw",
-    "гонконг": "hk",
-    "макао": "mo",
-    "австралия": "au",
-    "новая зеландия": "nz",
-    "иран": "ir",
-    "саудовская аравия": "sa",
-    "катар": "qa",
-    "оаэ": "ae",
-    "ирак": "iq",
-    "иордания": "jo",
-    "оман": "om",
-    "бахрейн": "bh",
-    "кувейт": "kw",
-    "сирия": "sy",
-    "ливан": "lb",
-    "палестина": "ps",
-    "йемен": "ye",
-    "таиланд": "th",
-    "вьетнам": "vn",
-    "индонезия": "id",
-    "малайзия": "my",
-    "сингапур": "sg",
-    "филиппины": "ph",
-    "мьянма": "mm",
-    "камбоджа": "kh",
-    "лаос": "la",
-    "бруней": "bn",
-    "восточный тимор": "tl",
-    "индия": "in",
-    "непал": "np",
-    "бутан": "bt",
-    "бангладеш": "bd",
-    "шри-ланка": "lk",
-    "мальдивы": "mv",
-    "афганистан": "af",
-    "монголия": "mn",
-    "гуам": "gu",
-    "фиджи": "fj",
-    "новая каледония": "nc",
-    "таити": "pf",
-    "папуа — новая гвинея": "pg",
-    "папуа - новая гвинея": "pg",
-    "соломоновы острова": "sb",
-    "вануату": "vu",
-    "самоа": "ws",
-    "американское самоа": "as",
-    "тонга": "to",
-    "острова кука": "ck",
-    "сомали": "so",
-    "гана": "gh",
-    "судан": "sd",
-    "южный судан": "ss",
-    "сенегал": "sn",
-    "зимбабве": "zw",
-    "экваториальная гвинея": "gq",
-    "марокко": "ma",
-    "египет": "eg",
-    "алжир": "dz",
-    "тунис": "tn",
-    "нигерия": "ng",
-    "кот-д'ивуар": "ci",
-    "камерун": "cm",
-    "мали": "ml",
-    "буркина-фасо": "bf",
-    "др конго": "cd",
-    "конго": "cg",
-    "юар": "za",
-    "замбия": "zm",
-    "гвинея": "gn",
-    "гвинея-бисау": "gw",
-    "кабо-верде": "cv",
-    "габон": "ga",
-    "бенин": "bj",
-    "уганда": "ug",
-    "кения": "ke",
-    "танзания": "tz",
-    "ангола": "ao",
-    "мозамбик": "mz",
-    "намибия": "na",
-    "мадагаскар": "mg",
-    "мавритания": "mr",
-    "гамбия": "gm",
-    "того": "tg",
-    "нигер": "ne",
-    "ливия": "ly",
-    "эфиопия": "et",
-    "руанда": "rw",
-    "бурунди": "bi",
-    "малави": "mw",
-    "ботсвана": "bw",
-    "лесото": "ls",
-    "эсватини": "sz",
-    "либерия": "lr",
-    "сьерра-леоне": "sl",
-    "цар": "cf",
-    "центральноафриканская республика": "cf",
-    "чад": "td",
-    "джибути": "dj",
-    "эритрея": "er",
-    "коморы": "km",
-    "маврикий": "mu",
-    "сейшелы": "sc",
-    "сан-томе и принсипи": "st",
-}
-
-TEAM_ALIASES_EN: Dict[str, str] = {
-    "крылья советов": "Krylya Sovetov",
-    "пари нн": "Pari Nizhny Novgorod",
-    "пари нижний новгород": "Pari Nizhny Novgorod",
-    "родина": "Rodina Moscow",
-    "родина москва": "Rodina Moscow",
-    "факел": "Fakel Voronezh",
-    "чайка": "Chayka Peschanokopskoye",
-    "сокол": "Sokol Saratov",
-    "сокол саратов": "Sokol Saratov",
-    "урал": "Ural Yekaterinburg",
-    "зенит": "Zenit St. Petersburg",
-    "спартак москва": "Spartak Moscow",
-    "цска москва": "CSKA Moscow",
-    "локомотив москва": "Lokomotiv Moscow",
-    "динамо москва": "Dynamo Moscow",
-    "динамо махачкала": "Dynamo Makhachkala",
-    "арсенал тула": "Arsenal Tula",
-    "торпедо москва": "Torpedo Moscow",
-    "черноморец новороссийск": "Chernomorets Novorossiysk",
-    "черноморец": "Chernomorets Novorossiysk",
-    "акрон": "Akron Tolyatti",
-    "бавария": "Bayern Munich",
-    "боруссия дортмунд": "Borussia Dortmund",
-    "боруссия менхенгладбах": "Borussia Monchengladbach",
-    "байер": "Bayer Leverkusen",
-    "байер леверкузен": "Bayer Leverkusen",
-    "рб лейпциг": "RB Leipzig",
-    "кёльн": "FC Koln",
-    "кельн": "FC Koln",
-    "псж": "Paris Saint-Germain",
-    "пари сен-жермен": "Paris Saint-Germain",
-    "интер": "Inter Milan",
-    "милан": "AC Milan",
-    "атлетико мадрид": "Atletico Madrid",
-    "атлетик бильбао": "Athletic Club",
-    "реал сосьедад": "Real Sociedad",
-    "сельта 2": "Celta Vigo B",
-    "альбасете": "Albacete Balompie",
-    "депортиво ла-корунья": "Deportivo La Coruna",
-    "расинг сантандер": "Racing Santander",
-    "расинг ферроль": "Racing Ferrol",
-    "спортинг хихон": "Sporting Gijon",
-    "реал сарагоса": "Real Zaragoza",
-    "реал овьедо": "Real Oviedo",
-    "црвена звезда": "Red Star Belgrade",
-    "интер майами": "Inter Miami CF",
-    "аль-хиляль": "Al Hilal",
-    "аль-наср": "Al Nassr",
-    "аль-иттихад": "Al Ittihad",
-    "аль-ахли": "Al Ahli",
-}
-
-GENERIC_FOOTBALL_TOKENS = {
-    "fc",
-    "fk",
-    "cf",
-    "cd",
-    "rcd",
-    "ud",
-    "sd",
-    "ac",
-    "as",
-    "ss",
-    "us",
-    "sc",
-    "sv",
-    "vfl",
-    "vfb",
-    "tsg",
-    "rb",
-    "bsc",
-    "sk",
-    "nk",
-    "gnk",
-    "hnk",
-    "pfc",
-    "cska",
-    "real",
-    "dynamo",
-    "dinamo",
-    "spartak",
-    "torpedo",
-    "lokomotiv",
-    "arsenal",
-    "sporting",
-    "racing",
-    "atletico",
-    "athletic",
-    "inter",
-    "olympique",
-    "borussia",
-    "united",
-    "city",
-    "club",
-    "deportivo",
-    "balompie",
-    "calcio",
-    "football",
-    "st",
-    "san",
-    "la",
-    "de",
-    "del",
-    "el",
-    "al",
-    "ii",
-    "b",
-}
-
-CYR_TO_LAT_MAP = {
-    "а": "a",
-    "б": "b",
-    "в": "v",
-    "г": "g",
-    "д": "d",
-    "е": "e",
-    "ё": "e",
-    "ж": "zh",
-    "з": "z",
-    "и": "i",
-    "й": "y",
-    "к": "k",
-    "л": "l",
-    "м": "m",
-    "н": "n",
-    "о": "o",
-    "п": "p",
-    "р": "r",
-    "с": "s",
-    "т": "t",
-    "у": "u",
-    "ф": "f",
-    "х": "kh",
-    "ц": "ts",
-    "ч": "ch",
-    "ш": "sh",
-    "щ": "shch",
-    "ъ": "",
-    "ы": "y",
-    "ь": "",
-    "э": "e",
-    "ю": "yu",
-    "я": "ya",
-}
-
-
-def ru_to_football_latin(name: str) -> str:
-    s = re.sub(r"\b(фк|пфк|мфк)\b", "", name, flags=re.IGNORECASE).strip()
-    s = re.sub(r"\s+(?:2|II|Б)$", " B", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bДинамо\b", "Dynamo", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bЦСКА\b", "CSKA", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bСпартак\b", "Spartak", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bЛокомотив\b", "Lokomotiv", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bТорпедо\b", "Torpedo", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bЗенит\b", "Zenit", s, flags=re.IGNORECASE)
-
-    out = []
-    for ch in s:
-        low = ch.lower()
-        if low in CYR_TO_LAT_MAP:
-            rep = CYR_TO_LAT_MAP[low]
-            out.append(rep.capitalize() if ch.isupper() and rep else rep)
-        else:
-            out.append(ch)
-    return re.sub(r"\s+", " ", "".join(out)).strip()
-
-
-def normalize_tokens(name: str) -> List[str]:
-    s = name.lower()
-    s = s.replace("ё", "e").replace("ü", "u").replace("ö", "o").replace("ä", "a")
-    s = s.replace("é", "e").replace("á", "a").replace("í", "i").replace("ó", "o").replace("ú", "u")
-    s = s.replace("ñ", "n").replace("ç", "c").replace("ş", "s").replace("ğ", "g").replace("ı", "i")
-    s = re.sub(r"[^a-z0-9\s]", " ", s)
-    return [t for t in s.split() if t]
-
-
-def has_reserve_marker(name: str) -> bool:
-    tokens = set(normalize_tokens(name))
-    if re.search(r"(?:^|\s)(?:2|II|B|Б)$", name.strip(), flags=re.IGNORECASE):
-        return True
-    return bool(tokens & {"castilla", "fortuna", "vetusta", "promesas", "mirandilla", "ii"})
-
-
-def is_valid_team_candidate(
-    query_latin: str,
-    candidate_name: str,
-    expected_countries: Tuple[str, ...] = (),
-    candidate_country: str = "",
-) -> bool:
-    if not candidate_name:
-        return False
-
-    if expected_countries and candidate_country:
-        c_low = candidate_country.lower().strip()
-        if not any(exp in c_low or c_low in exp for exp in expected_countries):
-            return False
-
-    if has_reserve_marker(query_latin) != has_reserve_marker(candidate_name):
-        return False
-
-    q_tokens = normalize_tokens(query_latin)
-    c_tokens = normalize_tokens(candidate_name)
-    if not q_tokens or not c_tokens:
-        return False
-
-    distinctive_q = [t for t in q_tokens if len(t) >= 4 and t not in GENERIC_FOOTBALL_TOKENS]
-    for dq in distinctive_q:
-        matched_token = any(
-            dq == ct
-            or dq in ct
-            or ct in dq
-            or SequenceMatcher(None, dq, ct).ratio() >= 0.82
-            for ct in c_tokens
-        )
-        if not matched_token:
-            return False
-
-    q_core = " ".join(t for t in q_tokens if t not in {"fc", "fk", "cf", "cd", "ac", "sc"})
-    c_core = " ".join(t for t in c_tokens if t not in {"fc", "fk", "cf", "cd", "ac", "sc"})
-    if not q_core or not c_core:
-        q_core = " ".join(q_tokens)
-        c_core = " ".join(c_tokens)
-
-    if q_core == c_core or q_core in c_core or c_core in q_core:
-        return True
-
-    ratio = SequenceMatcher(None, q_core, c_core).ratio()
-    return ratio >= 0.72
-
-
-def b64_key(raw: str) -> str:
-    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
-
-
-def get_instant_logo(team_name: str) -> str:
-    clean = re.sub(r"\s*\([^)]*\)", "", team_name).strip()
-    if not clean:
-        return ""
-    if clean in LOGO_CACHE:
-        return LOGO_CACHE[clean]
-
-    low = clean.lower()
-    if low in NATIONAL_TEAM_ISO:
-        url = f"https://hatscripts.github.io/circle-flags/flags/{NATIONAL_TEAM_ISO[low]}.svg"
-        LOGO_CACHE[clean] = url
-        return url
-
-    return ""
-
-
-# ================= FIREBASE REALTIME DB =================
-class FirebaseDB:
-    def __init__(self, base_url: str, secret: str = ""):
-        self.base_url = base_url
-        self.secret = secret
-        self.client = httpx.AsyncClient(timeout=15.0)
-
-    def _url(self, path: str) -> str:
-        clean = path.strip("/")
-        url = f"{self.base_url}/{clean}.json"
-        if self.secret:
-            url += f"?auth={self.secret}"
-        return url
-
-    async def get(self, path: str) -> Any:
-        try:
-            r = await self.client.get(self._url(path))
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            logger.error(f"Firebase GET {path} error: {e}")
-            return None
-
-    async def put(self, path: str, data: Any) -> bool:
-        try:
-            r = await self.client.put(self._url(path), json=data)
-            r.raise_for_status()
-            return True
-        except Exception as e:
-            logger.error(f"Firebase PUT {path} error: {e}")
-            return False
-
-    async def patch(self, path: str, data: Dict[str, Any]) -> bool:
-        try:
-            r = await self.client.patch(self._url(path), json=data)
-            r.raise_for_status()
-            return True
-        except Exception as e:
-            logger.error(f"Firebase PATCH {path} error: {e}")
-            return False
-
-    async def push(self, path: str, data: Any) -> Optional[str]:
-        try:
-            r = await self.client.post(self._url(path), json=data)
-            r.raise_for_status()
-            res = r.json()
-            return res.get("name") if isinstance(res, dict) else None
-        except Exception as e:
-            logger.error(f"Firebase PUSH {path} error: {e}")
-            return None
-
-    async def delete(self, path: str) -> bool:
-        try:
-            r = await self.client.delete(self._url(path))
-            r.raise_for_status()
-            return True
-        except Exception as e:
-            logger.error(f"Firebase DELETE {path} error: {e}")
-            return False
-
-
-db = FirebaseDB(FIREBASE_URL, FIREBASE_SECRET)
-
-
-# ================= ТОЧНЫЙ РЕЗОЛВЕР ЛОГОТИПОВ =================
-async def load_logo_cache_from_db():
-    saved = await db.get("team_logos_v2")
-    if isinstance(saved, dict):
-        for k, v in saved.items():
-            if isinstance(v, dict) and v.get("name") and v.get("url"):
-                name = v["name"]
-                if name.lower() in NATIONAL_TEAM_ISO:
-                    LOGO_CACHE[name] = (
-                        f"https://hatscripts.github.io/circle-flags/flags/"
-                        f"{NATIONAL_TEAM_ISO[name.lower()]}.svg"
-                    )
-                else:
-                    LOGO_CACHE[name] = v["url"]
-    logger.info(f"Loaded {len(LOGO_CACHE)} verified team logos from Firebase (v2)")
-
-
-async def build_team_queries(session: AsyncSession, clean_name: str) -> List[str]:
-    low = clean_name.lower().strip()
-    queries: List[str] = []
-
-    if low in TEAM_ALIASES_EN:
-        queries.append(TEAM_ALIASES_EN[low])
-
-    translit = ru_to_football_latin(clean_name)
-    if translit and translit not in queries:
-        queries.append(translit)
-
-    if not re.fullmatch(r"[A-Za-z0-9\s\.\-&']+", clean_name):
-        try:
-            norm_ru = re.sub(r"\s+(?:2|II|Б)$", " B", clean_name, flags=re.IGNORECASE)
-            url = (
-                "https://translate.googleapis.com/translate_a/single"
-                f"?client=gtx&sl=ru&tl=en&dt=t&q={quote(norm_ru)}"
-            )
-            r = await session.get(url, timeout=4)
-            if r.status_code == 200:
-                arr = r.json()
-                if isinstance(arr, list) and arr and isinstance(arr[0], list):
-                    tr = "".join(seg[0] for seg in arr[0] if seg and seg[0]).strip()
-                    if tr and tr not in queries:
-                        queries.append(tr)
-        except Exception:
-            pass
-
-    return queries
-
-
-async def verify_image_url(session: AsyncSession, url: str) -> bool:
-    if not url or not url.startswith("http"):
-        return False
-    try:
-        r = await session.get(url, timeout=5)
-        if r.status_code == 200:
-            ctype = str(r.headers.get("content-type") or "").lower()
-            if "image" in ctype and len(r.content) > 300:
-                return True
-    except Exception:
-        pass
-    return False
-
-
-async def search_sofascore_logo(
-    session: AsyncSession, queries: List[str], expected_countries: Tuple[str, ...]
-) -> str:
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Origin": "https://www.sofascore.com",
-        "Referer": "https://www.sofascore.com/",
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>WINSTARS</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #090710;
+      --bg-elevated: #110e1c;
+      --bg-card: #151123;
+      --bg-surface: #1d1830;
+      --bg-surface-active: #272040;
+      --border: rgba(255, 255, 255, 0.07);
+      --border-strong: rgba(255, 255, 255, 0.13);
+      --border-accent: rgba(139, 92, 246, 0.5);
+      --accent: #8b5cf6;
+      --accent-deep: #6d28d9;
+      --accent-soft: rgba(139, 92, 246, 0.16);
+      --accent-grad: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.14);
+      --red: #f43f5e;
+      --red-soft: rgba(244, 63, 94, 0.14);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.14);
+      --text: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --header-h: 58px;
+      --nav-h: 64px;
     }
-    for q in queries:
-        try:
-            url = f"https://api.sofascore.com/api/v1/search/teams?q={quote(q)}"
-            r = await session.get(url, headers=headers, timeout=6)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            teams = data.get("teams") if isinstance(data, dict) else None
-            if not isinstance(teams, list):
-                continue
-            for t in teams[:8]:
-                sport_slug = str((t.get("sport") or {}).get("slug") or "").lower()
-                if sport_slug and sport_slug != "football":
-                    continue
-                if str(t.get("gender") or "").upper() == "F":
-                    continue
-                cand_name = str(t.get("name") or "")
-                cand_country = str((t.get("country") or {}).get("name") or "")
-                if is_valid_team_candidate(q, cand_name, expected_countries, cand_country):
-                    tid = t.get("id")
-                    if tid:
-                        img_url = f"https://api.sofascore.app/api/v1/team/{tid}/image"
-                        if await verify_image_url(session, img_url):
-                            return img_url
-        except Exception:
-            continue
-    return ""
 
-
-async def search_fotmob_logo(session: AsyncSession, queries: List[str]) -> str:
-    endpoints = (
-        "https://apigw.fotmob.com/searchapi/suggest?lang=en&term=",
-        "https://www.fotmob.com/api/data/search/suggest?lang=en&term=",
-    )
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.fotmob.com/",
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
     }
-    for q in queries:
-        for base in endpoints:
-            try:
-                r = await session.get(f"{base}{quote(q)}", headers=headers, timeout=6)
-                if r.status_code != 200:
-                    continue
-                data = r.json()
-                if not isinstance(data, list):
-                    continue
-                for group in data:
-                    for sug in group.get("suggestions") or []:
-                        if sug.get("type") != "team" or not sug.get("id"):
-                            continue
-                        cand_name = str(sug.get("name") or "")
-                        if is_valid_team_candidate(q, cand_name):
-                            tid = sug["id"]
-                            img_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png"
-                            if await verify_image_url(session, img_url):
-                                return img_url
-                break
-            except Exception:
-                continue
-    return ""
 
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      overflow-x: hidden;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
 
-async def search_espn_logo(session: AsyncSession, queries: List[str]) -> str:
-    for q in queries:
-        try:
-            url = (
-                "https://site.web.api.espn.com/apis/common/v3/search"
-                f"?query={quote(q)}&limit=8&type=team"
-            )
-            r = await session.get(url, timeout=6)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            items = data.get("items") if isinstance(data, dict) else None
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                if str(item.get("sport") or "").lower() != "soccer":
-                    continue
-                cand_name = str(item.get("displayName") or item.get("name") or "")
-                if is_valid_team_candidate(q, cand_name):
-                    logos = item.get("logos") or []
-                    img_url = (
-                        logos[0].get("href")
-                        if logos and isinstance(logos[0], dict)
-                        else ""
-                    )
-                    if not img_url and item.get("id"):
-                        img_url = f"https://a.espncdn.com/i/teamlogos/soccer/500/{item['id']}.png"
-                    if img_url and await verify_image_url(session, img_url):
-                        return img_url
-        except Exception:
-            continue
-    return ""
+    body {
+      padding-top: calc(var(--header-h) + 6px);
+      padding-bottom: calc(var(--nav-h) + 86px);
+    }
 
+    svg.ico {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.85;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+      display: block;
+    }
 
-async def search_sportsdb_logo(
-    session: AsyncSession, queries: List[str], expected_countries: Tuple[str, ...]
-) -> str:
-    for q in queries:
-        try:
-            url = f"https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t={quote(q)}"
-            r = await session.get(url, timeout=6)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            teams = data.get("teams") if isinstance(data, dict) else None
-            if not isinstance(teams, list):
-                continue
-            for t in teams[:6]:
-                if str(t.get("strSport") or "").lower() != "soccer":
-                    continue
-                if str(t.get("strGender") or "").lower() == "female":
-                    continue
-                cand_name = str(t.get("strTeam") or "")
-                cand_country = str(t.get("strCountry") or "")
-                if is_valid_team_candidate(q, cand_name, expected_countries, cand_country):
-                    badge = t.get("strBadge") or t.get("strTeamBadge") or ""
-                    if badge and await verify_image_url(session, badge):
-                        return badge
-        except Exception:
-            continue
-    return ""
+    svg.ico-sm {
+      width: 14px;
+      height: 14px;
+      stroke-width: 2;
+    }
 
+    svg.ico-xs {
+      width: 12px;
+      height: 12px;
+      stroke-width: 2.1;
+    }
 
-async def resolve_team_logo(
-    team_name: str,
-    league_name: str = "",
-    session: Optional[AsyncSession] = None,
-) -> str:
-    instant = get_instant_logo(team_name)
-    if instant:
-        return instant
+    /* ===== TOP HEADER ===== */
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--header-h);
+      z-index: 800;
+      background: rgba(9, 7, 16, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      gap: 6px;
+    }
 
-    clean = re.sub(r"\s*\([^)]*\)", "", team_name).strip()
-    if not clean:
-        return ""
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
 
-    last_fail = LOGO_FAIL_TS.get(clean, 0)
-    if time.time() - last_fail < 900:
-        return ""
+    .brand-mark {
+      width: 27px;
+      height: 27px;
+      border-radius: 8px;
+      background: var(--accent-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(109, 40, 217, 0.45);
+      flex-shrink: 0;
+    }
 
-    expected_countries = detect_league_countries(league_name)
+    .brand-name {
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: 0.7px;
+      color: #fff;
+    }
 
-    async def _search_all(s: AsyncSession) -> Tuple[str, str]:
-        queries = await build_team_queries(s, clean)
-        if not queries:
-            return "", ""
+    .topbar-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
 
-        url = await search_sofascore_logo(s, queries, expected_countries)
-        if not url:
-            url = await search_fotmob_logo(s, queries)
-        if not url:
-            url = await search_espn_logo(s, queries)
-        if not url:
-            url = await search_sportsdb_logo(s, queries, expected_countries)
-        return url, queries[0]
+    /* Prominent Currency Switcher */
+    .cur-switch {
+      display: flex;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-accent);
+      border-radius: 10px;
+      padding: 2px;
+      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.14);
+    }
 
-    if session is not None:
-        logo_url, primary_en = await _search_all(session)
-    else:
-        async with AsyncSession(impersonate="chrome120", verify=False, timeout=8) as s:
-            logo_url, primary_en = await _search_all(s)
+    .cur-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-weight: 700;
+      font-size: 10.5px;
+      letter-spacing: 0.2px;
+      padding: 5px 8px;
+      border-radius: 7px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      transition: 0.16s ease;
+    }
 
-    if logo_url:
-        LOGO_CACHE[clean] = logo_url
-        await db.put(
-            f"team_logos_v2/{b64_key(clean)}",
-            {"name": clean, "en": primary_en, "url": logo_url},
-        )
-        return logo_url
+    .cur-btn.active {
+      background: var(--accent-grad);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(109, 40, 217, 0.45);
+    }
 
-    LOGO_FAIL_TS[clean] = time.time()
-    return ""
+    .balance-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 4px 4px 4px 9px;
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
 
+    .balance-pill:active {
+      transform: scale(0.97);
+    }
 
-# ================= 3. ПАРСЕР FONBET =================
-def format_fonbet_time(ev: dict, misc: dict, is_live: bool) -> str:
-    start_ts = ev.get("startTime") or 0
-    if not is_live:
-        if isinstance(start_ts, (int, float)) and start_ts > 1_000_000_000:
-            dt = datetime.fromtimestamp(int(start_ts), tz=MSK_TZ)
-            return dt.strftime("%d.%m %H:%M")
-        return "Скоро"
+    .balance-val {
+      font-weight: 700;
+      font-size: 12px;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
 
-    comment = str(
-        misc.get("comment") or ev.get("comment") or misc.get("liveStatus") or ""
-    ).lower()
-    if any(w in comment for w in ("перерыв", "half", "break", "ht")):
-        return "Перерыв"
+    .balance-plus {
+      width: 21px;
+      height: 21px;
+      border-radius: 6px;
+      background: var(--accent-grad);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-    timer_sec = misc.get("timerSeconds")
-    if timer_sec is None:
-        timer_sec = ev.get("timerSeconds")
-    if isinstance(timer_sec, (int, float)) and timer_sec > 0:
-        minute = int(timer_sec) // 60 + 1
-        return f"90+{minute - 90}'" if minute > 90 else f"{minute}'"
+    /* ===== PAGES ===== */
+    .page {
+      display: none;
+      padding: 10px 14px;
+      max-width: 620px;
+      margin: 0 auto;
+    }
 
-    timer_str = str(misc.get("timer") or ev.get("timer") or "").strip()
-    if timer_str:
-        m_plus = re.match(r"^(\d+\+\d+)", timer_str)
-        if m_plus:
-            return f"{m_plus.group(1)}'"
-        m_mmss = re.match(r"^(\d+):(\d+)$", timer_str)
-        if m_mmss:
-            minute = int(m_mmss.group(1)) + 1
-            return f"90+{minute - 90}'" if minute > 90 else f"{minute}'"
+    .page.active {
+      display: block;
+    }
 
-    m_comment = re.search(r"(\d+)\s*мин", comment)
-    if m_comment:
-        return f"{m_comment.group(1)}'"
+    /* ===== SEGMENTED TABS ===== */
+    .seg-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      padding: 4px;
+      border-radius: 12px;
+      margin-bottom: 10px;
+    }
 
-    if isinstance(start_ts, (int, float)) and start_ts > 1_000_000_000:
-        elapsed_min = int((time.time() - int(start_ts)) // 60)
-        if 0 <= elapsed_min <= 46:
-            return f"{max(1, elapsed_min)}'"
-        if 47 <= elapsed_min <= 61:
-            return "Перерыв"
-        if 62 <= elapsed_min <= 112:
-            game_min = elapsed_min - 15
-            return f"90+{game_min - 90}'" if game_min > 90 else f"{game_min}'"
+    .seg-tab {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 9px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: 0.15s ease;
+    }
 
-    return "1'"
+    .seg-tab.active {
+      background: var(--bg-surface);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
 
+    .live-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red);
+      animation: pulse 1.5s infinite;
+    }
 
-def parse_fonbet_factors(
-    factors_list: List[dict],
-    half1_factors: Optional[List[dict]] = None,
-    half2_factors: Optional[List[dict]] = None,
-) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
-    odds_1x2 = {"P1": 0.0, "X": 0.0, "P2": 0.0}
-    dc_outcomes: List[Dict[str, Any]] = []
-    totals_outcomes: List[Dict[str, Any]] = []
-    handicap_outcomes: List[Dict[str, Any]] = []
-    btts_full_outcomes: List[Dict[str, Any]] = []
-    btts_1h_outcomes: List[Dict[str, Any]] = []
-    btts_2h_outcomes: List[Dict[str, Any]] = []
-    other_outcomes: List[Dict[str, Any]] = []
-    seen_labels: set[str] = set()
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
 
-    def add_unique(target: List[Dict[str, Any]], label: str, odd: float):
-        if label not in seen_labels:
-            seen_labels.add(label)
-            target.append({"label": label, "odd": odd})
+    .pill-counter {
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-variant-numeric: tabular-nums;
+    }
 
-    for f_obj in factors_list:
-        fid = f_obj.get("f")
-        val = f_obj.get("v")
-        pt = str(f_obj.get("pt") or "").strip()
-        if val is None:
-            continue
-        try:
-            odd = round(float(val), 2)
-        except (ValueError, TypeError):
-            continue
-        if odd <= 1.0:
-            continue
+    .seg-tab.active .pill-counter {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+    }
 
-        if fid == 921:
-            odds_1x2["P1"] = odd
-        elif fid == 922:
-            odds_1x2["X"] = odd
-        elif fid == 923:
-            odds_1x2["P2"] = odd
-        elif fid == 924:
-            add_unique(dc_outcomes, "1X", odd)
-        elif fid == 1571:
-            add_unique(dc_outcomes, "12", odd)
-        elif fid == 925:
-            add_unique(dc_outcomes, "X2", odd)
-        elif fid == 930 and pt:
-            add_unique(totals_outcomes, f"ТБ {pt}", odd)
-        elif fid == 931 and pt:
-            add_unique(totals_outcomes, f"ТМ {pt}", odd)
-        elif fid in (927, 937) and pt:
-            add_unique(handicap_outcomes, f"Ф1 ({pt})", odd)
-        elif fid in (928, 938) and pt:
-            add_unique(handicap_outcomes, f"Ф2 ({pt})", odd)
-        elif fid == 4241:
-            add_unique(btts_full_outcomes, "ОЗ Да", odd)
-        elif fid == 4242:
-            add_unique(btts_full_outcomes, "ОЗ Нет", odd)
-        elif fid == 1805:
-            add_unique(btts_1h_outcomes, "1Т: ОЗ Да", odd)
-        elif fid == 1806:
-            add_unique(btts_1h_outcomes, "1Т: ОЗ Нет", odd)
-        else:
-            name = str(f_obj.get("name") or "").strip()
-            if name:
-                label = f"{name} {pt}".strip()
-                add_unique(other_outcomes, label, odd)
+    /* ===== SEARCH & LEAGUE PICKER BAR ===== */
+    .filter-toolbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
 
-    for f_obj in half1_factors or []:
-        fid = f_obj.get("f")
-        val = f_obj.get("v")
-        if val is None:
-            continue
-        try:
-            odd = round(float(val), 2)
-        except (ValueError, TypeError):
-            continue
-        if odd <= 1.0:
-            continue
-        if fid in (4241, 1805):
-            add_unique(btts_1h_outcomes, "1Т: ОЗ Да", odd)
-        elif fid in (4242, 1806):
-            add_unique(btts_1h_outcomes, "1Т: ОЗ Нет", odd)
+    .search-wrap {
+      position: relative;
+      min-width: 0;
+    }
 
-    for f_obj in half2_factors or []:
-        fid = f_obj.get("f")
-        val = f_obj.get("v")
-        if val is None:
-            continue
-        try:
-            odd = round(float(val), 2)
-        except (ValueError, TypeError):
-            continue
-        if odd <= 1.0:
-            continue
-        if fid in (4241, 1805):
-            add_unique(btts_2h_outcomes, "2Т: ОЗ Да", odd)
-        elif fid in (4242, 1806):
-            add_unique(btts_2h_outcomes, "2Т: ОЗ Нет", odd)
+    .search-wrap .ico-search {
+      position: absolute;
+      left: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
 
-    markets: List[Dict[str, Any]] = []
-    if odds_1x2["P1"] > 1.0 and odds_1x2["P2"] > 1.0:
-        main_list = [{"label": "П1", "odd": odds_1x2["P1"]}]
-        if odds_1x2["X"] > 1.0:
-            main_list.append({"label": "X", "odd": odds_1x2["X"]})
-        main_list.append({"label": "П2", "odd": odds_1x2["P2"]})
-        markets.append({"title": "Основные исходы", "outcomes": main_list})
+    .search-input {
+      width: 100%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 9px 11px 9px 34px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
 
-    if dc_outcomes:
-        markets.append({"title": "Двойной шанс", "outcomes": dc_outcomes})
-    if totals_outcomes:
-        markets.append({"title": "Тотал голов", "outcomes": totals_outcomes[:8]})
-    if handicap_outcomes:
-        markets.append({"title": "Фора", "outcomes": handicap_outcomes[:6]})
-    if btts_full_outcomes:
-        markets.append({"title": "Обе забьют", "outcomes": btts_full_outcomes})
-    if btts_1h_outcomes:
-        markets.append({"title": "Обе забьют (1-й тайм)", "outcomes": btts_1h_outcomes})
-    if btts_2h_outcomes:
-        markets.append({"title": "Обе забьют (2-й тайм)", "outcomes": btts_2h_outcomes})
-    if other_outcomes:
-        markets.append({"title": "Дополнительные рынки", "outcomes": other_outcomes[:10]})
+    .search-input::placeholder {
+      color: var(--text-muted);
+    }
 
-    return odds_1x2, markets
+    .search-input:focus {
+      border-color: var(--border-accent);
+    }
 
+    .league-picker-btn {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 11px;
+      padding: 0 12px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      max-width: 175px;
+      transition: 0.15s;
+    }
 
-class FonbetScraper:
-    MIRRORS = [
-        "https://line-lb51.bk6bba-resources.com",
-        "https://line-lb52.bk6bba-resources.com",
-        "https://line-lb53.bk6bba-resources.com",
-        "https://line01w.bk6bba-resources.com",
-        "https://line02w.bk6bba-resources.com",
-        "https://line-lb51.bkfon-resources.com",
-        "https://line-lb52.bkfon-resources.com",
-    ]
+    .league-picker-btn.has-filter {
+      background: var(--accent-soft);
+      border-color: var(--border-accent);
+      color: #ddd6fe;
+    }
 
-    def __init__(self):
-        self._mirror_idx = 0
-        self.headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-            "User-Agent": (
-                "Mozilla/5.0 (Linux; Android 14; Pixel 8) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-            ),
+    .league-picker-btn span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ===== LEAGUE GROUP & MATCH CARD ===== */
+    .league-section {
+      margin-bottom: 14px;
+    }
+
+    .league-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 2px 8px;
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    .league-title-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .league-title-left span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .match-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+
+    .match-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .match-meta-left {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .time-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--bg-surface);
+      padding: 3px 7px;
+      border-radius: 6px;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+
+    .time-tag.live {
+      background: var(--red-soft);
+      color: #fda4af;
+    }
+
+    .match-league-inline {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .markets-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: 0.15s;
+    }
+
+    .markets-btn:active {
+      background: var(--bg-surface);
+      color: #fff;
+    }
+
+    .teams-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 11px;
+      cursor: pointer;
+    }
+
+    .team-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .team-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .team-crest {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      font-size: 9.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .team-crest img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .team-label {
+      font-weight: 600;
+      font-size: 13.5px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .team-goals {
+      font-weight: 800;
+      font-size: 14px;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      min-width: 16px;
+      text-align: right;
+    }
+
+    .odds-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .odds-grid.cols-2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .odd-cell {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: inherit;
+      cursor: pointer;
+      transition: 0.14s ease;
+    }
+
+    .odd-cell:active {
+      transform: scale(0.97);
+    }
+
+    .odd-cell .k {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .odd-cell .v {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .odd-cell.selected {
+      background: var(--accent-grad);
+      border-color: rgba(255, 255, 255, 0.25);
+      box-shadow: 0 4px 14px rgba(109, 40, 217, 0.4);
+    }
+
+    .odd-cell.selected .k,
+    .odd-cell.selected .v {
+      color: #fff;
+    }
+
+    /* ===== FLOATING PURPLE COUPON BAR ===== */
+    #betslip-fab {
+      position: fixed;
+      left: 14px;
+      right: 14px;
+      bottom: calc(var(--nav-h) + 10px);
+      max-width: 592px;
+      margin: 0 auto;
+      z-index: 880;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 14px;
+      border-radius: 14px;
+      background: var(--accent-grad);
+      color: #fff;
+      box-shadow: 0 10px 28px rgba(109, 40, 217, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      cursor: pointer;
+      user-select: none;
+      animation: fabSlide 0.18s ease;
+    }
+
+    @keyframes fabSlide {
+      from { transform: translateY(14px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    #betslip-fab:active {
+      transform: scale(0.985);
+    }
+
+    .fab-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .fab-badge {
+      min-width: 26px;
+      height: 26px;
+      padding: 0 7px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      font-weight: 800;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .fab-info {
+      min-width: 0;
+    }
+
+    .fab-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      line-height: 1.2;
+    }
+
+    .fab-sub {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.82);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .fab-coef {
+      background: rgba(9, 7, 16, 0.35);
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 13.5px;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+
+    /* ===== OVERLAYS: BOTTOM SHEETS & RECTANGULAR CENTER MODALS ===== */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      background: rgba(5, 4, 10, 0.82);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .overlay.open {
+      display: flex;
+    }
+
+    .overlay.center-mode {
+      align-items: center;
+      padding: 16px;
+    }
+
+    .sheet {
+      width: 100%;
+      max-width: 620px;
+      max-height: 88vh;
+      overflow-y: auto;
+      background: var(--bg-elevated);
+      border-top: 1px solid var(--border-strong);
+      border-radius: 20px 20px 0 0;
+      padding: 12px 16px 26px;
+      color: var(--text);
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+
+    .rect-modal {
+      width: 100%;
+      max-width: 440px;
+      max-height: 86vh;
+      overflow-y: auto;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+      padding: 12px 16px 18px;
+      color: var(--text);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(139, 92, 246, 0.14);
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+
+    .sheet-bar {
+      width: 38px;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 0 auto 12px;
+      cursor: grab;
+    }
+
+    .sheet-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 10px;
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .type-pill {
+      background: var(--accent-soft);
+      border: 1px solid var(--border-accent);
+      color: #ddd6fe;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      padding: 4px 10px;
+      border-radius: 7px;
+      text-transform: uppercase;
+    }
+
+    /* Central Match Summary Header inside Markets Sheet */
+    .match-hero-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      padding: 12px 10px;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+
+    .match-hero-league {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .match-hero-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hero-team {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .hero-crest {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .hero-crest img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .hero-team-name {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .hero-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 0 4px;
+    }
+
+    .hero-score {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 1px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hero-vs {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-secondary);
+    }
+
+    .hero-time {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+    }
+
+    .hero-time.live {
+      background: var(--red-soft);
+      color: #fda4af;
+    }
+
+    /* League Picker List */
+    .league-option {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 11px 12px;
+      margin-bottom: 7px;
+      color: var(--text);
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .league-option.active {
+      background: var(--accent-soft);
+      border-color: var(--border-accent);
+      color: #fff;
+    }
+
+    .league-option-name {
+      font-size: 13px;
+      font-weight: 600;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Coupon & Receipt Rows */
+    .coupon-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .coupon-row-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .coupon-row-league {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .coupon-row-match {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .coupon-row-pick {
+      font-size: 12px;
+      font-weight: 700;
+      color: #a78bfa;
+      margin-top: 2px;
+    }
+
+    .coupon-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .coef-tag {
+      background: var(--bg-surface);
+      padding: 4px 8px;
+      border-radius: 7px;
+      font-weight: 700;
+      font-size: 12.5px;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .del-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: none;
+      background: var(--red-soft);
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .presets-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    .preset-chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-family: inherit;
+      border-radius: 8px;
+      padding: 7px 2px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .preset-chip:active {
+      background: var(--bg-surface-active);
+      color: #fff;
+    }
+
+    .input-box {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 11px 13px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+    }
+
+    .input-box:focus {
+      border-color: var(--accent);
+    }
+
+    .summary-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 12px;
+      margin: 12px 0;
+    }
+
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .summary-line:last-child {
+      margin-bottom: 0;
+      padding-top: 7px;
+      border-top: 1px solid var(--border);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .primary-btn {
+      width: 100%;
+      border: none;
+      border-radius: 11px;
+      padding: 13px;
+      background: var(--accent-grad);
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(109, 40, 217, 0.35);
+    }
+
+    .primary-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .secondary-btn {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: 11px;
+      padding: 12px;
+      background: var(--bg-surface);
+      color: #fff;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* ===== MARKETS MODAL ===== */
+    .mkt-block {
+      margin-bottom: 14px;
+    }
+
+    .mkt-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 7px;
+    }
+
+    .mkt-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+
+    .mkt-grid.cols-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* ===== MY BETS ===== */
+    .sub-filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .sub-filter {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-family: inherit;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .sub-filter.active {
+      background: var(--accent-soft);
+      border-color: var(--border-accent);
+      color: #ddd6fe;
+    }
+
+    .bet-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 9px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .bet-item:active {
+      border-color: var(--border-accent);
+    }
+
+    .bet-item-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .st-active { background: var(--amber-soft); color: var(--amber); }
+    .st-won { background: var(--green-soft); color: var(--green); }
+    .st-lost { background: var(--red-soft); color: var(--red); }
+    .st-void { background: rgba(148, 163, 184, 0.14); color: var(--text-secondary); }
+
+    .leg-row {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .leg-row:last-of-type {
+      border-bottom: none;
+    }
+
+    .leg-match {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .leg-pick {
+      font-size: 11.5px;
+      color: #a78bfa;
+      font-weight: 600;
+    }
+
+    .bet-item-bottom {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* ===== CHAT ===== */
+    .chat-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      height: calc(100vh - 196px);
+      min-height: 360px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .chat-header-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .chat-feed {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .msg-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .msg-row.mine {
+      flex-direction: row-reverse;
+    }
+
+    .ava-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--bg-surface-active);
+      border: 1px solid var(--border-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 11.5px;
+      color: #ddd6fe;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .ava-circle img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .msg-bubble {
+      max-width: 78%;
+      background: var(--bg-surface);
+      border-radius: 12px;
+      padding: 8px 11px;
+    }
+
+    .msg-row.mine .msg-bubble {
+      background: rgba(139, 92, 246, 0.22);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+    }
+
+    .msg-author {
+      font-size: 11px;
+      font-weight: 700;
+      color: #c4b5fd;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .msg-author span {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .msg-body {
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .chat-bar {
+      display: flex;
+      gap: 8px;
+      padding: 9px 10px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+
+    .chat-send-btn {
+      width: 40px;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent-grad);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* ===== CASHIER & PROFILE ===== */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-weight: 700;
+      font-size: 13.5px;
+    }
+
+    .panel-head-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .select-box {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 9px;
+      outline: none;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .kpi-label {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .kpi-value {
+      font-size: 17px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ref-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .ref-url {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 9px 10px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .compact-btn {
+      background: var(--accent-grad);
+      border: none;
+      border-radius: 9px;
+      padding: 0 13px;
+      color: #fff;
+      font-family: inherit;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* ===== BOTTOM MONOCHROME NAVIGATION ===== */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-h);
+      z-index: 900;
+      background: rgba(11, 9, 20, 0.94);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+    }
+
+    .nav-btn {
+      position: relative;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s ease;
+    }
+
+    .nav-btn.active {
+      color: #c4b5fd;
+    }
+
+    .nav-btn.active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      width: 24px;
+      height: 2px;
+      border-radius: 0 0 3px 3px;
+      background: var(--accent);
+    }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      top: 66px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      z-index: 1500;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      color: #fff;
+      padding: 9px 15px;
+      border-radius: 10px;
+      font-size: 12.5px;
+      font-weight: 600;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.18s ease;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .empty-box {
+      text-align: center;
+      padding: 36px 16px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg class="ico ico-sm" viewBox="0 0 24 24" style="fill:currentColor;stroke:none;">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+      </div>
+      <span class="brand-name">WINSTARS</span>
+    </div>
+
+    <div class="topbar-controls">
+      <div class="cur-switch" title="Переключить валюту отображения">
+        <button class="cur-btn active" id="cur-stars" onclick="setCurrency('STARS')">★ STARS</button>
+        <button class="cur-btn" id="cur-rub" onclick="setCurrency('RUB')">₽ RUB</button>
+      </div>
+      <div class="balance-pill" onclick="switchTab('cashier')">
+        <span class="balance-val" id="header-balance">0 ★</span>
+        <span class="balance-plus">
+          <svg class="ico ico-xs" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- PAGE 1: MATCHES -->
+  <main class="page active" id="page-matches">
+    <div class="seg-tabs">
+      <button class="seg-tab active" id="tab-live" onclick="setLineMode('live')">
+        <span class="live-indicator"></span>
+        <span>Live</span>
+        <span class="pill-counter" id="live-count">0</span>
+      </button>
+      <button class="seg-tab" id="tab-prematch" onclick="setLineMode('prematch')">
+        <span>Линия</span>
+        <span class="pill-counter" id="prematch-count">0</span>
+      </button>
+    </div>
+
+    <div class="filter-toolbar">
+      <div class="search-wrap">
+        <svg class="ico ico-sm ico-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="search-input" id="match-search" placeholder="Поиск команды или лиги..." oninput="renderMatches()" />
+      </div>
+      <button class="league-picker-btn" id="league-picker-btn" onclick="openLeagueModal()">
+        <svg class="ico ico-sm" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        <span id="league-picker-label">Все лиги</span>
+      </button>
+    </div>
+
+    <div id="matches-container">
+      <div class="empty-box">Загрузка линии матчей...</div>
+    </div>
+  </main>
+
+  <!-- PAGE 2: MY BETS -->
+  <section class="page" id="page-bets">
+    <div class="sub-filters">
+      <button class="sub-filter active" onclick="setBetsFilter('all', this)">Все</button>
+      <button class="sub-filter" onclick="setBetsFilter('active', this)">Активные</button>
+      <button class="sub-filter" onclick="setBetsFilter('settled', this)">Рассчитанные</button>
+    </div>
+    <div id="bets-container">
+      <div class="empty-box">Загрузка истории ставок...</div>
+    </div>
+  </section>
+
+  <!-- PAGE 3: CHAT -->
+  <section class="page" id="page-chat">
+    <div class="chat-panel">
+      <div class="chat-header">
+        <div class="chat-header-title">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Чат игроков</span>
+        </div>
+        <span style="font-size:11px;color:var(--green);" id="chat-status">Онлайн</span>
+      </div>
+      <div class="chat-feed" id="chat-messages"></div>
+      <form class="chat-bar" onsubmit="sendChatMessage(event)">
+        <input type="text" class="input-box" id="chat-input" maxlength="300" placeholder="Сообщение..." style="padding:9px 12px;" />
+        <button type="submit" class="chat-send-btn" aria-label="Отправить">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- PAGE 4: CASHIER -->
+  <section class="page" id="page-cashier">
+    <div class="seg-tabs">
+      <button class="seg-tab active" id="cash-tab-dep" onclick="setCashierTab('deposit')">Пополнение</button>
+      <button class="seg-tab" id="cash-tab-wd" onclick="setCashierTab('withdraw')">Вывод</button>
+    </div>
+
+    <div id="cashier-deposit-block">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-title">
+            <svg class="ico ico-sm" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span>Telegram Stars</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">1 ★ = 1.5 ₽</span>
+        </div>
+        <div class="presets-row">
+          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=25">25 ★</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=50">50 ★</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=100">100 ★</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=250">250 ★</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=500">500 ★</button>
+        </div>
+        <input type="number" id="dep-stars-input" class="input-box" placeholder="Количество Stars (от 10 ★)" style="margin-bottom:10px;" />
+        <button class="primary-btn" onclick="depositStars()">Пополнить в Stars</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-title">
+            <svg class="ico ico-sm" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            <span>Перевод по СБП</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">от 50 ₽</span>
+        </div>
+        <div class="presets-row">
+          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=100">100 ₽</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=300">300 ₽</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=500">500 ₽</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=1000">1000 ₽</button>
+          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=2500">2500 ₽</button>
+        </div>
+        <input type="number" id="dep-rub-input" class="input-box" placeholder="Сумма в рублях (от 50 ₽)" style="margin-bottom:10px;" />
+        <button class="secondary-btn" onclick="depositRub()">Пополнить через СБП</button>
+      </div>
+    </div>
+
+    <div id="cashier-withdraw-block" style="display:none;">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-title">
+            <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Вывод средств</span>
+          </div>
+        </div>
+        <select id="wd-method" class="select-box" onchange="toggleWithdrawFields()">
+          <option value="STARS">Telegram Stars (от 1000 ★)</option>
+          <option value="RUB">Рубли по СБП (от 1500 ₽)</option>
+        </select>
+
+        <div id="wd-sbp-fields" style="display:none;">
+          <select id="wd-bank" class="select-box">
+            <option value="Т-Банк (Тинькофф)">Т-Банк (Тинькофф)</option>
+            <option value="Сбербанк">Сбербанк</option>
+            <option value="Альфа-Банк">Альфа-Банк</option>
+            <option value="ВТБ">ВТБ</option>
+            <option value="Озон Банк">Озон Банк</option>
+            <option value="Райффайзенбанк">Райффайзенбанк</option>
+          </select>
+          <input type="tel" id="wd-phone" class="input-box" placeholder="+7 (999) 000-00-00" style="margin-bottom:9px;" />
+        </div>
+
+        <input type="number" id="wd-amount" class="input-box" placeholder="Сумма вывода" style="margin-bottom:10px;" />
+        <button class="primary-btn" onclick="submitWithdraw()">Отправить заявку</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-title">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span>Промокод</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="promo-code-input" class="input-box" placeholder="Введите код" style="text-transform:uppercase;" />
+        <button class="compact-btn" onclick="activatePromo()">Применить</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-title">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>История операций</span>
+        </div>
+      </div>
+      <div id="tx-history-list"><div class="empty-box" style="padding:14px;">Операций пока нет</div></div>
+    </div>
+  </section>
+
+  <!-- PAGE 5: PROFILE -->
+  <section class="page" id="page-profile">
+    <div class="panel" style="display:flex;align-items:center;gap:12px;">
+      <div class="ava-circle" style="width:46px;height:46px;font-size:17px;" id="prof-avatar">W</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:15px;" id="prof-name">Игрок</div>
+        <div style="font-size:12px;color:var(--text-secondary);" id="prof-username">ID: —</div>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Всего ставок</div>
+        <div class="kpi-value" id="st-total">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Выиграно</div>
+        <div class="kpi-value" style="color:var(--green);" id="st-won">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Винрейт</div>
+        <div class="kpi-value" id="st-winrate">0%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Чистый профит</div>
+        <div class="kpi-value" id="st-profit">0 ★</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-title">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <span>Динамика баланса</span>
+        </div>
+      </div>
+      <canvas id="profit-chart" height="125" style="width:100%;display:block;"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-title">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Реферальная программа</span>
+        </div>
+        <span class="pill-counter" id="prof-refs">0</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);">
+        Приглашайте друзей и получайте <b>+5 ★</b> за каждого нового игрока.
+      </div>
+      <div class="ref-row">
+        <div class="ref-url" id="ref-link-text">https://t.me/WinStarsPlaybot</div>
+        <button class="compact-btn" onclick="copyRefLink()">
+          <svg class="ico ico-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>Копия</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOATING PURPLE COUPON BUTTON (ОДИНАР / ЭКСПРЕСС) -->
+  <div id="betslip-fab" onclick="openCouponModal()">
+    <div class="fab-left">
+      <div class="fab-badge" id="fab-count">1</div>
+      <div class="fab-info">
+        <div class="fab-title" id="fab-title">Купон • Одинар</div>
+        <div class="fab-sub" id="fab-sub">Нажмите, чтобы оформить</div>
+      </div>
+    </div>
+    <div class="fab-coef" id="fab-total-odd">× 1.00</div>
+  </div>
+
+  <!-- LEAGUE SELECTOR SHEET -->
+  <div class="overlay" id="league-modal" onclick="if(event.target===this) closeLeagueModal()">
+    <div class="sheet" id="league-sheet">
+      <div class="sheet-bar"></div>
+      <div class="sheet-head">
+        <span style="font-weight:700;font-size:15px;">Выбор лиги</span>
+        <button class="icon-btn" onclick="closeLeagueModal()">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="search-wrap" style="margin-bottom:10px;">
+        <svg class="ico ico-sm ico-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="search-input" id="league-modal-search" placeholder="Найти турнир..." oninput="renderLeagueModalList()" />
+      </div>
+      <div id="league-modal-list"></div>
+    </div>
+  </div>
+
+  <!-- RECTANGULAR COUPON MODAL (ОДИНАР / ЭКСПРЕСС) -->
+  <div class="overlay center-mode" id="coupon-modal" onclick="if(event.target===this) closeCouponModal()">
+    <div class="rect-modal" id="coupon-sheet">
+      <div class="sheet-bar"></div>
+      <div class="sheet-head">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="type-pill" id="cp-type-badge">ОДИНАР</span>
+          <span style="font-size:12px;color:var(--text-secondary);" id="cp-events-count">1 событие</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button style="background:none;border:none;color:var(--text-secondary);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;" onclick="clearBetSlip()">Очистить</button>
+          <button class="icon-btn" onclick="closeCouponModal()">
+            <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="cp-items-list"></div>
+
+      <div class="presets-row" id="cp-presets"></div>
+      <input type="number" id="cp-stake-input" class="input-box" placeholder="Сумма ставки" oninput="recalcCouponWin()" />
+
+      <div class="summary-card">
+        <div class="summary-line">
+          <span>Тип купона</span>
+          <span id="cp-sum-type" style="color:#fff;font-weight:600;">Одинар</span>
+        </div>
+        <div class="summary-line">
+          <span>Общий коэффициент</span>
+          <span id="cp-sum-odd" style="color:#c4b5fd;font-weight:700;">1.00</span>
+        </div>
+        <div class="summary-line">
+          <span>Возможный выигрыш</span>
+          <span id="cp-sum-win" style="color:var(--green);">0 ★</span>
+        </div>
+      </div>
+
+      <button class="primary-btn" id="cp-submit-btn" onclick="submitCouponBet()">Сделать ставку</button>
+    </div>
+  </div>
+
+  <!-- MATCH FULL MARKETS SHEET (WITH CENTRAL MATCH SUMMARY) -->
+  <div class="overlay" id="markets-modal" onclick="if(event.target===this) closeMarketsModal()">
+    <div class="sheet" id="markets-sheet">
+      <div class="sheet-bar"></div>
+      <div class="sheet-head" style="margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.4px;">Роспись матча</span>
+        <button class="icon-btn" onclick="closeMarketsModal()">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="mm-hero"></div>
+      <div id="mm-body"></div>
+    </div>
+  </div>
+
+  <!-- RECTANGULAR BET DETAILS MODAL -->
+  <div class="overlay center-mode" id="bet-detail-modal" onclick="if(event.target===this) closeBetDetailModal()">
+    <div class="rect-modal" id="bet-detail-sheet">
+      <div class="sheet-bar"></div>
+      <div class="sheet-head">
+        <span class="type-pill" id="bd-type">КУПОН</span>
+        <button class="icon-btn" onclick="closeBetDetailModal()">
+          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="bd-body"></div>
+    </div>
+  </div>
+
+  <!-- MONOCHROME BOTTOM NAVIGATION -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="nav-matches" onclick="switchTab('matches')">
+      <svg class="ico" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10"/>
+        <polygon points="12 7 16.5 10.3 14.8 15.5 9.2 15.5 7.5 10.3"/>
+      </svg>
+      <span>Матчи</span>
+    </button>
+    <button class="nav-btn" id="nav-bets" onclick="switchTab('bets')">
+      <svg class="ico" viewBox="0 0 24 24">
+        <path d="M4 4h16v16l-3-2-3 2-2-2-2 2-3-2-3 2V4z"/>
+        <line x1="8" y1="9" x2="16" y2="9"/>
+        <line x1="8" y1="13" x2="13" y2="13"/>
+      </svg>
+      <span>Мои ставки</span>
+    </button>
+    <button class="nav-btn" id="nav-chat" onclick="switchTab('chat')">
+      <svg class="ico" viewBox="0 0 24 24">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Чат</span>
+    </button>
+    <button class="nav-btn" id="nav-cashier" onclick="switchTab('cashier')">
+      <svg class="ico" viewBox="0 0 24 24">
+        <rect x="2" y="5" width="20" height="14" rx="2"/>
+        <line x1="2" y1="10" x2="22" y2="10"/>
+      </svg>
+      <span>Касса</span>
+    </button>
+    <button class="nav-btn" id="nav-profile" onclick="switchTab('profile')">
+      <svg class="ico" viewBox="0 0 24 24">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span>Профиль</span>
+    </button>
+  </nav>
+
+  <script>
+    const API_BASE_URL = "https://winstarsbot.onrender.com";
+    const WS_CHAT_URL = "wss://winstarsbot.onrender.com/ws/chat";
+
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : null;
+    const USER_ID = tgUser ? String(tgUser.id) : "demo_user_1";
+    const USER_NAME = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") : "Игрок";
+    const USER_USERNAME = tgUser && tgUser.username ? tgUser.username : "";
+    const USER_PHOTO = tgUser && tgUser.photo_url ? tgUser.photo_url : "";
+
+    let STAR_RATE = 1.5;
+    let BOT_USERNAME = "WinStarsPlaybot";
+    let currentCurrency = "STARS";
+    let currentLineMode = "live";
+    let selectedLeague = "ALL";
+    let betsFilter = "all";
+
+    let userData = {
+      id: USER_ID,
+      name: USER_NAME,
+      username: USER_USERNAME,
+      photo_url: USER_PHOTO,
+      balance: 0,
+      referrals: 0,
+      total_bets: 0,
+      won_bets: 0,
+      profit: 0
+    };
+
+    let liveMatches = [];
+    let prematchMatches = [];
+    let userBets = [];
+    let betSlip = [];
+    let activeModalMatchId = null;
+    let chatSocket = null;
+
+    /* Frontend safeguard against dummy "Хозяева - Гости" & blocked youth/women/cyber leagues */
+    const BLOCKED_WORDS = [
+      "хозяева", "гости", "итоги дня", "итоги тура", "угловые", "желтые карточки",
+      "жёлтые карточки", "удары в створ", "офсайды", "фолы", "вбрасывания",
+      "u-17", "u-18", "u-19", "u-20", "u-21", "u-23", "до 17", "до 18", "до 19",
+      "до 20", "до 21", "до 23", "молодеж", "молодёж", "юнош", "юниор", "резерв",
+      "женщин", "жен.", "(ж)", "women", "feminino", "femenina", "frauen",
+      "кибер", "esports", "efootball", "e-football", "fifa", "fc 24", "fc 25",
+      "liga pro", "лига про", "short football", "3x3", "4x4", "5x5", "футзал",
+      "futsal", "мини-футбол", "пляжн", "beach", "simulated", "srl", "лфл", "любител"
+    ];
+
+    function sanitizeMatchList(arr) {
+      return (arr || []).filter((m) => {
+        const t1 = String(m.team1 || "").trim().toLowerCase();
+        const t2 = String(m.team2 || "").trim().toLowerCase();
+        const lg = String(m.league || "").trim().toLowerCase();
+        if (!t1 || !t2 || t1 === "хозяева" || t2 === "гости") return false;
+        const combined = `${t1} ${t2} ${lg}`;
+        return !BLOCKED_WORDS.some((w) => combined.includes(w));
+      });
+    }
+
+    function esc(str) {
+      return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.classList.remove("show"), 2500);
+    }
+
+    function formatMoney(starsVal) {
+      const s = Number(starsVal || 0);
+      if (currentCurrency === "RUB") {
+        return `${(s * STAR_RATE).toFixed(2)} ₽`;
+      }
+      return `${Number.isInteger(s) ? s : s.toFixed(2)} ★`;
+    }
+
+    function setCurrency(cur) {
+      currentCurrency = cur;
+      document.getElementById("cur-stars").classList.toggle("active", cur === "STARS");
+      document.getElementById("cur-rub").classList.toggle("active", cur === "RUB");
+      updateHeaderBalance();
+      updateProfileUI();
+      if (document.getElementById("coupon-modal").classList.contains("open")) {
+        renderCouponModal();
+      }
+      renderBets();
+    }
+
+    function updateHeaderBalance() {
+      document.getElementById("header-balance").textContent = formatMoney(userData.balance);
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+      document.querySelectorAll(".nav-btn").forEach((n) => n.classList.remove("active"));
+      document.getElementById(`page-${tab}`).classList.add("active");
+      document.getElementById(`nav-${tab}`).classList.add("active");
+
+      if (tab === "bets") loadUserBets();
+      if (tab === "cashier") loadTransactions();
+      if (tab === "profile") {
+        updateProfileUI();
+        drawProfitChart();
+      }
+      if (tab === "chat") {
+        const box = document.getElementById("chat-messages");
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    /* ================= SWIPE DOWN TO CLOSE FOR ALL MODALS/SHEETS ================= */
+    function enableSwipeToClose(panelEl, closeCallback) {
+      if (!panelEl) return;
+      let startY = 0;
+      let currentY = 0;
+      let dragging = false;
+
+      panelEl.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) return;
+        const target = e.target;
+        const isHandleOrHeader = Boolean(target.closest(".sheet-bar, .sheet-head, .match-hero-box"));
+        if (panelEl.scrollTop <= 0 || isHandleOrHeader) {
+          startY = e.touches[0].clientY;
+          currentY = startY;
+          dragging = true;
+          panelEl.style.transition = "none";
+        }
+      }, { passive: true });
+
+      panelEl.addEventListener("touchmove", (e) => {
+        if (!dragging) return;
+        currentY = e.touches[0].clientY;
+        const diff = currentY - startY;
+        if (diff > 0 && panelEl.scrollTop <= 0) {
+          panelEl.style.transform = `translateY(${diff}px)`;
+        } else if (diff < 0) {
+          dragging = false;
+          panelEl.style.transform = "";
+        }
+      }, { passive: true });
+
+      panelEl.addEventListener("touchend", () => {
+        if (!dragging) return;
+        dragging = false;
+        const diff = currentY - startY;
+        panelEl.style.transition = "transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)";
+        if (diff > 85) {
+          panelEl.style.transform = "translateY(105%)";
+          setTimeout(() => {
+            closeCallback();
+            panelEl.style.transform = "";
+          }, 190);
+        } else {
+          panelEl.style.transform = "";
+        }
+      });
+    }
+
+    /* ================= INIT & LINE POLLING ================= */
+    async function initApp() {
+      try {
+        const qs = new URLSearchParams({
+          name: USER_NAME,
+          username: USER_USERNAME,
+          photo_url: USER_PHOTO
+        });
+        const res = await fetch(`${API_BASE_URL}/api/init/${encodeURIComponent(USER_ID)}?${qs}`);
+        const data = await res.json();
+        if (data.user) userData = { ...userData, ...data.user };
+        if (data.star_rate) STAR_RATE = Number(data.star_rate);
+        if (data.bot_username) BOT_USERNAME = data.bot_username;
+        liveMatches = sanitizeMatchList(data.live);
+        prematchMatches = sanitizeMatchList(data.prematch);
+
+        if (!liveMatches.length && prematchMatches.length) {
+          currentLineMode = "prematch";
+          document.getElementById("tab-live").classList.remove("active");
+          document.getElementById("tab-prematch").classList.add("active");
         }
 
-    def _ordered_mirrors(self) -> List[str]:
-        n = len(self.MIRRORS)
-        return [self.MIRRORS[(self._mirror_idx + i) % n] for i in range(n)]
+        updateHeaderBalance();
+        updateProfileUI();
+        updateMatchCounters();
+        updateLeaguePickerButton();
+        renderMatches();
+      } catch (e) {
+        document.getElementById("matches-container").innerHTML =
+          '<div class="empty-box">Не удалось загрузить линию. Проверьте соединение.</div>';
+      }
 
-    async def _fetch_json(self, path: str) -> Optional[dict]:
-        async with AsyncSession(
-            impersonate="chrome120", verify=False, timeout=15
-        ) as session:
-            for idx, base in enumerate(self._ordered_mirrors()):
-                url = f"{base}{path}"
-                try:
-                    resp = await session.get(url, headers=self.headers)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if isinstance(data, dict) and (
-                            data.get("events") or data.get("sports")
-                        ):
-                            self._mirror_idx = (self._mirror_idx + idx) % len(self.MIRRORS)
-                            return data
-                except Exception as e:
-                    logger.warning(f"Mirror {base}{path} failed: {e}")
-        return None
+      loadUserBets();
+      initChat();
+      setInterval(refreshMatchesSilent, 12000);
+    }
 
-    async def fetch_full_line(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        data = await self._fetch_json("/events/listBase?lang=ru&scopeMarket=1600")
-        if not data or not data.get("events"):
-            data = await self._fetch_json("/events/list?lang=ru&scopeMarket=1600")
-        if not data:
-            return [], []
+    async function refreshMatchesSilent() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/matches`);
+        const data = await res.json();
+        liveMatches = sanitizeMatchList(data.live);
+        prematchMatches = sanitizeMatchList(data.prematch);
+        updateMatchCounters();
+        updateLeaguePickerButton();
+        renderMatches();
+      } catch (_) {}
+    }
 
-        sports_map: Dict[int, dict] = {}
-        root_football_ids: set[int] = set()
+    function updateMatchCounters() {
+      document.getElementById("live-count").textContent = liveMatches.length;
+      document.getElementById("prematch-count").textContent = prematchMatches.length;
+    }
 
-        for s in data.get("sports") or []:
-            sid = s.get("id")
-            if sid is None:
-                continue
-            sid_int = int(sid)
-            sports_map[sid_int] = s
-            kind = str(s.get("kind") or "").lower()
-            s_name = str(s.get("name") or "").strip().lower()
-            if (kind == "sport" or not s.get("parentId")) and s_name == "футбол":
-                root_football_ids.add(sid_int)
+    function setLineMode(mode) {
+      currentLineMode = mode;
+      selectedLeague = "ALL";
+      document.getElementById("tab-live").classList.toggle("active", mode === "live");
+      document.getElementById("tab-prematch").classList.toggle("active", mode === "prematch");
+      updateLeaguePickerButton();
+      renderMatches();
+    }
 
-        if not root_football_ids:
-            root_football_ids = {1}
+    /* ================= LEAGUE PICKER MODAL ================= */
+    function updateLeaguePickerButton() {
+      const btn = document.getElementById("league-picker-btn");
+      const lbl = document.getElementById("league-picker-label");
+      if (selectedLeague === "ALL") {
+        btn.classList.remove("has-filter");
+        lbl.textContent = "Все лиги";
+      } else {
+        btn.classList.add("has-filter");
+        lbl.textContent = selectedLeague;
+      }
+    }
 
-        # Собираем все уровни вложенности турниров внутри «Футбол» (включая все стадии ЛЧ, ЛЕ, ЛК и кубков)
-        football_comp_ids: set[int] = set(root_football_ids)
-        added = True
-        while added:
-            added = False
-            for s in data.get("sports") or []:
-                sid = s.get("id")
-                if sid is None:
-                    continue
-                sid_int = int(sid)
-                if sid_int in football_comp_ids:
-                    continue
-                s_name = str(s.get("name") or "").lower()
-                if any(bad in s_name for bad in FORBIDDEN_LEAGUE_WORDS):
-                    continue
-                pid = s.get("parentId")
-                pids = [int(x) for x in (s.get("parentIds") or []) if str(x).isdigit()]
-                if (pid is not None and int(pid) in football_comp_ids) or any(
-                    p in football_comp_ids for p in pids
-                ):
-                    football_comp_ids.add(sid_int)
-                    added = True
+    function openLeagueModal() {
+      document.getElementById("league-modal-search").value = "";
+      document.getElementById("league-modal").classList.add("open");
+      renderLeagueModalList();
+    }
 
-        misc_map: Dict[int, dict] = {}
-        for m in data.get("eventMiscs") or []:
-            eid = m.get("id")
-            if eid is not None:
-                misc_map[int(eid)] = m
+    function closeLeagueModal() {
+      document.getElementById("league-modal").classList.remove("open");
+    }
 
-        factors_map: Dict[int, List[dict]] = {}
-        for cf in data.get("customFactors") or []:
-            eid = cf.get("e")
-            if eid is not None:
-                factors_map[int(eid)] = cf.get("factors") or []
+    function renderLeagueModalList() {
+      const list = currentLineMode === "live" ? liveMatches : prematchMatches;
+      const q = document.getElementById("league-modal-search").value.trim().toLowerCase();
 
-        half1_by_parent: Dict[int, List[dict]] = {}
-        half2_by_parent: Dict[int, List[dict]] = {}
-        for ev in data.get("events") or []:
-            pid = ev.get("parentId")
-            if not pid:
-                continue
-            pid_int = int(pid)
-            ev_name = str(ev.get("name") or "").lower()
-            sub_id = int(ev["id"])
-            if "1-й тайм" in ev_name or "1st half" in ev_name:
-                half1_by_parent[pid_int] = factors_map.get(sub_id) or []
-            elif "2-й тайм" in ev_name or "2nd half" in ev_name:
-                half2_by_parent[pid_int] = factors_map.get(sub_id) or []
+      const counts = {};
+      list.forEach((m) => {
+        if (!m.league) return;
+        counts[m.league] = (counts[m.league] || 0) + 1;
+      });
 
-        live_matches: List[Dict[str, Any]] = []
-        prematch_matches: List[Dict[str, Any]] = []
-        now_ts = int(time.time())
+      const leagues = Object.keys(counts).filter((lg) => !q || lg.toLowerCase().includes(q));
+      const checkSvg = `<svg class="ico ico-sm" style="color:var(--accent)" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`;
 
-        for ev in data.get("events") or []:
-            if ev.get("parentId"):
-                continue
+      let html = `
+        <button class="league-option ${selectedLeague === "ALL" ? "active" : ""}" onclick="chooseLeague('ALL')">
+          <span class="league-option-name">Все лиги</span>
+          <span class="pill-counter">${list.length}</span>
+          ${selectedLeague === "ALL" ? checkSvg : ""}
+        </button>`;
 
-            sport_id = ev.get("sportId")
-            if sport_id is None or int(sport_id) not in football_comp_ids:
-                continue
+      leagues.forEach((lg) => {
+        const isSel = selectedLeague === lg;
+        html += `
+          <button class="league-option ${isSel ? "active" : ""}" data-lg="${esc(lg)}" onclick="chooseLeague(this.dataset.lg)">
+            <span class="league-option-name">${esc(lg)}</span>
+            <span class="pill-counter">${counts[lg]}</span>
+            ${isSel ? checkSvg : ""}
+          </button>`;
+      });
 
-            t1 = str(ev.get("team1") or "").strip()
-            t2 = str(ev.get("team2") or "").strip()
-            if not t1 or not t2:
-                continue
+      if (!leagues.length && q) {
+        html += '<div class="empty-box" style="padding:20px;">Турниры не найдены</div>';
+      }
 
-            comp = sports_map.get(int(sport_id))
-            league_name = str(comp.get("name") if comp else "Футбол").strip()
+      document.getElementById("league-modal-list").innerHTML = html;
+    }
 
-            if not is_allowed_event(league_name, t1, t2):
-                continue
+    function chooseLeague(lg) {
+      selectedLeague = lg;
+      updateLeaguePickerButton();
+      closeLeagueModal();
+      renderMatches();
+    }
 
-            place = str(ev.get("place") or "line").lower()
-            is_live = place == "live"
-            start_ts = int(ev.get("startTime") or 0)
+    /* ================= RENDER MATCHES ================= */
+    function renderTeamLogo(logoUrl, teamName) {
+      const initials = (teamName || "?").slice(0, 2).toUpperCase();
+      if (logoUrl) {
+        return `<div class="team-crest"><img src="${esc(logoUrl)}" alt="" onerror="this.parentElement.textContent='${esc(initials)}'" /></div>`;
+      }
+      return `<div class="team-crest">${esc(initials)}</div>`;
+    }
 
-            if not is_live and start_ts > 0:
-                if start_ts < (now_ts - PREMATCH_GRACE_SEC) or start_ts > (
-                    now_ts + PREMATCH_HORIZON_SEC
-                ):
-                    continue
+    function isOutcomeSelected(matchId, selection) {
+      return betSlip.some(
+        (x) => String(x.match_id) === String(matchId) && String(x.selection) === String(selection)
+      );
+    }
 
-            eid = int(ev["id"])
-            f_list = factors_map.get(eid) or []
-            odds_1x2, markets = parse_fonbet_factors(
-                f_list,
-                half1_factors=half1_by_parent.get(eid),
-                half2_factors=half2_by_parent.get(eid),
-            )
-            if odds_1x2["P1"] <= 1.0 or odds_1x2["P2"] <= 1.0:
-                continue
+    function renderMatches() {
+      const list = currentLineMode === "live" ? liveMatches : prematchMatches;
+      const q = document.getElementById("match-search").value.trim().toLowerCase();
+      const container = document.getElementById("matches-container");
 
-            misc = misc_map.get(eid) or {}
-            s1 = int(misc.get("score1") or 0)
-            s2 = int(misc.get("score2") or 0)
-            time_label = format_fonbet_time(ev, misc, is_live=is_live)
+      const filtered = list.filter((m) => {
+        if (selectedLeague !== "ALL" && m.league !== selectedLeague) return false;
+        if (q) {
+          const hay = `${m.team1} ${m.team2} ${m.league}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
 
-            match_obj = {
-                "id": str(eid),
-                "is_live": is_live,
-                "league": league_name,
-                "team1": t1,
-                "team2": t2,
-                "logo1": get_instant_logo(t1),
-                "logo2": get_instant_logo(t2),
-                "score1": s1,
-                "score2": s2,
-                "time_label": time_label,
-                "start_time": start_ts,
-                "odds": odds_1x2,
-                "markets": markets,
-                "updated_at": now_ts,
-            }
+      if (!filtered.length) {
+        container.innerHTML = `<div class="empty-box">${
+          currentLineMode === "live"
+            ? "Активных Live-матчей сейчас нет. Переключитесь на «Линию»."
+            : "Матчи по вашему запросу не найдены."
+        }</div>`;
+        return;
+      }
 
-            if is_live:
-                live_matches.append(match_obj)
-            else:
-                prematch_matches.append(match_obj)
+      const grouped = {};
+      filtered.forEach((m) => {
+        if (!grouped[m.league]) grouped[m.league] = [];
+        grouped[m.league].push(m);
+      });
 
-        prematch_matches.sort(key=lambda x: x.get("start_time", 0))
-        logger.info(
-            f"Fonbet parsed (10d football): {len(live_matches)} live, {len(prematch_matches)} prematch"
+      const trophySvg = `<svg class="ico ico-xs" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>`;
+      const clockSvg = `<svg class="ico ico-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+
+      let html = "";
+      for (const [league, matches] of Object.entries(grouped)) {
+        html += `<div class="league-section">
+          <div class="league-title-row">
+            <div class="league-title-left">${trophySvg}<span>${esc(league)}</span></div>
+            <span>${matches.length}</span>
+          </div>`;
+
+        matches.forEach((m) => {
+          const hasX = Number(m.odds?.X || 0) > 1.0;
+          const p1Sel = isOutcomeSelected(m.id, "П1") ? "selected" : "";
+          const xSel = isOutcomeSelected(m.id, "X") ? "selected" : "";
+          const p2Sel = isOutcomeSelected(m.id, "П2") ? "selected" : "";
+
+          html += `
+          <div class="match-card">
+            <div class="match-meta">
+              <div class="match-meta-left">
+                <span class="time-tag ${m.is_live ? "live" : ""}">
+                  ${m.is_live ? '<span class="live-indicator"></span>' : clockSvg}
+                  <span>${esc(m.time_label)}</span>
+                </span>
+                <span class="match-league-inline">${esc(m.league)}</span>
+              </div>
+              <button class="markets-btn" onclick="openMarketsModal('${esc(m.id)}')">
+                <span>+ Роспись</span>
+              </button>
+            </div>
+
+            <div class="teams-list" onclick="openMarketsModal('${esc(m.id)}')">
+              <div class="team-line">
+                <div class="team-left">
+                  ${renderTeamLogo(m.logo1, m.team1)}
+                  <span class="team-label">${esc(m.team1)}</span>
+                </div>
+                ${m.is_live ? `<span class="team-goals">${m.score1}</span>` : ""}
+              </div>
+              <div class="team-line">
+                <div class="team-left">
+                  ${renderTeamLogo(m.logo2, m.team2)}
+                  <span class="team-label">${esc(m.team2)}</span>
+                </div>
+                ${m.is_live ? `<span class="team-goals">${m.score2}</span>` : ""}
+              </div>
+            </div>
+
+            <div class="odds-grid ${hasX ? "" : "cols-2"}">
+              <button class="odd-cell ${p1Sel}" data-mid="${esc(m.id)}" data-sel="П1" data-odd="${m.odds.P1}" onclick="onOddClick(this)">
+                <span class="k">П1</span>
+                <span class="v">${Number(m.odds.P1).toFixed(2)}</span>
+              </button>
+              ${
+                hasX
+                  ? `<button class="odd-cell ${xSel}" data-mid="${esc(m.id)}" data-sel="X" data-odd="${m.odds.X}" onclick="onOddClick(this)">
+                      <span class="k">X</span>
+                      <span class="v">${Number(m.odds.X).toFixed(2)}</span>
+                    </button>`
+                  : ""
+              }
+              <button class="odd-cell ${p2Sel}" data-mid="${esc(m.id)}" data-sel="П2" data-odd="${m.odds.P2}" onclick="onOddClick(this)">
+                <span class="k">П2</span>
+                <span class="v">${Number(m.odds.P2).toFixed(2)}</span>
+              </button>
+            </div>
+          </div>`;
+        });
+
+        html += `</div>`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    /* ================= COUPON (ОДИНАР / ЭКСПРЕСС) ================= */
+    function findMatchById(matchId) {
+      const idStr = String(matchId);
+      return (
+        liveMatches.find((m) => String(m.id) === idStr) ||
+        prematchMatches.find((m) => String(m.id) === idStr) ||
+        null
+      );
+    }
+
+    function onOddClick(btn) {
+      toggleBetSlipItem(btn.dataset.mid, btn.dataset.sel, parseFloat(btn.dataset.odd));
+    }
+
+    function toggleBetSlipItem(matchId, selection, odd) {
+      const mId = String(matchId);
+      const sel = String(selection).trim();
+      const oddNum = Math.round(Number(odd) * 100) / 100;
+      if (!mId || !sel || !(oddNum > 1.0)) return;
+
+      const idx = betSlip.findIndex((item) => String(item.match_id) === mId);
+      if (idx !== -1) {
+        if (betSlip[idx].selection === sel) {
+          betSlip.splice(idx, 1);
+        } else {
+          betSlip[idx].selection = sel;
+          betSlip[idx].odd = oddNum;
+        }
+      } else {
+        const m = findMatchById(mId);
+        betSlip.push({
+          match_id: mId,
+          match_title: m ? `${m.team1} - ${m.team2}` : `Матч #${mId}`,
+          league: m ? m.league : "",
+          selection: sel,
+          odd: oddNum
+        });
+      }
+
+      if (tg && tg.HapticFeedback) {
+        tg.HapticFeedback.selectionChanged();
+      }
+      updateBetSlipUI();
+    }
+
+    function getTotalCouponOdd() {
+      if (!betSlip.length) return 1.0;
+      const prod = betSlip.reduce((acc, ev) => acc * Number(ev.odd || 1), 1);
+      return Math.round(prod * 100) / 100;
+    }
+
+    function updateBetSlipUI() {
+      const fab = document.getElementById("betslip-fab");
+      const cnt = betSlip.length;
+
+      if (cnt === 0) {
+        fab.style.display = "none";
+        closeCouponModal();
+      } else {
+        const isExpress = cnt > 1;
+        fab.style.display = "flex";
+        document.getElementById("fab-count").textContent = String(cnt);
+        document.getElementById("fab-title").textContent = isExpress
+          ? "Купон • Экспресс"
+          : "Купон • Одинар";
+        document.getElementById("fab-sub").textContent = isExpress
+          ? `${cnt} события в купоне`
+          : `${betSlip[0].match_title} — ${betSlip[0].selection}`;
+        document.getElementById("fab-total-odd").textContent = `× ${getTotalCouponOdd().toFixed(2)}`;
+      }
+
+      document.querySelectorAll(".odd-cell[data-mid][data-sel]").forEach((btn) => {
+        const active = isOutcomeSelected(btn.dataset.mid, btn.dataset.sel);
+        btn.classList.toggle("selected", active);
+      });
+
+      if (document.getElementById("coupon-modal").classList.contains("open")) {
+        renderCouponModal();
+      }
+    }
+
+    function openCouponModal() {
+      if (!betSlip.length) return;
+      document.getElementById("coupon-modal").classList.add("open");
+      renderCouponModal();
+    }
+
+    function closeCouponModal() {
+      document.getElementById("coupon-modal").classList.remove("open");
+    }
+
+    function removeBetSlipIndex(idx) {
+      betSlip.splice(idx, 1);
+      updateBetSlipUI();
+    }
+
+    function clearBetSlip() {
+      betSlip = [];
+      updateBetSlipUI();
+    }
+
+    function renderCouponModal() {
+      const cnt = betSlip.length;
+      const isExpress = cnt > 1;
+      const totalOdd = getTotalCouponOdd();
+
+      document.getElementById("cp-type-badge").textContent = isExpress ? "ЭКСПРЕСС" : "ОДИНАР";
+      document.getElementById("cp-events-count").textContent =
+        cnt === 1 ? "1 событие" : cnt < 5 ? `${cnt} события` : `${cnt} событий`;
+      document.getElementById("cp-sum-type").textContent = isExpress
+        ? `Экспресс (${cnt})`
+        : "Одинар";
+      document.getElementById("cp-sum-odd").textContent = totalOdd.toFixed(2);
+
+      const closeSvg = `<svg class="ico ico-xs" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+      document.getElementById("cp-items-list").innerHTML = betSlip
+        .map(
+          (item, i) => `
+          <div class="coupon-row">
+            <div class="coupon-row-info">
+              <div class="coupon-row-league">${esc(item.league)}</div>
+              <div class="coupon-row-match">${esc(item.match_title)}</div>
+              <div class="coupon-row-pick">${esc(item.selection)}</div>
+            </div>
+            <div class="coupon-row-actions">
+              <span class="coef-tag">${Number(item.odd).toFixed(2)}</span>
+              <button class="del-btn" onclick="removeBetSlipIndex(${i})" aria-label="Удалить">${closeSvg}</button>
+            </div>
+          </div>`
         )
-        return live_matches, prematch_matches[:250]
+        .join("");
 
-    async def fetch_event_details(self, match_id: str) -> Optional[Dict[str, Any]]:
-        data = await self._fetch_json(
-            f"/events/event?lang=ru&eventId={match_id}&scopeMarket=1600"
-        )
-        if not data:
-            return None
+      const sym = currentCurrency === "RUB" ? "₽" : "★";
+      const presets = currentCurrency === "RUB" ? [50, 150, 300, 500] : [10, 25, 50, 100];
+      const maxVal =
+        currentCurrency === "RUB"
+          ? Math.floor(Number(userData.balance || 0) * STAR_RATE)
+          : Math.floor(Number(userData.balance || 0));
 
-        events = data.get("events") or []
-        main_ev = next((e for e in events if str(e.get("id")) == str(match_id)), None)
-        miscs = data.get("eventMiscs") or []
-        misc = next((m for m in miscs if str(m.get("id")) == str(match_id)), {})
+      document.getElementById("cp-presets").innerHTML =
+        presets
+          .map(
+            (v) =>
+              `<button class="preset-chip" onclick="document.getElementById('cp-stake-input').value=${v};recalcCouponWin()">${v} ${sym}</button>`
+          )
+          .join("") +
+        `<button class="preset-chip" onclick="document.getElementById('cp-stake-input').value=${Math.max(1, maxVal)};recalcCouponWin()">МАКС</button>`;
 
-        half1_ids: set[str] = set()
-        half2_ids: set[str] = set()
-        for e in events:
-            if str(e.get("parentId")) == str(match_id):
-                ename = str(e.get("name") or "").lower()
-                if "1-й тайм" in ename or "1st half" in ename:
-                    half1_ids.add(str(e.get("id")))
-                elif "2-й тайм" in ename or "2nd half" in ename:
-                    half2_ids.add(str(e.get("id")))
+      recalcCouponWin();
+    }
 
-        all_factors: List[dict] = []
-        half1_factors: List[dict] = []
-        half2_factors: List[dict] = []
+    function recalcCouponWin() {
+      const stake = parseFloat(document.getElementById("cp-stake-input").value) || 0;
+      const win = (stake * getTotalCouponOdd()).toFixed(2);
+      const sym = currentCurrency === "RUB" ? "₽" : "★";
+      document.getElementById("cp-sum-win").textContent = `${win} ${sym}`;
+    }
 
-        for cf in data.get("customFactors") or []:
-            ev_id_str = str(cf.get("e"))
-            f_arr = cf.get("factors") or []
-            if ev_id_str == str(match_id):
-                all_factors.extend(f_arr)
-            elif ev_id_str in half1_ids:
-                half1_factors.extend(f_arr)
-            elif ev_id_str in half2_ids:
-                half2_factors.extend(f_arr)
+    async function submitCouponBet() {
+      if (!betSlip.length) return;
+      const amount = parseFloat(document.getElementById("cp-stake-input").value);
+      if (!(amount > 0)) {
+        showToast("Введите сумму ставки");
+        return;
+      }
 
-        _, markets = parse_fonbet_factors(
-            all_factors,
-            half1_factors=half1_factors,
-            half2_factors=half2_factors,
-        )
-        place = str((main_ev or {}).get("place") or "").lower()
-        is_live = place == "live"
+      const btn = document.getElementById("cp-submit-btn");
+      btn.disabled = true;
+      btn.textContent = "Оформление...";
 
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/bet`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: USER_ID,
+            match_id: betSlip[0].match_id,
+            selection: betSlip[0].selection,
+            odd: getTotalCouponOdd(),
+            amount: amount,
+            currency: currentCurrency,
+            events: betSlip
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.detail || "Ошибка при размещении ставки");
+          return;
+        }
+
+        if (typeof data.balance === "number") {
+          userData.balance = data.balance;
+          updateHeaderBalance();
+        }
+        userData.total_bets = Number(userData.total_bets || 0) + 1;
+        updateProfileUI();
+
+        document.getElementById("cp-stake-input").value = "";
+        clearBetSlip();
+        showToast("Ставка принята");
+        loadUserBets();
+      } catch (e) {
+        showToast("Ошибка соединения с сервером");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Сделать ставку";
+      }
+    }
+
+    /* ================= FULL MATCH MARKETS + CENTRAL SUMMARY ================= */
+    function renderMatchHero(match) {
+      if (!match) {
+        document.getElementById("mm-hero").innerHTML = "";
+        return;
+      }
+      const init1 = (match.team1 || "?").slice(0, 2).toUpperCase();
+      const init2 = (match.team2 || "?").slice(0, 2).toUpperCase();
+      const logo1Html = match.logo1
+        ? `<img src="${esc(match.logo1)}" alt="" onerror="this.parentElement.textContent='${esc(init1)}'" />`
+        : esc(init1);
+      const logo2Html = match.logo2
+        ? `<img src="${esc(match.logo2)}" alt="" onerror="this.parentElement.textContent='${esc(init2)}'" />`
+        : esc(init2);
+
+      document.getElementById("mm-hero").innerHTML = `
+        <div class="match-hero-box">
+          <div class="match-hero-league">${esc(match.league)}</div>
+          <div class="match-hero-grid">
+            <div class="hero-team">
+              <div class="hero-crest">${logo1Html}</div>
+              <div class="hero-team-name">${esc(match.team1)}</div>
+            </div>
+            <div class="hero-center">
+              ${
+                match.is_live
+                  ? `<div class="hero-score">${match.score1} : ${match.score2}</div>`
+                  : `<div class="hero-vs">VS</div>`
+              }
+              <div class="hero-time ${match.is_live ? "live" : ""}">${esc(match.time_label)}</div>
+            </div>
+            <div class="hero-team">
+              <div class="hero-crest">${logo2Html}</div>
+              <div class="hero-team-name">${esc(match.team2)}</div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    async function openMarketsModal(matchId) {
+      activeModalMatchId = String(matchId);
+      const cached = findMatchById(matchId);
+      document.getElementById("markets-modal").classList.add("open");
+      renderMatchHero(cached);
+
+      if (cached && cached.markets) {
+        renderMatchMarkets(cached);
+      } else {
+        document.getElementById("mm-body").innerHTML = '<div class="empty-box">Загрузка рынков...</div>';
+      }
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/match/${encodeURIComponent(matchId)}/markets`);
+        if (res.ok) {
+          const full = await res.json();
+          if (activeModalMatchId === String(matchId)) {
+            renderMatchHero(full);
+            renderMatchMarkets(full);
+          }
+        }
+      } catch (_) {}
+    }
+
+    function renderMatchMarkets(match) {
+      const markets = match.markets || [];
+      if (!markets.length) {
+        document.getElementById("mm-body").innerHTML =
+          '<div class="empty-box">Дополнительные рынки временно недоступны.</div>';
+        return;
+      }
+
+      document.getElementById("mm-body").innerHTML = markets
+        .map((mkt) => {
+          const colsClass = mkt.outcomes.length === 3 ? "cols-3" : "";
+          const buttons = mkt.outcomes
+            .map((o) => {
+              const selCls = isOutcomeSelected(match.id, o.label) ? "selected" : "";
+              return `
+              <button class="odd-cell ${selCls}" data-mid="${esc(match.id)}" data-sel="${esc(o.label)}" data-odd="${o.odd}" onclick="onOddClick(this)">
+                <span class="k">${esc(o.label)}</span>
+                <span class="v">${Number(o.odd).toFixed(2)}</span>
+              </button>`;
+            })
+            .join("");
+          return `<div class="mkt-block">
+            <div class="mkt-title">${esc(mkt.title)}</div>
+            <div class="mkt-grid ${colsClass}">${buttons}</div>
+          </div>`;
+        })
+        .join("");
+    }
+
+    function closeMarketsModal() {
+      activeModalMatchId = null;
+      document.getElementById("markets-modal").classList.remove("open");
+    }
+
+    /* ================= USER BETS & RECTANGULAR BET RECEIPT MODAL ================= */
+    async function loadUserBets() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/bets/${encodeURIComponent(USER_ID)}`);
+        if (res.ok) {
+          userBets = await res.json();
+          renderBets();
+          drawProfitChart();
+        }
+      } catch (_) {}
+    }
+
+    function setBetsFilter(f, btn) {
+      betsFilter = f;
+      document.querySelectorAll(".sub-filter").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      renderBets();
+    }
+
+    function statusMeta(st) {
+      if (st === "won") {
         return {
-            "place": place,
-            "score1": int(misc.get("score1") or 0),
-            "score2": int(misc.get("score2") or 0),
-            "time_label": format_fonbet_time(main_ev or {}, misc, is_live=is_live),
-            "markets": markets,
+          text: "Выигрыш",
+          cls: "st-won",
+          svg: `<svg class="ico ico-xs" style="color:var(--green)" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`
+        };
+      }
+      if (st === "lost") {
+        return {
+          text: "Проигрыш",
+          cls: "st-lost",
+          svg: `<svg class="ico ico-xs" style="color:var(--red)" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+        };
+      }
+      if (st === "void") {
+        return {
+          text: "Возврат",
+          cls: "st-void",
+          svg: `<svg class="ico ico-xs" style="color:var(--text-secondary)" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`
+        };
+      }
+      return {
+        text: "В игре",
+        cls: "st-active",
+        svg: `<svg class="ico ico-xs" style="color:var(--amber)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
+      };
+    }
+
+    function renderBets() {
+      const container = document.getElementById("bets-container");
+      const filtered = userBets.filter((b) => {
+        if (betsFilter === "active") return b.status === "active";
+        if (betsFilter === "settled") return b.status !== "active";
+        return true;
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = '<div class="empty-box">Ставок в этом разделе пока нет.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered
+        .map((b, idx) => {
+          const st = statusMeta(b.status);
+          const events = b.events && b.events.length ? b.events : [b];
+          const isExp = events.length > 1 || b.bet_type === "express";
+          const sym = b.currency === "RUB" ? "₽" : "★";
+
+          const legsHtml = events
+            .map((ev) => {
+              const evSt = statusMeta(ev.status || b.status);
+              return `
+              <div class="leg-row">
+                <div style="min-width:0;flex:1;">
+                  <div class="leg-match">${esc(ev.match_title)} ${ev.final_score ? `(${esc(ev.final_score)})` : ""}</div>
+                  <div class="leg-pick">${esc(ev.selection)} • кф ${Number(ev.odd || b.odd).toFixed(2)}</div>
+                </div>
+                <div>${evSt.svg}</div>
+              </div>`;
+            })
+            .join("");
+
+          const potOrPay =
+            b.status === "won"
+              ? `<span style="color:var(--green);font-weight:700;">+${Number(b.payout).toFixed(2)} ${sym}</span>`
+              : b.status === "void"
+              ? `<span style="color:var(--text-secondary);font-weight:600;">Возврат ${Number(b.amount).toFixed(2)} ${sym}</span>`
+              : `<span>Выплата: <b style="color:#fff;">${(Number(b.amount) * Number(b.odd)).toFixed(2)} ${sym}</b></span>`;
+
+          return `
+          <div class="bet-item" onclick="openBetDetail(${idx})">
+            <div class="bet-item-top">
+              <span class="type-pill">${isExp ? `ЭКСПРЕСС (${events.length})` : "ОДИНАР"}</span>
+              <span class="status-chip ${st.cls}">${st.text}</span>
+            </div>
+            ${legsHtml}
+            <div class="bet-item-bottom">
+              <span>Ставка: <b style="color:#fff;">${Number(b.amount).toFixed(2)} ${sym}</b> (×${Number(b.odd).toFixed(2)})</span>
+              ${potOrPay}
+            </div>
+          </div>`;
+        })
+        .join("");
+    }
+
+    function openBetDetail(filteredIdx) {
+      const filtered = userBets.filter((b) => {
+        if (betsFilter === "active") return b.status === "active";
+        if (betsFilter === "settled") return b.status !== "active";
+        return true;
+      });
+      const b = filtered[filteredIdx];
+      if (!b) return;
+
+      const events = b.events && b.events.length ? b.events : [b];
+      const isExp = events.length > 1 || b.bet_type === "express";
+      const sym = b.currency === "RUB" ? "₽" : "★";
+      const st = statusMeta(b.status);
+
+      document.getElementById("bd-type").textContent = isExp
+        ? `ЭКСПРЕСС • ${events.length} СОБ.`
+        : "ОДИНАР";
+
+      document.getElementById("bd-body").innerHTML = `
+        <div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:12px;color:var(--text-secondary);">Купон #${esc(String(b.id || "").slice(-6))}</span>
+          <span class="status-chip ${st.cls}">${st.text}</span>
+        </div>
+        ${events
+          .map((ev) => {
+            const evSt = statusMeta(ev.status || b.status);
+            return `
+            <div class="coupon-row">
+              <div class="coupon-row-info">
+                <div class="coupon-row-league">${esc(ev.league || "")}</div>
+                <div class="coupon-row-match">${esc(ev.match_title)} ${ev.final_score ? `[${esc(ev.final_score)}]` : ""}</div>
+                <div class="coupon-row-pick">${esc(ev.selection)}</div>
+              </div>
+              <div class="coupon-row-actions">
+                <span class="coef-tag">${Number(ev.odd || b.odd).toFixed(2)}</span>
+                ${evSt.svg}
+              </div>
+            </div>`;
+          })
+          .join("")}
+        <div class="summary-card">
+          <div class="summary-line"><span>Сумма ставки</span><span>${Number(b.amount).toFixed(2)} ${sym}</span></div>
+          <div class="summary-line"><span>Общий коэффициент</span><span>${Number(b.odd).toFixed(2)}</span></div>
+          <div class="summary-line"><span>${b.status === "won" ? "Итоговый выигрыш" : "Возможный выигрыш"}</span><span style="color:${b.status === "lost" ? "var(--red)" : "var(--green)"};">${
+            b.status === "won"
+              ? `+${Number(b.payout).toFixed(2)} ${sym}`
+              : b.status === "lost"
+              ? `0.00 ${sym}`
+              : `${(Number(b.amount) * Number(b.odd)).toFixed(2)} ${sym}`
+          }</span></div>
+        </div>
+      `;
+
+      document.getElementById("bet-detail-modal").classList.add("open");
+    }
+
+    function closeBetDetailModal() {
+      document.getElementById("bet-detail-modal").classList.remove("open");
+    }
+
+    /* ================= CHAT ================= */
+    async function initChat() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/chat/history`);
+        if (res.ok) {
+          const msgs = await res.json();
+          renderChatHistory(msgs);
         }
+      } catch (_) {}
 
-
-scraper = FonbetScraper()
-
-
-# ================= ДВИЖОК СТАВОК (ОДИНАР + ЭКСПРЕСС) И АВТОРАСЧЁТА =================
-def normalize_bet(bet: dict) -> dict:
-    raw_events = bet.get("events")
-    events: List[Dict[str, Any]] = []
-    if isinstance(raw_events, list):
-        for ev in raw_events:
-            if isinstance(ev, dict):
-                ev_st = str(ev.get("status") or "active").lower()
-                if ev_st in ("pending", "open", "wait"):
-                    ev_st = "active"
-                events.append(
-                    {
-                        "match_id": str(ev.get("match_id") or ""),
-                        "match_title": ev.get("match_title") or ev.get("match") or "Событие",
-                        "league": ev.get("league") or "",
-                        "selection": ev.get("selection") or ev.get("outcome") or "Исход",
-                        "odd": round(float(ev.get("odd") or ev.get("coefficient") or 1.0), 2),
-                        "status": ev_st,
-                        "final_score": ev.get("final_score", ""),
-                    }
-                )
-
-    is_express = len(events) > 1 or str(bet.get("bet_type") or "").lower() == "express"
-    first_ev = events[0] if events else {}
-
-    match_id = str(bet.get("match_id") or first_ev.get("match_id") or "")
-    match_title = (
-        bet.get("match_title")
-        or (f"Экспресс ({len(events)} соб.)" if is_express else first_ev.get("match_title"))
-        or "Событие"
-    )
-    league = bet.get("league") or ("Экспресс" if is_express else first_ev.get("league") or "")
-    selection = (
-        bet.get("selection")
-        or bet.get("outcome")
-        or (
-            " + ".join(f"{e['match_title']} ({e['selection']})" for e in events)
-            if is_express
-            else first_ev.get("selection")
-        )
-        or "Исход"
-    )
-    odd = float(
-        bet.get("total_coefficient")
-        or bet.get("coefficient")
-        or bet.get("odd")
-        or bet.get("coef")
-        or first_ev.get("odd")
-        or 1.0
-    )
-    amount = float(bet.get("amount") or 0)
-    currency = str(bet.get("currency") or "STARS").upper()
-    amount_stars = float(
-        bet.get("amount_stars")
-        or (round(amount / STAR_TO_RUB, 2) if currency == "RUB" else amount)
-    )
-    status = str(bet.get("status") or "active").lower()
-    if status in ("pending", "open", "wait"):
-        status = "active"
-    if status == "refund":
-        status = "void"
-
-    payout = float(bet.get("payout") or 0)
-    payout_stars = float(
-        bet.get("payout_stars")
-        or (round(payout / STAR_TO_RUB, 2) if currency == "RUB" else payout)
-    )
-
-    if not events and match_id:
-        events = [
-            {
-                "match_id": match_id,
-                "match_title": match_title,
-                "league": league,
-                "selection": selection,
-                "odd": round(odd, 2),
-                "status": status,
-                "final_score": bet.get("final_score", ""),
-            }
-        ]
-
-    return {
-        "bet_type": "express" if is_express else "single",
-        "events": events,
-        "match_id": match_id,
-        "match_title": match_title,
-        "league": league,
-        "selection": selection,
-        "odd": round(odd, 2),
-        "total_coefficient": round(odd, 2),
-        "amount": amount,
-        "amount_stars": amount_stars,
-        "currency": currency,
-        "status": status,
-        "final_score": bet.get("final_score", ""),
-        "payout": payout,
-        "payout_stars": payout_stars,
-        "created_at": bet.get("created_at") or bet.get("timestamp") or 0,
+      connectChatWS();
     }
 
+    function connectChatWS() {
+      try {
+        chatSocket = new WebSocket(WS_CHAT_URL);
+        chatSocket.onopen = () => {
+          document.getElementById("chat-status").textContent = "Онлайн";
+          document.getElementById("chat-status").style.color = "var(--green)";
+        };
+        chatSocket.onmessage = (ev) => {
+          const data = JSON.parse(ev.data);
+          if (data.type === "history") {
+            renderChatHistory(data.messages || []);
+          } else if (data.type === "message" && data.message) {
+            appendChatMessage(data.message);
+          }
+        };
+        chatSocket.onclose = () => {
+          document.getElementById("chat-status").textContent = "Переподключение...";
+          document.getElementById("chat-status").style.color = "var(--text-muted)";
+          setTimeout(connectChatWS, 4000);
+        };
+      } catch (_) {}
+    }
 
-def evaluate_outcome(
-    selection: str,
-    s1: int,
-    s2: int,
-    ht1: Optional[int] = None,
-    ht2: Optional[int] = None,
-) -> str:
-    sel = selection.strip().upper()
+    function renderChatHistory(msgs) {
+      const box = document.getElementById("chat-messages");
+      box.innerHTML = "";
+      msgs.forEach(appendChatMessage);
+    }
 
-    if sel.startswith("1Т:"):
-        if ht1 is None or ht2 is None:
-            return "active"
-        sub = sel.replace("1Т:", "").strip()
-        if sub in ("ОЗ ДА", "ДА"):
-            return "won" if (ht1 > 0 and ht2 > 0) else "lost"
-        if sub in ("ОЗ НЕТ", "НЕТ"):
-            return "won" if (ht1 == 0 or ht2 == 0) else "lost"
+    function appendChatMessage(m) {
+      const box = document.getElementById("chat-messages");
+      const isMine = String(m.user_id) === String(USER_ID);
+      const initial = (m.user || "И").slice(0, 1).toUpperCase();
+      const avaHtml = m.photo_url
+        ? `<img src="${esc(m.photo_url)}" alt="" onerror="this.parentElement.textContent='${esc(initial)}'" />`
+        : esc(initial);
 
-    if sel.startswith("2Т:"):
-        if ht1 is None or ht2 is None:
-            return "active"
-        g1_2h = max(0, s1 - ht1)
-        g2_2h = max(0, s2 - ht2)
-        sub = sel.replace("2Т:", "").strip()
-        if sub in ("ОЗ ДА", "ДА"):
-            return "won" if (g1_2h > 0 and g2_2h > 0) else "lost"
-        if sub in ("ОЗ НЕТ", "НЕТ"):
-            return "won" if (g1_2h == 0 or g2_2h == 0) else "lost"
+      const div = document.createElement("div");
+      div.className = `msg-row ${isMine ? "mine" : ""}`;
+      div.innerHTML = `
+        <div class="ava-circle">${avaHtml}</div>
+        <div class="msg-bubble">
+          <div class="msg-author">${esc(m.user)} <span>${esc(m.time || "")}</span></div>
+          <div class="msg-body">${esc(m.text)}</div>
+        </div>`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
 
-    total = s1 + s2
+    async function sendChatMessage(e) {
+      e.preventDefault();
+      const inp = document.getElementById("chat-input");
+      const text = inp.value.trim();
+      if (!text) return;
+      inp.value = "";
 
-    if sel in ("П1", "1"):
-        return "won" if s1 > s2 else "lost"
-    if sel in ("X", "Х"):
-        return "won" if s1 == s2 else "lost"
-    if sel in ("П2", "2"):
-        return "won" if s2 > s1 else "lost"
+      const payload = {
+        user_id: USER_ID,
+        user: userData.name || USER_NAME,
+        username: userData.username || USER_USERNAME,
+        photo_url: userData.photo_url || USER_PHOTO,
+        text: text
+      };
 
-    if sel == "1X":
-        return "won" if s1 >= s2 else "lost"
-    if sel == "12":
-        return "won" if s1 != s2 else "lost"
-    if sel == "X2":
-        return "won" if s2 >= s1 else "lost"
-
-    if sel in ("ОЗ ДА", "ОБЕ ЗАБЬЮТ - ДА", "ДА"):
-        return "won" if (s1 > 0 and s2 > 0) else "lost"
-    if sel in ("ОЗ НЕТ", "ОБЕ ЗАБЬЮТ - НЕТ", "НЕТ"):
-        return "won" if (s1 == 0 or s2 == 0) else "lost"
-
-    m_tot = re.match(r"^(ТБ|ТМ)\s*(\d+(?:\.\d+)?)$", sel)
-    if m_tot:
-        direction, line = m_tot.group(1), float(m_tot.group(2))
-        if total == line:
-            return "void"
-        return (
-            ("won" if total > line else "lost")
-            if direction == "ТБ"
-            else ("won" if total < line else "lost")
-        )
-
-    m_hand = re.match(r"^Ф([12])\s*\(?([+-]?\d+(?:\.\d+)?)\)?$", sel)
-    if m_hand:
-        team_num, h_val = m_hand.group(1), float(m_hand.group(2))
-        diff = (s1 + h_val - s2) if team_num == "1" else (s2 + h_val - s1)
-        if diff == 0:
-            return "void"
-        return "won" if diff > 0 else "lost"
-
-    return "active"
-
-
-async def collect_all_active_bets() -> List[Tuple[str, str, str, Dict[str, Any]]]:
-    found: List[Tuple[str, str, str, Dict[str, Any]]] = []
-    seen_ids = set()
-
-    users = await db.get("users")
-    if isinstance(users, dict):
-        for uid, udata in users.items():
-            if not isinstance(udata, dict):
-                continue
-            ubets = udata.get("bets")
-            if isinstance(ubets, dict):
-                for b_id, raw_bet in ubets.items():
-                    if not isinstance(raw_bet, dict):
-                        continue
-                    norm = normalize_bet(raw_bet)
-                    if norm["status"] == "active":
-                        found.append((f"users/{uid}/bets/{b_id}", b_id, str(uid), norm))
-                        seen_ids.add(b_id)
-
-    active_node = await db.get("active_bets")
-    if isinstance(active_node, dict):
-        for b_id, raw_bet in active_node.items():
-            if b_id in seen_ids or not isinstance(raw_bet, dict):
-                continue
-            norm = normalize_bet(raw_bet)
-            if norm["status"] == "active":
-                uid = str(raw_bet.get("user_id", ""))
-                path = f"users/{uid}/bets/{b_id}" if uid else f"active_bets/{b_id}"
-                found.append((path, b_id, uid, norm))
-                seen_ids.add(b_id)
-
-    root_bets = await db.get("bets")
-    if isinstance(root_bets, dict):
-        for b_id, raw_bet in root_bets.items():
-            if b_id in seen_ids or not isinstance(raw_bet, dict):
-                continue
-            norm = normalize_bet(raw_bet)
-            if norm["status"] == "active":
-                uid = str(raw_bet.get("user_id", ""))
-                path = f"bets/{b_id}"
-                found.append((path, b_id, uid, norm))
-                seen_ids.add(b_id)
-
-    return found
-
-
-async def settle_match_bets(
-    target_query: str,
-    s1: int,
-    s2: int,
-    notify_bot: Optional[Bot] = None,
-    ht1: Optional[int] = None,
-    ht2: Optional[int] = None,
-) -> int:
-    active_list = await collect_all_active_bets()
-    q_clean = target_query.strip()
-    q_low = q_clean.lower()
-    settled_count = 0
-
-    for bet_path, b_id, user_id, norm in active_list:
-        events = norm.get("events") or []
-
-        # Многособытийный экспресс
-        if len(events) > 1:
-            updated_any = False
-            for ev in events:
-                if ev.get("status") != "active":
-                    continue
-                by_id = ev.get("match_id") == q_clean
-                by_name = len(q_low) >= 3 and q_low in str(ev.get("match_title", "")).lower()
-                if by_id or by_name:
-                    ev_res = evaluate_outcome(ev["selection"], s1, s2, ht1=ht1, ht2=ht2)
-                    if ev_res != "active":
-                        ev["status"] = ev_res
-                        ev["final_score"] = f"{s1}:{s2}"
-                        updated_any = True
-
-            if not updated_any:
-                continue
-
-            statuses = [ev.get("status", "active") for ev in events]
-            if "lost" in statuses:
-                overall_res = "lost"
-            elif "active" in statuses:
-                # Часть событий экспресса ещё не завершилась — сохраняем прогресс событий
-                patch_progress = {"events": events}
-                await db.patch(bet_path, patch_progress)
-                if user_id:
-                    await db.patch(f"users/{user_id}/bets/{b_id}", patch_progress)
-                await db.patch(f"active_bets/{b_id}", patch_progress)
-                continue
-            elif all(st == "void" for st in statuses):
-                overall_res = "void"
-            else:
-                overall_res = "won"
-
-            eff_odd = 1.0
-            for ev in events:
-                if ev.get("status") == "won":
-                    eff_odd *= float(ev.get("odd", 1.0))
-            eff_odd = round(eff_odd, 2)
-
-            amount = norm["amount"]
-            payout = (
-                round(amount * eff_odd, 2)
-                if overall_res == "won"
-                else (round(amount, 2) if overall_res == "void" else 0.0)
-            )
-            payout_stars = (
-                round(payout / STAR_TO_RUB, 2) if norm["currency"] == "RUB" else payout
-            )
-            stake_stars = norm["amount_stars"]
-
-            patch_payload = {
-                "status": overall_res,
-                "events": events,
-                "total_coefficient": eff_odd,
-                "odd": eff_odd,
-                "payout": payout,
-                "payout_stars": payout_stars,
-                "settled_at": int(time.time()),
-            }
-            await db.patch(bet_path, patch_payload)
-            if user_id:
-                await db.patch(f"users/{user_id}/bets/{b_id}", patch_payload)
-            await db.patch(f"bets/{b_id}", patch_payload)
-            await db.delete(f"active_bets/{b_id}")
-
-            if user_id:
-                user = await db.get(f"users/{user_id}") or {}
-                cur_bal = float(user.get("balance", 0))
-                won_bets = int(user.get("won_bets", 0)) + (1 if overall_res == "won" else 0)
-                net_profit = float(user.get("profit", user.get("net_profit", 0))) + (
-                    payout_stars - stake_stars
-                )
-                await db.patch(
-                    f"users/{user_id}",
-                    {
-                        "balance": round(cur_bal + payout_stars, 2),
-                        "won_bets": won_bets,
-                        "profit": round(net_profit, 2),
-                        "net_profit": round(net_profit, 2),
-                    },
-                )
-                if notify_bot and overall_res == "won":
-                    try:
-                        await notify_bot.send_message(
-                            int(user_id),
-                            f"Экспресс зашёл! +{payout_stars:.2f} ★ ({payout_stars * STAR_TO_RUB:.2f} ₽)\n"
-                            f"{norm['match_title']} @ {eff_odd}",
-                        )
-                    except Exception:
-                        pass
-
-            settled_count += 1
-            continue
-
-        # Одиночная ставка
-        by_id = norm["match_id"] == q_clean
-        by_name = len(q_low) >= 3 and q_low in norm["match_title"].lower()
-        if not (by_id or by_name):
-            continue
-
-        result = evaluate_outcome(norm["selection"], s1, s2, ht1=ht1, ht2=ht2)
-        if result == "active":
-            continue
-
-        amount = norm["amount"]
-        odd = norm["odd"]
-        payout = (
-            round(amount * odd, 2)
-            if result == "won"
-            else (round(amount, 2) if result == "void" else 0.0)
-        )
-
-        payout_stars = (
-            round(payout / STAR_TO_RUB, 2) if norm["currency"] == "RUB" else payout
-        )
-        stake_stars = norm["amount_stars"]
-
-        if events:
-            events[0]["status"] = result
-            events[0]["final_score"] = f"{s1}:{s2}"
-
-        patch_payload = {
-            "status": result,
-            "events": events,
-            "final_score": f"{s1}:{s2}",
-            "payout": payout,
-            "payout_stars": payout_stars,
-            "settled_at": int(time.time()),
+      if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+        chatSocket.send(JSON.stringify(payload));
+      } else {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/chat/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.message) appendChatMessage(data.message);
+        } catch (_) {
+          showToast("Не удалось отправить сообщение");
         }
-        await db.patch(bet_path, patch_payload)
-        if user_id:
-            await db.patch(f"users/{user_id}/bets/{b_id}", patch_payload)
-        await db.patch(f"bets/{b_id}", patch_payload)
-        await db.delete(f"active_bets/{b_id}")
-
-        if user_id:
-            user = await db.get(f"users/{user_id}") or {}
-            cur_bal = float(user.get("balance", 0))
-            won_bets = int(user.get("won_bets", 0)) + (1 if result == "won" else 0)
-            net_profit = float(user.get("profit", user.get("net_profit", 0))) + (
-                payout_stars - stake_stars
-            )
-
-            await db.patch(
-                f"users/{user_id}",
-                {
-                    "balance": round(cur_bal + payout_stars, 2),
-                    "won_bets": won_bets,
-                    "profit": round(net_profit, 2),
-                    "net_profit": round(net_profit, 2),
-                },
-            )
-
-            if notify_bot and result == "won":
-                try:
-                    await notify_bot.send_message(
-                        int(user_id),
-                        f"Ставка сыграла! +{payout_stars:.2f} ★ ({payout_stars * STAR_TO_RUB:.2f} ₽)\n"
-                        f"{norm['match_title']} ({s1}:{s2}) — {norm['selection']} @ {odd}",
-                    )
-                except Exception:
-                    pass
-
-        settled_count += 1
-
-    if q_clean.isdigit():
-        await db.patch(
-            f"match_archive/{q_clean}",
-            {
-                "score1": s1,
-                "score2": s2,
-                "status": "finished",
-                "finished_at": int(time.time()),
-            },
-        )
-    return settled_count
-
-
-async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
-    active_list = await collect_all_active_bets()
-    pending_matches: Dict[str, Dict[str, Any]] = {}
-
-    for _, _, _, norm in active_list:
-        evs = norm.get("events") or []
-        if evs:
-            for ev in evs:
-                if ev.get("status") != "active":
-                    continue
-                k = ev.get("match_id") or ev.get("match_title")
-                if k and k not in pending_matches:
-                    pending_matches[k] = {"title": ev.get("match_title", "")}
-        else:
-            key = norm["match_id"] or norm["match_title"]
-            if key and key not in pending_matches:
-                pending_matches[key] = {"title": norm["match_title"]}
-
-    if not pending_matches:
-        return {"checked": 0, "settled": 0, "unresolved": {}}
-
-    live_ids = {m["id"] for m in LINE_CACHE["live"]}
-    prematch_ids = {m["id"] for m in LINE_CACHE["prematch"]}
-    archive = await db.get("match_archive") or {}
-    now_ts = int(time.time())
-
-    total_settled = 0
-    unresolved: Dict[str, str] = {}
-
-    for key, info in pending_matches.items():
-        title = info["title"]
-        if key in live_ids or key in prematch_ids:
-            continue
-
-        arch_item = archive.get(key) if isinstance(archive, dict) else None
-        if not isinstance(arch_item, dict) and isinstance(archive, dict):
-            t_low = title.lower().strip()
-            for a_id, a_val in archive.items():
-                if isinstance(a_val, dict) and str(a_val.get("title", "")).lower().strip() == t_low:
-                    arch_item = a_val
-                    key = a_id
-                    break
-
-        if isinstance(arch_item, dict):
-            ht1 = arch_item.get("ht_score1")
-            ht2 = arch_item.get("ht_score2")
-
-            if arch_item.get("status") == "finished":
-                s1 = int(arch_item.get("score1", 0))
-                s2 = int(arch_item.get("score2", 0))
-                total_settled += await settle_match_bets(key, s1, s2, notify_bot, ht1=ht1, ht2=ht2)
-                continue
-
-            if key.isdigit():
-                det = await scraper.fetch_event_details(key)
-                if det and det.get("place") not in ("live", "line"):
-                    s1 = int(det.get("score1", arch_item.get("score1", 0)))
-                    s2 = int(det.get("score2", arch_item.get("score2", 0)))
-                    total_settled += await settle_match_bets(key, s1, s2, notify_bot, ht1=ht1, ht2=ht2)
-                    continue
-
-            last_seen = int(arch_item.get("updated_at", 0))
-            start_ts = int(arch_item.get("start_time", 0))
-            last_min_str = str(arch_item.get("time_label", ""))
-            m_num = re.search(r"(\d+)", last_min_str)
-            last_min = int(m_num.group(1)) if m_num else 0
-
-            elapsed_since_kickoff = (now_ts - start_ts) if start_ts > 0 else 0
-            if (last_min >= 80 and (now_ts - last_seen) >= 45) or (
-                elapsed_since_kickoff >= 6300 and (now_ts - last_seen) >= 60
-            ):
-                s1 = int(arch_item.get("score1", 0))
-                s2 = int(arch_item.get("score2", 0))
-                total_settled += await settle_match_bets(key, s1, s2, notify_bot, ht1=ht1, ht2=ht2)
-                continue
-
-        unresolved[key] = title
-
-    return {
-        "checked": len(pending_matches),
-        "settled": total_settled,
-        "unresolved": unresolved,
+      }
     }
 
-
-# ================= ФОНОВЫЙ ПАРСЕР И ДОГРУЗЧИК ЛОГОТИПОВ =================
-async def logo_background_loader(matches: List[Dict[str, Any]]):
-    unique_teams: Dict[str, str] = {}
-    for m in matches:
-        for t_key, l_key in (("team1", "logo1"), ("team2", "logo2")):
-            t_name = m.get(t_key) or ""
-            if t_name and not m.get(l_key) and t_name not in unique_teams:
-                unique_teams[t_name] = m.get("league") or ""
-
-    if not unique_teams:
-        return
-
-    sem = asyncio.Semaphore(8)
-    resolved_map: Dict[str, str] = {}
-
-    async with AsyncSession(impersonate="chrome120", verify=False, timeout=8) as session:
-        async def _worker(t_name: str, l_name: str):
-            async with sem:
-                url = await resolve_team_logo(t_name, league_name=l_name, session=session)
-                if url:
-                    resolved_map[t_name] = url
-
-        await asyncio.gather(*(_worker(tn, ln) for tn, ln in unique_teams.items()))
-
-    if resolved_map:
-        for m in LINE_CACHE["live"] + LINE_CACHE["prematch"]:
-            if not m.get("logo1") and m.get("team1") in resolved_map:
-                m["logo1"] = resolved_map[m["team1"]]
-            if not m.get("logo2") and m.get("team2") in resolved_map:
-                m["logo2"] = resolved_map[m["team2"]]
-
-
-async def scraper_loop(bot: Bot):
-    await load_logo_cache_from_db()
-    prev_live_ids: set[str] = set()
-    first_pass = True
-    last_recalc_ts = 0
-
-    while True:
-        try:
-            live_list, prematch_list = await scraper.fetch_full_line()
-
-            by_id: Dict[str, Any] = {}
-            for m in prematch_list + live_list:
-                by_id[m["id"]] = m
-
-            LINE_CACHE["live"] = live_list
-            LINE_CACHE["prematch"] = prematch_list
-            LINE_CACHE["by_id"] = by_id
-            LINE_CACHE["updated_at"] = int(time.time())
-
-            if first_pass:
-                await logo_background_loader(live_list + prematch_list)
-                await run_full_recalc(bot)
-                last_recalc_ts = int(time.time())
-                first_pass = False
-            else:
-                asyncio.create_task(logo_background_loader(live_list + prematch_list))
-
-            current_live_ids = set()
-            for m in live_list:
-                current_live_ids.add(m["id"])
-                arch_patch: Dict[str, Any] = {
-                    "title": f"{m['team1']} - {m['team2']}",
-                    "score1": m["score1"],
-                    "score2": m["score2"],
-                    "time_label": m["time_label"],
-                    "start_time": m["start_time"],
-                    "updated_at": m["updated_at"],
-                }
-                if m["time_label"] == "Перерыв":
-                    arch_patch["ht_score1"] = m["score1"]
-                    arch_patch["ht_score2"] = m["score2"]
-                await db.patch(f"match_archive/{m['id']}", arch_patch)
-
-            disappeared = prev_live_ids - current_live_ids
-            now_ts = int(time.time())
-            if disappeared or (now_ts - last_recalc_ts) >= 30:
-                await run_full_recalc(bot)
-                last_recalc_ts = now_ts
-
-            prev_live_ids = current_live_ids
-        except Exception as e:
-            logger.error(f"Scraper loop error: {e}")
-
-        await asyncio.sleep(10)
-
-
-# ================= TELEGRAM БОТ (AIOGRAM 3) =================
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
-
-
-def is_admin(user_id: int) -> bool:
-    return not ADMIN_IDS or user_id in ADMIN_IDS
-
-
-def withdraw_admin_kb(tx_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Одобрить", callback_data=f"wd_approve:{tx_id}"
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отклонить", callback_data=f"wd_reject:{tx_id}"
-                ),
-            ]
-        ]
-    )
-
-
-@router.message(Command("start"))
-async def cmd_start(message: Message, command: CommandObject):
-    u = message.from_user
-    if not u:
-        return
-    uid = str(u.id)
-    existing = await db.get(f"users/{uid}")
-
-    if not existing:
-        ref_id = ""
-        if command.args and command.args.startswith("ref_"):
-            cand = command.args.replace("ref_", "").strip()
-            if cand.isdigit() and cand != uid:
-                ref_id = cand
-
-        await db.put(
-            f"users/{uid}",
-            {
-                "id": uid,
-                "name": u.first_name or "Игрок",
-                "username": u.username or "",
-                "balance": 0.0,
-                "referrals": 0,
-                "invited_by": ref_id,
-                "total_bets": 0,
-                "won_bets": 0,
-                "profit": 0.0,
-                "created_at": int(time.time()),
-            },
-        )
-
-        if ref_id:
-            inviter = await db.get(f"users/{ref_id}")
-            if isinstance(inviter, dict):
-                new_refs = int(inviter.get("referrals", 0)) + 1
-                bonus_stars = 5.0
-                new_bal = round(float(inviter.get("balance", 0)) + bonus_stars, 2)
-                await db.patch(
-                    f"users/{ref_id}",
-                    {"referrals": new_refs, "balance": new_bal},
-                )
-                try:
-                    await bot.send_message(
-                        int(ref_id),
-                        f"Новый реферал: **{u.first_name}**! Начислено +{bonus_stars} ★",
-                        parse_mode="Markdown",
-                    )
-                except Exception:
-                    pass
-    else:
-        await db.patch(
-            f"users/{uid}",
-            {"name": u.first_name or existing.get("name", "Игрок"), "username": u.username or ""},
-        )
-
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Открыть WinStars",
-                    web_app=WebAppInfo(url=WEBAPP_URL),
-                )
-            ]
-        ]
-    )
-    await message.answer(
-        f"Добро пожаловать в **WINSTARS**, {u.first_name}!\n"
-        f"Live-линия, ставки в Telegram Stars и рублях, мгновенный расчёт купонов.",
-        reply_markup=kb,
-        parse_mode="Markdown",
-    )
-
-
-@router.pre_checkout_query()
-async def on_pre_checkout(query: PreCheckoutQuery):
-    await query.answer(ok=True)
-
-
-@router.message(F.successful_payment)
-async def on_successful_payment(message: Message):
-    sp = message.successful_payment
-    if not sp or not message.from_user:
-        return
-    uid = str(message.from_user.id)
-    stars_paid = float(sp.total_amount)
-
-    user = await db.get(f"users/{uid}") or {"id": uid, "balance": 0.0}
-    new_bal = round(float(user.get("balance", 0)) + stars_paid, 2)
-    await db.patch(f"users/{uid}", {"balance": new_bal})
-
-    await db.push(
-        "transactions",
-        {
-            "type": "deposit",
-            "method": "Telegram Stars",
-            "currency": "STARS",
-            "user_id": uid,
-            "amount_stars": stars_paid,
-            "amount_rub": round(stars_paid * STAR_TO_RUB, 2),
-            "status": "completed",
-            "created_at": int(time.time()),
-        },
-    )
-    await message.answer(
-        f"Баланс пополнен на **{stars_paid:.0f} ★** ({stars_paid * STAR_TO_RUB:.2f} ₽)!",
-        parse_mode="Markdown",
-    )
-
-
-@router.message(Command("withdraws"))
-async def cmd_withdraws(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    raw = await db.get("transactions")
-    if not isinstance(raw, dict):
-        await message.answer("Активных заявок на вывод нет.")
-        return
-
-    pending = [
-        (tid, t)
-        for tid, t in raw.items()
-        if isinstance(t, dict)
-        and t.get("type") == "withdraw"
-        and t.get("status") == "pending"
-    ]
-    if not pending:
-        await message.answer("Все заявки на вывод обработаны.")
-        return
-
-    for tid, t in pending[:15]:
-        uid = str(t.get("user_id", ""))
-        cur = str(t.get("currency", "STARS")).upper()
-        sum_str = (
-            f"{t.get('amount_stars', 0)} ★"
-            if cur == "STARS"
-            else f"{t.get('amount_rub', 0)} ₽ ({t.get('amount_stars', 0)} ★)"
-        )
-        await message.answer(
-            f"Заявка на вывод `{tid}`\n"
-            f"Игрок ID: `{uid}`\n"
-            f"Способ: {t.get('method', '')}\n"
-            f"Сумма: **{sum_str}**\n"
-            f"Реквизиты: {t.get('details', '')}",
-            reply_markup=withdraw_admin_kb(tid),
-            parse_mode="Markdown",
-        )
-
-
-@router.callback_query(F.data.startswith("wd_approve:"))
-async def cb_withdraw_approve(query: CallbackQuery):
-    if not query.from_user or not is_admin(query.from_user.id):
-        await query.answer("Нет доступа", show_alert=True)
-        return
-
-    tx_id = query.data.split(":", 1)[1]
-    tx = await db.get(f"transactions/{tx_id}")
-    if not isinstance(tx, dict):
-        await query.answer("Заявка не найдена", show_alert=True)
-        return
-    if tx.get("status") != "pending":
-        await query.answer(f"Уже обработано ({tx.get('status')})", show_alert=True)
-        return
-
-    await db.patch(
-        f"transactions/{tx_id}",
-        {"status": "completed", "processed_at": int(time.time())},
-    )
-
-    uid = str(tx.get("user_id", ""))
-    cur = str(tx.get("currency", "STARS")).upper()
-    sum_str = (
-        f"{tx.get('amount_stars', 0)} ★"
-        if cur == "STARS"
-        else f"{tx.get('amount_rub', 0)} ₽"
-    )
-
-    if uid.isdigit():
-        try:
-            await bot.send_message(
-                int(uid),
-                f"✅ Ваша заявка на вывод **{sum_str}** ({tx.get('method', '')}) одобрена и выполнена!",
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-
-    if query.message:
-        await query.message.edit_text(
-            f"{query.message.text}\n\n✅ **ОДОБРЕНО**",
-            parse_mode="Markdown",
-        )
-    await query.answer("Вывод одобрен")
-
-
-@router.callback_query(F.data.startswith("wd_reject:"))
-async def cb_withdraw_reject(query: CallbackQuery):
-    if not query.from_user or not is_admin(query.from_user.id):
-        await query.answer("Нет доступа", show_alert=True)
-        return
-
-    tx_id = query.data.split(":", 1)[1]
-    tx = await db.get(f"transactions/{tx_id}")
-    if not isinstance(tx, dict) or tx.get("status") != "pending":
-        await query.answer("Заявка уже обработана", show_alert=True)
-        return
-
-    ADMIN_REJECT_STATE[query.from_user.id] = tx_id
-    await query.answer("Напишите причину отклонения")
-    if query.message:
-        await query.message.reply(
-            f"Введите причину отклонения для заявки `{tx_id}` (средства вернутся игроку на баланс):",
-            parse_mode="Markdown",
-        )
-
-
-@router.message(Command("set_logo"))
-async def cmd_set_logo(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) < 3:
-        await message.answer(
-            "Формат: `/set_logo <Название команды> <URL картинки>`",
-            parse_mode="Markdown",
-        )
-        return
-    url = parts[-1].strip()
-    team_name = " ".join(parts[1:-1]).strip()
-    LOGO_CACHE[team_name] = url
-    await db.put(
-        f"team_logos_v2/{b64_key(team_name)}",
-        {"name": team_name, "url": url},
-    )
-    await message.answer(f"Логотип для **{team_name}** сохранён.", parse_mode="Markdown")
-
-
-@router.message(Command("add_balance"))
-async def cmd_add_balance(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) != 3:
-        await message.answer("Формат: `/add_balance <user_id> <звёзды>`", parse_mode="Markdown")
-        return
-    uid, amt = parts[1], float(parts[2])
-    user = await db.get(f"users/{uid}") or {"id": uid, "balance": 0.0}
-    new_bal = round(float(user.get("balance", 0)) + amt, 2)
-    await db.patch(f"users/{uid}", {"balance": new_bal})
-    await message.answer(f"Игроку `{uid}` добавлено {amt} ★. Баланс: **{new_bal} ★**", parse_mode="Markdown")
-
-
-@router.message(Command("set_balance"))
-async def cmd_set_balance(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) != 3:
-        await message.answer("Формат: `/set_balance <user_id> <звёзды>`", parse_mode="Markdown")
-        return
-    uid, amt = parts[1], round(float(parts[2]), 2)
-    await db.patch(f"users/{uid}", {"balance": amt})
-    await message.answer(f"Баланс `{uid}` установлен: **{amt} ★**", parse_mode="Markdown")
-
-
-@router.message(Command("add_refs"))
-async def cmd_add_refs(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) != 3:
-        await message.answer("Формат: `/add_refs <user_id> <кол-во>`", parse_mode="Markdown")
-        return
-    uid, cnt = parts[1], int(parts[2])
-    user = await db.get(f"users/{uid}") or {}
-    new_refs = int(user.get("referrals", 0)) + cnt
-    await db.patch(f"users/{uid}", {"referrals": new_refs})
-    await message.answer(f"Рефералы `{uid}`: **{new_refs}**", parse_mode="Markdown")
-
-
-@router.message(Command("promo_create"))
-async def cmd_promo_create(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) < 4:
-        await message.answer(
-            "Формат: `/promo_create <КОД> <бонус_в_звёздах> <активаций>`",
-            parse_mode="Markdown",
-        )
-        return
-    code = parts[1].strip().upper()
-    bonus = float(parts[2])
-    uses = int(parts[3])
-    await db.put(
-        f"promos/{code}",
-        {"code": code, "bonus": bonus, "uses_left": uses, "created_at": int(time.time())},
-    )
-    await message.answer(
-        f"Промокод `{code}` создан: **+{bonus} ★** ({uses} активаций).",
-        parse_mode="Markdown",
-    )
-
-
-@router.message(Command("promo_list"))
-async def cmd_promo_list(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    promos = await db.get("promos")
-    if not isinstance(promos, dict) or not promos:
-        await message.answer("Активных промокодов нет.")
-        return
-    lines = ["**Промокоды:**\n"]
-    for code, p in promos.items():
-        if isinstance(p, dict):
-            lines.append(f"• `{code}` — +{p.get('bonus')} ★ (осталось: {p.get('uses_left')})")
-    await message.answer("\n".join(lines), parse_mode="Markdown")
-
-
-@router.message(Command("promo_delete"))
-async def cmd_promo_delete(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) != 2:
-        return
-    code = parts[1].strip().upper()
-    await db.delete(f"promos/{code}")
-    await message.answer(f"Промокод `{code}` удалён.", parse_mode="Markdown")
-
-
-@router.message(Command("broadcast"))
-async def cmd_broadcast(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    text = (message.text or "").partition(" ")[2].strip()
-    if not text:
-        await message.answer("Формат: `/broadcast Текст рассылки`", parse_mode="Markdown")
-        return
-    users = await db.get("users") or {}
-    sent = 0
-    for uid in users.keys():
-        if uid.isdigit():
-            try:
-                await bot.send_message(int(uid), text)
-                sent += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                pass
-    await message.answer(f"Рассылка завершена. Доставлено: **{sent}**.", parse_mode="Markdown")
-
-
-@router.message(Command("pending_matches"))
-async def cmd_pending_matches(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    active_list = await collect_all_active_bets()
-    if not active_list:
-        await message.answer("Все ставки рассчитаны.")
-        return
-    grouped: Dict[str, Dict[str, Any]] = {}
-    for _, _, _, norm in active_list:
-        for ev in norm.get("events") or []:
-            if ev.get("status") != "active":
-                continue
-            key = ev["match_id"] or ev["match_title"].split()[0]
-            if key not in grouped:
-                grouped[key] = {"title": ev["match_title"], "count": 0}
-            grouped[key]["count"] += 1
-
-    lines = ["**Активные нерассчитанные матчи:**\n"]
-    for key, info in grouped.items():
-        lines.append(f"• {info['title']} ({info['count']} ст.) → `/settle {key} 0:0`")
-    await message.answer("\n".join(lines), parse_mode="Markdown")
-
-
-@router.message(Command("recalc"))
-async def cmd_recalc(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    res = await run_full_recalc(bot)
-    text = f"Проверено: {res['checked']} | Рассчитано: {res['settled']}"
-    if res["unresolved"]:
-        text += "\nНе закрыты:\n" + "\n".join(
-            f"• `{k}` — {v}" for k, v in res["unresolved"].items()
-        )
-    await message.answer(text, parse_mode="Markdown")
-
-
-@router.message(Command("settle", "settle_bet"))
-async def cmd_settle(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) < 3 or ":" not in parts[-1]:
-        await message.answer("Пример: `/settle Казахстан 1:0`", parse_mode="Markdown")
-        return
-    score_part = parts[-1].strip()
-    query = " ".join(parts[1:-1]).strip()
-    s1_str, s2_str = score_part.split(":")
-    s1, s2 = int(s1_str), int(s2_str)
-    count = await settle_match_bets(query, s1, s2, bot)
-    await message.answer(
-        f"Матч **{query}** ({s1}:{s2}) рассчитан. Ставок: **{count}**.",
-        parse_mode="Markdown",
-    )
-
-
-@router.message(F.text)
-async def handle_admin_reject_reason(message: Message):
-    if not message.from_user or not is_admin(message.from_user.id):
-        return
-    admin_id = message.from_user.id
-    tx_id = ADMIN_REJECT_STATE.pop(admin_id, None)
-    if not tx_id:
-        return
-
-    reason = (message.text or "").strip()
-    tx = await db.get(f"transactions/{tx_id}")
-    if not isinstance(tx, dict) or tx.get("status") != "pending":
-        await message.answer("Заявка уже была обработана.")
-        return
-
-    uid = str(tx.get("user_id", ""))
-    refund_stars = float(tx.get("amount_stars", 0))
-
-    await db.patch(
-        f"transactions/{tx_id}",
-        {
-            "status": "rejected",
-            "reject_reason": reason,
-            "processed_at": int(time.time()),
-        },
-    )
-
-    if uid:
-        user = await db.get(f"users/{uid}") or {"id": uid, "balance": 0.0}
-        new_bal = round(float(user.get("balance", 0)) + refund_stars, 2)
-        await db.patch(f"users/{uid}", {"balance": new_bal})
-
-        if uid.isdigit():
-            try:
-                await bot.send_message(
-                    int(uid),
-                    f"❌ Заявка на вывод отклонена.\n"
-                    f"Причина: **{reason}**\n"
-                    f"Средства (**{refund_stars:.2f} ★**) возвращены на ваш баланс.",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
-
-    await message.answer(
-        f"❌ Заявка `{tx_id}` отклонена. Игроку возвращено **{refund_stars:.2f} ★**.",
-        parse_mode="Markdown",
-    )
-
-
-dp.include_router(router)
-
-
-# ================= FASTAPI + WEBSOCKET =================
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task_scraper = asyncio.create_task(scraper_loop(bot))
-    task_bot = asyncio.create_task(dp.start_polling(bot))
-    yield
-    task_scraper.cancel()
-    task_bot.cancel()
-    await bot.session.close()
-
-
-app = FastAPI(lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-class BetEventItem(BaseModel):
-    match_id: str
-    selection: str
-    odd: float
-    match_title: str = ""
-    league: str = ""
-
-
-class BetRequest(BaseModel):
-    user_id: str
-    match_id: str = ""
-    selection: str = ""
-    odd: float = 0.0
-    amount: float
-    currency: str = "STARS"
-    events: Optional[List[BetEventItem]] = None
-
-
-class InvoiceRequest(BaseModel):
-    user_id: str
-    stars: int
-
-
-class CashierRequest(BaseModel):
-    user_id: str
-    amount: float
-    currency: str = "STARS"
-    method: str = "sbp"
-    bank: str = ""
-    details: str = ""
-
-
-class PromoRequest(BaseModel):
-    user_id: str
-    code: str
-
-
-class ChatMessageRequest(BaseModel):
-    user_id: str = ""
-    user: str = "Игрок"
-    username: str = ""
-    photo_url: str = ""
-    text: str
-
-
-class ChatConnectionManager:
-    def __init__(self):
-        self.active: List[WebSocket] = []
-
-    async def connect(self, ws: WebSocket):
-        await ws.accept()
-        self.active.append(ws)
-
-    def disconnect(self, ws: WebSocket):
-        if ws in self.active:
-            self.active.remove(ws)
-
-    async def broadcast(self, payload: dict):
-        dead = []
-        for ws in self.active:
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.disconnect(ws)
-
-
-chat_manager = ChatConnectionManager()
-
-
-@app.get("/")
-async def health_check():
-    return {
-        "status": "ok",
-        "service": "WinStars API",
-        "live": len(LINE_CACHE["live"]),
-        "prematch": len(LINE_CACHE["prematch"]),
-        "updated_at": LINE_CACHE["updated_at"],
+    /* ================= CASHIER ================= */
+    function setCashierTab(tab) {
+      document.getElementById("cash-tab-dep").classList.toggle("active", tab === "deposit");
+      document.getElementById("cash-tab-wd").classList.toggle("active", tab === "withdraw");
+      document.getElementById("cashier-deposit-block").style.display = tab === "deposit" ? "block" : "none";
+      document.getElementById("cashier-withdraw-block").style.display = tab === "withdraw" ? "block" : "none";
     }
 
+    function toggleWithdrawFields() {
+      const m = document.getElementById("wd-method").value;
+      document.getElementById("wd-sbp-fields").style.display = m === "RUB" ? "block" : "none";
+    }
 
-@app.get("/api/init/{user_id}")
-async def api_init(
-    user_id: str,
-    name: str = "Игрок",
-    username: str = "",
-    photo_url: str = "",
-):
-    user = await db.get(f"users/{user_id}")
-    if not user:
-        user = {
-            "id": user_id,
-            "name": name,
-            "username": username,
-            "photo_url": photo_url,
-            "balance": 0.0,
-            "referrals": 0,
-            "total_bets": 0,
-            "won_bets": 0,
-            "profit": 0.0,
-            "created_at": int(time.time()),
+    async function depositStars() {
+      const stars = parseInt(document.getElementById("dep-stars-input").value, 10);
+      if (!(stars >= 10)) {
+        showToast("Минимальное пополнение 10 ★");
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/invoice`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: USER_ID, stars })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.invoice_url) {
+          showToast(data.detail || "Ошибка создания счёта");
+          return;
         }
-        await db.put(f"users/{user_id}", user)
-    else:
-        patch_u: Dict[str, Any] = {}
-        if name and name != "Игрок":
-            patch_u["name"] = name
-        if username:
-            patch_u["username"] = username
-        if photo_url:
-            patch_u["photo_url"] = photo_url
-        if patch_u:
-            await db.patch(f"users/{user_id}", patch_u)
-            user.update(patch_u)
-
-    return {
-        "user": user,
-        "star_rate": STAR_TO_RUB,
-        "bot_username": BOT_USERNAME,
-        "live": LINE_CACHE["live"],
-        "prematch": LINE_CACHE["prematch"],
-        "updated_at": LINE_CACHE["updated_at"],
-    }
-
-
-@app.get("/api/matches")
-async def api_matches():
-    return {
-        "live": LINE_CACHE["live"],
-        "prematch": LINE_CACHE["prematch"],
-        "updated_at": LINE_CACHE["updated_at"],
-    }
-
-
-@app.get("/api/match/{match_id}/markets")
-async def api_match_markets(match_id: str):
-    cached = LINE_CACHE["by_id"].get(match_id)
-    details = await scraper.fetch_event_details(match_id)
-
-    if details and cached:
-        cached["score1"] = details["score1"]
-        cached["score2"] = details["score2"]
-        cached["time_label"] = details["time_label"]
-        if details["markets"]:
-            cached["markets"] = details["markets"]
-
-    if not cached:
-        raise HTTPException(status_code=404, detail="Матч не найден")
-    return cached
-
-
-@app.post("/api/bet")
-async def api_place_bet(req: BetRequest):
-    cur = req.currency.upper()
-    stake_stars = (
-        round(req.amount / STAR_TO_RUB, 2) if cur == "RUB" else round(req.amount, 2)
-    )
-    if stake_stars < 1:
-        raise HTTPException(status_code=400, detail="Минимальная ставка 1 ★ (1.5 ₽)")
-
-    user = await db.get(f"users/{req.user_id}")
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-
-    balance = float(user.get("balance", 0))
-    if balance < stake_stars:
-        raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
-
-    raw_items: List[BetEventItem] = []
-    if req.events and len(req.events) > 0:
-        raw_items = req.events
-    elif req.match_id and req.selection and req.odd > 1.0:
-        raw_items = [
-            BetEventItem(
-                match_id=req.match_id,
-                selection=req.selection,
-                odd=req.odd,
-            )
-        ]
-    else:
-        raise HTTPException(status_code=400, detail="Купон пуст")
-
-    seen_matches: set[str] = set()
-    validated_events: List[Dict[str, Any]] = []
-    odds_list: List[float] = []
-
-    for item in raw_items:
-        if item.odd <= 1.0:
-            raise HTTPException(status_code=400, detail="Некорректный коэффициент")
-        if item.match_id in seen_matches:
-            raise HTTPException(
-                status_code=400, detail="Нельзя добавить два исхода на один матч в экспресс"
-            )
-        seen_matches.add(item.match_id)
-
-        match = LINE_CACHE["by_id"].get(item.match_id)
-        if not match:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Приём ставок на матч {item.match_title or item.match_id} приостановлен",
-            )
-
-        m_title = f"{match['team1']} - {match['team2']}"
-        odd_val = round(float(item.odd), 2)
-        odds_list.append(odd_val)
-        validated_events.append(
-            {
-                "match_id": item.match_id,
-                "match_title": m_title,
-                "league": match["league"],
-                "selection": item.selection,
-                "outcome": item.selection,
-                "odd": odd_val,
-                "coefficient": odd_val,
-                "status": "active",
+        if (tg && tg.openInvoice) {
+          tg.openInvoice(data.invoice_url, async (status) => {
+            if (status === "paid") {
+              showToast(`Баланс пополнен на ${stars} ★`);
+              await initApp();
+              loadTransactions();
             }
-        )
-
-    is_express = len(validated_events) > 1
-    total_odd = round(math.prod(odds_list), 2)
-    new_balance = round(balance - stake_stars, 2)
-    total_bets = int(user.get("total_bets", 0)) + 1
-    potential_win = round(req.amount * total_odd, 2)
-
-    if is_express:
-        match_title = f"Экспресс ({len(validated_events)} соб.)"
-        league_label = "Экспресс"
-        selection_label = " • ".join(
-            f"{e['match_title']} ({e['selection']})" for e in validated_events
-        )
-        primary_match_id = validated_events[0]["match_id"]
-    else:
-        match_title = validated_events[0]["match_title"]
-        league_label = validated_events[0]["league"]
-        selection_label = validated_events[0]["selection"]
-        primary_match_id = validated_events[0]["match_id"]
-
-    bet_data = {
-        "user_id": req.user_id,
-        "bet_type": "express" if is_express else "single",
-        "events": validated_events,
-        "match_id": primary_match_id,
-        "match_title": match_title,
-        "league": league_label,
-        "selection": selection_label,
-        "outcome": selection_label,
-        "total_coefficient": total_odd,
-        "odd": total_odd,
-        "amount": round(req.amount, 2),
-        "amount_stars": stake_stars,
-        "currency": cur,
-        "potential_win": potential_win,
-        "status": "active",
-        "created_at": int(time.time()),
+          });
+        } else {
+          window.open(data.invoice_url, "_blank");
+        }
+      } catch (_) {
+        showToast("Ошибка соединения");
+      }
     }
 
-    bet_id = await db.push(f"users/{req.user_id}/bets", bet_data)
-    if bet_id:
-        await db.put(f"active_bets/{bet_id}", bet_data)
-
-    await db.patch(
-        f"users/{req.user_id}",
-        {"balance": new_balance, "total_bets": total_bets},
-    )
-    return {
-        "ok": True,
-        "bet_id": bet_id,
-        "balance": new_balance,
-        "bet": bet_data,
+    async function depositRub() {
+      const amount = parseFloat(document.getElementById("dep-rub-input").value);
+      if (!(amount >= 50)) {
+        showToast("Минимальное пополнение 50 ₽");
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/cashier/deposit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: USER_ID, amount, currency: "RUB", method: "sbp" })
+        });
+        const data = await res.json();
+        showToast(data.message || "Заявка создана");
+        loadTransactions();
+      } catch (_) {
+        showToast("Ошибка соединения");
+      }
     }
 
+    async function submitWithdraw() {
+      const cur = document.getElementById("wd-method").value;
+      const amount = parseFloat(document.getElementById("wd-amount").value);
+      const bank = document.getElementById("wd-bank").value;
+      const details = document.getElementById("wd-phone").value.trim();
 
-@app.get("/api/bets/{user_id}")
-async def api_user_bets(user_id: str):
-    res = []
-    seen = set()
+      if (!(amount > 0)) {
+        showToast("Введите сумму вывода");
+        return;
+      }
 
-    ubets = await db.get(f"users/{user_id}/bets")
-    if isinstance(ubets, dict):
-        for b_id, raw in ubets.items():
-            if isinstance(raw, dict):
-                item = normalize_bet(raw)
-                item["id"] = b_id
-                res.append(item)
-                seen.add(b_id)
-
-    root_bets = await db.get("bets")
-    if isinstance(root_bets, dict):
-        for b_id, raw in root_bets.items():
-            if (
-                b_id not in seen
-                and isinstance(raw, dict)
-                and str(raw.get("user_id")) == str(user_id)
-            ):
-                item = normalize_bet(raw)
-                item["id"] = b_id
-                res.append(item)
-
-    res.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-    return res
-
-
-@app.post("/api/invoice")
-async def api_create_stars_invoice(req: InvoiceRequest):
-    if req.stars < 10 or req.stars > 50000:
-        raise HTTPException(status_code=400, detail="Минимальное пополнение 10 ★")
-    try:
-        link = await bot.create_invoice_link(
-            title=f"Пополнение WINSTARS ({req.stars} ★)",
-            description=f"Зачисление {req.stars} Telegram Stars на игровой баланс",
-            payload=f"stars_{req.user_id}_{req.stars}_{int(time.time())}",
-            currency="XTR",
-            prices=[LabeledPrice(label=f"{req.stars} Stars", amount=req.stars)],
-        )
-        return {"ok": True, "invoice_url": link}
-    except Exception as e:
-        logger.error(f"create_invoice_link error: {e}")
-        raise HTTPException(status_code=500, detail="Ошибка создания счёта Stars")
-
-
-@app.post("/api/cashier/deposit")
-async def api_cashier_deposit(req: CashierRequest):
-    if req.amount < 50:
-        raise HTTPException(status_code=400, detail="Минимальное пополнение 50 ₽")
-    tx_id = await db.push(
-        "transactions",
-        {
-            "type": "deposit",
-            "method": "Рубли",
-            "currency": "RUB",
-            "user_id": req.user_id,
-            "amount_rub": req.amount,
-            "amount_stars": round(req.amount / STAR_TO_RUB, 2),
-            "status": "pending",
-            "created_at": int(time.time()),
-        },
-    )
-    return {
-        "ok": True,
-        "tx_id": tx_id,
-        "message": "Шлюз СБП (Rolly Pay) подключается после активации ключа",
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/cashier/withdraw`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: USER_ID,
+            amount,
+            currency: cur,
+            method: cur === "RUB" ? "sbp" : "stars",
+            bank: cur === "RUB" ? bank : "",
+            details: cur === "RUB" ? details : ""
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.detail || "Ошибка заявки на вывод");
+          return;
+        }
+        if (typeof data.balance === "number") {
+          userData.balance = data.balance;
+          updateHeaderBalance();
+        }
+        document.getElementById("wd-amount").value = "";
+        showToast("Заявка на вывод создана");
+        loadTransactions();
+      } catch (_) {
+        showToast("Ошибка соединения");
+      }
     }
 
-
-@app.post("/api/cashier/withdraw")
-async def api_cashier_withdraw(req: CashierRequest):
-    cur = req.currency.upper()
-    user = await db.get(f"users/{req.user_id}")
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-
-    if cur == "STARS":
-        if req.amount < 1000:
-            raise HTTPException(status_code=400, detail="Минимальный вывод 1000 ★")
-        stars_amt = round(req.amount, 2)
-        rub_amt = round(stars_amt * STAR_TO_RUB, 2)
-        method_label = "Telegram Stars"
-        tg_username = user.get("username", "")
-        details_text = f"@{tg_username}" if tg_username else f"ID {req.user_id}"
-        sum_display = f"{stars_amt:.0f} ★"
-    else:
-        if req.amount < 1500:
-            raise HTTPException(status_code=400, detail="Минимальный вывод 1500 ₽")
-        if not req.details.strip():
-            raise HTTPException(status_code=400, detail="Укажите номер телефона")
-        if not req.bank.strip():
-            raise HTTPException(status_code=400, detail="Выберите банк для вывода")
-        rub_amt = round(req.amount, 2)
-        stars_amt = round(rub_amt / STAR_TO_RUB, 2)
-        method_label = "Рубли (СБП)"
-        details_text = f"{req.bank} • {req.details.strip()}"
-        sum_display = f"{rub_amt:.0f} ₽"
-
-    if float(user.get("balance", 0)) < stars_amt:
-        raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
-
-    new_bal = round(float(user["balance"]) - stars_amt, 2)
-    await db.patch(f"users/{req.user_id}", {"balance": new_bal})
-
-    tx_id = await db.push(
-        "transactions",
-        {
-            "type": "withdraw",
-            "method": method_label,
-            "currency": cur,
-            "user_id": req.user_id,
-            "amount_stars": stars_amt,
-            "amount_rub": rub_amt,
-            "bank": req.bank,
-            "details": details_text,
-            "status": "pending",
-            "created_at": int(time.time()),
-        },
-    )
-
-    u_name = user.get("name", "Игрок")
-    u_tag = f" (@{user['username']})" if user.get("username") else ""
-    admin_sum_str = (
-        f"{stars_amt:.0f} ★"
-        if cur == "STARS"
-        else f"{rub_amt:.0f} ₽ ({stars_amt:.1f} ★)"
-    )
-
-    for adm in ADMIN_IDS:
-        try:
-            await bot.send_message(
-                adm,
-                f"Заявка на вывод `{tx_id}`\n"
-                f"Игрок: {u_name}{u_tag} (`{req.user_id}`)\n"
-                f"Способ: {method_label}\n"
-                f"Сумма: **{admin_sum_str}**\n"
-                f"Реквизиты: {details_text}",
-                reply_markup=withdraw_admin_kb(tx_id or ""),
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-
-    return {
-        "ok": True,
-        "tx_id": tx_id or "",
-        "balance": new_bal,
-        "method": method_label,
-        "amount_display": sum_display,
-        "details": details_text,
+    async function activatePromo() {
+      const code = document.getElementById("promo-code-input").value.trim().toUpperCase();
+      if (!code) {
+        showToast("Введите промокод");
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/promo/activate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: USER_ID, code })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.detail || "Промокод недействителен");
+          return;
+        }
+        userData.balance = data.balance;
+        updateHeaderBalance();
+        document.getElementById("promo-code-input").value = "";
+        showToast(`Промокод активирован: +${data.bonus} ★`);
+        loadTransactions();
+      } catch (_) {
+        showToast("Ошибка соединения");
+      }
     }
 
-
-@app.get("/api/transactions/{user_id}")
-async def api_transactions(user_id: str):
-    raw = await db.get("transactions")
-    res = []
-    if isinstance(raw, dict):
-        for tid, t in raw.items():
-            if isinstance(t, dict) and str(t.get("user_id")) == str(user_id):
-                item = dict(t)
-                item["id"] = tid
-                res.append(item)
-    res.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-    return res[:30]
-
-
-@app.post("/api/promo/activate")
-async def api_promo_activate(req: PromoRequest):
-    code = req.code.strip().upper()
-    if not code:
-        raise HTTPException(status_code=400, detail="Введите промокод")
-
-    promo = await db.get(f"promos/{code}")
-    if not isinstance(promo, dict):
-        raise HTTPException(status_code=404, detail="Промокод не найден")
-
-    uses_left = int(promo.get("uses_left", 0))
-    if uses_left <= 0:
-        raise HTTPException(status_code=400, detail="Лимит активаций исчерпан")
-
-    used = await db.get(f"promo_used/{req.user_id}/{code}")
-    if used:
-        raise HTTPException(status_code=400, detail="Вы уже активировали этот промокод")
-
-    bonus = float(promo.get("bonus", 0))
-    user = await db.get(f"users/{req.user_id}") or {"id": req.user_id, "balance": 0.0}
-    new_bal = round(float(user.get("balance", 0)) + bonus, 2)
-
-    await db.patch(f"users/{req.user_id}", {"balance": new_bal})
-    await db.patch(f"promos/{code}", {"uses_left": uses_left - 1})
-    await db.put(f"promo_used/{req.user_id}/{code}", int(time.time()))
-    await db.push(
-        "transactions",
-        {
-            "type": "deposit",
-            "method": "Telegram Stars",
-            "currency": "STARS",
-            "user_id": req.user_id,
-            "amount_stars": bonus,
-            "amount_rub": round(bonus * STAR_TO_RUB, 2),
-            "status": "completed",
-            "created_at": int(time.time()),
-        },
-    )
-    return {"ok": True, "bonus": bonus, "balance": new_bal}
-
-
-def normalize_chat_msg(m: dict) -> dict:
-    user = (
-        m.get("user")
-        or m.get("username")
-        or m.get("first_name")
-        or m.get("name")
-        or "Игрок"
-    )
-    text = m.get("text") or m.get("message") or ""
-    photo_url = m.get("photo_url") or ""
-    raw_t = m.get("time") or m.get("timestamp") or m.get("created_at") or ""
-    if isinstance(raw_t, (int, float)) and raw_t > 1_000_000_000:
-        t_str = datetime.fromtimestamp(int(raw_t), tz=MSK_TZ).strftime("%H:%M")
-    else:
-        t_str = str(raw_t)
-    return {
-        "user_id": str(m.get("user_id") or ""),
-        "user": str(user),
-        "username": str(m.get("username") or ""),
-        "photo_url": str(photo_url),
-        "text": str(text),
-        "time": t_str,
+    async function loadTransactions() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(USER_ID)}`);
+        if (!res.ok) return;
+        const list = await res.json();
+        const box = document.getElementById("tx-history-list");
+        if (!list.length) {
+          box.innerHTML = '<div class="empty-box" style="padding:14px;">Операций пока нет</div>';
+          return;
+        }
+        box.innerHTML = list
+          .map((t) => {
+            const isDep = t.type === "deposit";
+            const amt =
+              t.currency === "RUB" ? `${t.amount_rub} ₽` : `${t.amount_stars} ★`;
+            const stCls =
+              t.status === "completed"
+                ? "st-won"
+                : t.status === "rejected"
+                ? "st-lost"
+                : "st-active";
+            const stTxt =
+              t.status === "completed"
+                ? "Выполнено"
+                : t.status === "rejected"
+                ? "Отклонено"
+                : "В обработке";
+            return `
+            <div class="leg-row">
+              <div>
+                <div class="leg-match">${isDep ? "Пополнение" : "Вывод"} (${esc(t.method)})</div>
+                <div style="font-size:11px;color:var(--text-secondary);">${esc(t.reject_reason || t.details || "")}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-weight:700;color:${isDep ? "var(--green)" : "#fff"};">${isDep ? "+" : "-"}${amt}</div>
+                <span class="status-chip ${stCls}">${stTxt}</span>
+              </div>
+            </div>`;
+          })
+          .join("");
+      } catch (_) {}
     }
 
+    /* ================= PROFILE & CHART ================= */
+    function updateProfileUI() {
+      document.getElementById("prof-name").textContent = userData.name || USER_NAME;
+      document.getElementById("prof-username").textContent = userData.username
+        ? `@${userData.username} • ID ${USER_ID}`
+        : `ID ${USER_ID}`;
 
-async def save_and_broadcast_chat(data: dict) -> Optional[dict]:
-    text = str(data.get("text", "")).strip()[:300]
-    if not text:
-        return None
-    now_str = datetime.now(MSK_TZ).strftime("%H:%M")
-    user_str = str(data.get("user") or "Игрок")[:32]
-    username_str = str(data.get("username") or "")[:32]
-    photo_url = str(data.get("photo_url") or "")
-    user_id = str(data.get("user_id") or "")
+      const avaEl = document.getElementById("prof-avatar");
+      if (userData.photo_url) {
+        avaEl.innerHTML = `<img src="${esc(userData.photo_url)}" alt="" />`;
+      } else {
+        avaEl.textContent = (userData.name || "W").slice(0, 1).toUpperCase();
+      }
 
-    msg_obj = {
-        "user_id": user_id,
-        "user": user_str,
-        "username": username_str,
-        "photo_url": photo_url,
-        "text": text,
-        "time": now_str,
-        "timestamp": int(time.time()),
+      const total = Number(userData.total_bets || 0);
+      const won = Number(userData.won_bets || 0);
+      const winrate = total > 0 ? Math.round((won / total) * 100) : 0;
+      const profitStars = Number(userData.profit || 0);
+
+      document.getElementById("st-total").textContent = total;
+      document.getElementById("st-won").textContent = won;
+      document.getElementById("st-winrate").textContent = `${winrate}%`;
+
+      const profEl = document.getElementById("st-profit");
+      profEl.textContent = `${profitStars >= 0 ? "+" : ""}${formatMoney(profitStars)}`;
+      profEl.style.color = profitStars >= 0 ? "var(--green)" : "var(--red)";
+
+      const refs = Number(userData.referrals || 0);
+      document.getElementById("prof-refs").textContent = String(refs);
+      document.getElementById("ref-link-text").textContent =
+        `https://t.me/${BOT_USERNAME}?start=ref_${USER_ID}`;
     }
-    await db.push("chat_messages", msg_obj)
-    clean_msg = {
-        "user_id": user_id,
-        "user": user_str,
-        "username": username_str,
-        "photo_url": photo_url,
-        "text": text,
-        "time": now_str,
+
+    function copyRefLink() {
+      const link = document.getElementById("ref-link-text").textContent;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link);
+        showToast("Ссылка скопирована");
+      }
     }
-    await chat_manager.broadcast({"type": "message", "message": clean_msg})
-    return clean_msg
 
+    function drawProfitChart() {
+      const canvas = document.getElementById("profit-chart");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width || 320;
+      const h = 125;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
 
-@app.get("/api/chat/history")
-async def api_chat_history():
-    history = await db.get("chat_messages")
-    if not isinstance(history, dict):
-        return []
-    return [
-        normalize_chat_msg(v)
-        for v in list(history.values())[-35:]
-        if isinstance(v, dict)
-    ]
+      const settled = [...userBets]
+        .filter((b) => b.status === "won" || b.status === "lost")
+        .reverse();
 
+      const points = [0];
+      let acc = 0;
+      settled.forEach((b) => {
+        const stake = Number(b.amount_stars || 0);
+        const pay = Number(b.payout_stars || 0);
+        acc += pay - stake;
+        points.push(Number(acc.toFixed(2)));
+      });
+      if (points.length === 1) points.push(0);
 
-@app.post("/api/chat/send")
-async def api_chat_send(req: ChatMessageRequest):
-    msg = await save_and_broadcast_chat(req.model_dump())
-    if not msg:
-        raise HTTPException(status_code=400, detail="Пустое сообщение")
-    return {"ok": True, "message": msg}
+      const minV = Math.min(...points, -5);
+      const maxV = Math.max(...points, 5);
+      const span = maxV - minV || 1;
+      const pad = 12;
 
+      const zeroY = h - pad - ((0 - minV) / span) * (h - pad * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.07)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, zeroY);
+      ctx.lineTo(w - pad, zeroY);
+      ctx.stroke();
 
-@app.websocket("/ws/chat")
-async def ws_chat(ws: WebSocket):
-    await chat_manager.connect(ws)
-    try:
-        history = await db.get("chat_messages")
-        if isinstance(history, dict):
-            msgs = [
-                normalize_chat_msg(v)
-                for v in list(history.values())[-35:]
-                if isinstance(v, dict)
-            ]
-            await ws.send_json({"type": "history", "messages": msgs})
+      const lineColor = acc >= 0 ? "#10b981" : "#f43f5e";
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      points.forEach((val, idx) => {
+        const x = pad + (idx / (points.length - 1)) * (w - pad * 2);
+        const y = h - pad - ((val - minV) / span) * (h - pad * 2);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
 
-        while True:
-            raw = await ws.receive_text()
-            data = json.loads(raw)
-            await save_and_broadcast_chat(data)
-    except WebSocketDisconnect:
-        chat_manager.disconnect(ws)
-    except Exception:
-        chat_manager.disconnect(ws)
+    // Bind swipe-down gestures to all bottom sheets & rectangular modals
+    enableSwipeToClose(document.getElementById("league-sheet"), closeLeagueModal);
+    enableSwipeToClose(document.getElementById("coupon-sheet"), closeCouponModal);
+    enableSwipeToClose(document.getElementById("markets-sheet"), closeMarketsModal);
+    enableSwipeToClose(document.getElementById("bet-detail-sheet"), closeBetDetailModal);
 
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    initApp();
+  </script>
+</body>
+</html>
