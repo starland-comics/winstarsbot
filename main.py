@@ -1,3121 +1,1631 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>WINSTARS</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    :root {
-      --bg: #090710;
-      --bg-elevated: #110e1c;
-      --bg-card: #151123;
-      --bg-surface: #1d1830;
-      --bg-surface-active: #272040;
-      --border: rgba(255, 255, 255, 0.07);
-      --border-strong: rgba(255, 255, 255, 0.13);
-      --border-accent: rgba(139, 92, 246, 0.5);
-      --accent: #8b5cf6;
-      --accent-deep: #6d28d9;
-      --accent-soft: rgba(139, 92, 246, 0.16);
-      --accent-grad: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-      --green: #10b981;
-      --green-soft: rgba(16, 185, 129, 0.14);
-      --red: #f43f5e;
-      --red-soft: rgba(244, 63, 94, 0.14);
-      --amber: #f59e0b;
-      --amber-soft: rgba(245, 158, 11, 0.14);
-      --text: #f8fafc;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --header-h: 58px;
-      --nav-h: 64px;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    html, body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 14px;
-      line-height: 1.4;
-      overflow-x: hidden;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    body {
-      padding-top: calc(var(--header-h) + 6px);
-      padding-bottom: calc(var(--nav-h) + 86px);
-    }
-
-    svg.ico {
-      width: 18px;
-      height: 18px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.85;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      flex-shrink: 0;
-      display: block;
-    }
-
-    svg.ico-sm {
-      width: 14px;
-      height: 14px;
-      stroke-width: 2;
-    }
-
-    svg.ico-xs {
-      width: 12px;
-      height: 12px;
-      stroke-width: 2.1;
-    }
-
-    /* ===== TOP HEADER ===== */
-    .topbar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: var(--header-h);
-      z-index: 800;
-      background: rgba(9, 7, 16, 0.92);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 12px;
-      gap: 6px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-width: 0;
-    }
-
-    .brand-mark {
-      width: 27px;
-      height: 27px;
-      border-radius: 8px;
-      background: var(--accent-grad);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #fff;
-      box-shadow: 0 4px 14px rgba(109, 40, 217, 0.45);
-      flex-shrink: 0;
-    }
-
-    .brand-name {
-      font-weight: 800;
-      font-size: 14px;
-      letter-spacing: 0.7px;
-      color: #fff;
-    }
-
-    .topbar-controls {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-shrink: 0;
-    }
-
-    /* Prominent Currency Switcher */
-    .cur-switch {
-      display: flex;
-      align-items: center;
-      background: var(--bg-card);
-      border: 1px solid var(--border-accent);
-      border-radius: 10px;
-      padding: 2px;
-      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.14);
-    }
-
-    .cur-btn {
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      font-family: inherit;
-      font-weight: 700;
-      font-size: 10.5px;
-      letter-spacing: 0.2px;
-      padding: 5px 8px;
-      border-radius: 7px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      transition: 0.16s ease;
-    }
-
-    .cur-btn.active {
-      background: var(--accent-grad);
-      color: #fff;
-      box-shadow: 0 2px 8px rgba(109, 40, 217, 0.45);
-    }
-
-    .balance-pill {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-strong);
-      border-radius: 10px;
-      padding: 4px 4px 4px 9px;
-      cursor: pointer;
-      transition: 0.15s ease;
-    }
-
-    .balance-pill:active {
-      transform: scale(0.97);
-    }
-
-    .balance-val {
-      font-weight: 700;
-      font-size: 12px;
-      color: #fff;
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-
-    .balance-plus {
-      width: 21px;
-      height: 21px;
-      border-radius: 6px;
-      background: var(--accent-grad);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* ===== PAGES ===== */
-    .page {
-      display: none;
-      padding: 10px 14px;
-      max-width: 620px;
-      margin: 0 auto;
-    }
-
-    .page.active {
-      display: block;
-    }
-
-    /* ===== SEGMENTED TABS ===== */
-    .seg-tabs {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4px;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      padding: 4px;
-      border-radius: 12px;
-      margin-bottom: 10px;
-    }
-
-    .seg-tab {
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      font-family: inherit;
-      font-weight: 600;
-      font-size: 13px;
-      padding: 8px 10px;
-      border-radius: 9px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      transition: 0.15s ease;
-    }
-
-    .seg-tab.active {
-      background: var(--bg-surface);
-      color: #fff;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
-
-    .live-indicator {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--red);
-      box-shadow: 0 0 8px var(--red);
-      animation: pulse 1.5s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.35; }
-    }
-
-    .pill-counter {
-      background: rgba(255, 255, 255, 0.07);
-      color: var(--text-secondary);
-      font-size: 11px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 6px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .seg-tab.active .pill-counter {
-      background: var(--accent-soft);
-      color: #c4b5fd;
-    }
-
-    /* ===== SEARCH & LEAGUE PICKER BAR ===== */
-    .filter-toolbar {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .search-wrap {
-      position: relative;
-      min-width: 0;
-    }
-
-    .search-wrap .ico-search {
-      position: absolute;
-      left: 11px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-
-    .search-input {
-      width: 100%;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: 11px;
-      padding: 9px 11px 9px 34px;
-      color: #fff;
-      font-family: inherit;
-      font-size: 13px;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-
-    .search-input::placeholder {
-      color: var(--text-muted);
-    }
-
-    .search-input:focus {
-      border-color: var(--border-accent);
-    }
-
-    .league-picker-btn {
-      background: var(--bg-elevated);
-      border: 1px solid var(--border-strong);
-      border-radius: 11px;
-      padding: 0 12px;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 12.5px;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      max-width: 175px;
-      transition: 0.15s;
-    }
-
-    .league-picker-btn.has-filter {
-      background: var(--accent-soft);
-      border-color: var(--border-accent);
-      color: #ddd6fe;
-    }
-
-    .league-picker-btn span {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* ===== LEAGUE GROUP & MATCH CARD ===== */
-    .league-section {
-      margin-bottom: 14px;
-    }
-
-    .league-title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 5px 2px 8px;
-      color: var(--text-secondary);
-      font-size: 11.5px;
-      font-weight: 700;
-      letter-spacing: 0.3px;
-      text-transform: uppercase;
-    }
-
-    .league-title-left {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-    }
-
-    .league-title-left span {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .match-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px;
-      margin-bottom: 8px;
-    }
-
-    .match-meta {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .match-meta-left {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-width: 0;
-      flex: 1;
-    }
-
-    .time-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      background: var(--bg-surface);
-      padding: 3px 7px;
-      border-radius: 6px;
-      font-variant-numeric: tabular-nums;
-      flex-shrink: 0;
-    }
-
-    .time-tag.live {
-      background: var(--red-soft);
-      color: #fda4af;
-    }
-
-    .match-league-inline {
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--text-muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      min-width: 0;
-    }
-
-    .markets-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: transparent;
-      border: 1px solid var(--border-strong);
-      color: var(--text-secondary);
-      font-family: inherit;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: 0.15s;
-    }
-
-    .markets-btn:active {
-      background: var(--bg-surface);
-      color: #fff;
-    }
-
-    .teams-list {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-      margin-bottom: 11px;
-      cursor: pointer;
-    }
-
-    .team-line {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .team-left {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      min-width: 0;
-      flex: 1;
-    }
-
-    .team-crest {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      flex-shrink: 0;
-      font-size: 9.5px;
-      font-weight: 700;
-      color: var(--text-secondary);
-    }
-
-    .team-crest img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-
-    .team-label {
-      font-weight: 600;
-      font-size: 13.5px;
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .team-goals {
-      font-weight: 800;
-      font-size: 14px;
-      color: #fff;
-      font-variant-numeric: tabular-nums;
-      min-width: 16px;
-      text-align: right;
-    }
-
-    .odds-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
-    }
-
-    .odds-grid.cols-2 {
-      grid-template-columns: repeat(2, 1fr);
-    }
-
-    .odd-cell {
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      padding: 8px 10px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-family: inherit;
-      cursor: pointer;
-      transition: 0.14s ease;
-    }
-
-    .odd-cell:active {
-      transform: scale(0.97);
-    }
-
-    .odd-cell .k {
-      font-size: 11.5px;
-      font-weight: 600;
-      color: var(--text-secondary);
-    }
-
-    .odd-cell .v {
-      font-size: 13px;
-      font-weight: 700;
-      color: #fff;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .odd-cell.selected {
-      background: var(--accent-grad);
-      border-color: rgba(255, 255, 255, 0.25);
-      box-shadow: 0 4px 14px rgba(109, 40, 217, 0.4);
-    }
-
-    .odd-cell.selected .k,
-    .odd-cell.selected .v {
-      color: #fff;
-    }
-
-    /* ===== FLOATING PURPLE COUPON BAR ===== */
-    #betslip-fab {
-      position: fixed;
-      left: 14px;
-      right: 14px;
-      bottom: calc(var(--nav-h) + 10px);
-      max-width: 592px;
-      margin: 0 auto;
-      z-index: 880;
-      display: none;
-      align-items: center;
-      justify-content: space-between;
-      padding: 11px 14px;
-      border-radius: 14px;
-      background: var(--accent-grad);
-      color: #fff;
-      box-shadow: 0 10px 28px rgba(109, 40, 217, 0.55);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      cursor: pointer;
-      user-select: none;
-      animation: fabSlide 0.18s ease;
-    }
-
-    @keyframes fabSlide {
-      from { transform: translateY(14px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-
-    #betslip-fab:active {
-      transform: scale(0.985);
-    }
-
-    .fab-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .fab-badge {
-      min-width: 26px;
-      height: 26px;
-      padding: 0 7px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.2);
-      font-weight: 800;
-      font-size: 13px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .fab-info {
-      min-width: 0;
-    }
-
-    .fab-title {
-      font-weight: 700;
-      font-size: 13.5px;
-      line-height: 1.2;
-    }
-
-    .fab-sub {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.82);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .fab-coef {
-      background: rgba(9, 7, 16, 0.35);
-      padding: 5px 10px;
-      border-radius: 8px;
-      font-weight: 800;
-      font-size: 13.5px;
-      font-variant-numeric: tabular-nums;
-      flex-shrink: 0;
-    }
-
-    /* ===== OVERLAYS: BOTTOM SHEETS & RECTANGULAR CENTER MODALS ===== */
-    .overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 1100;
-      background: rgba(5, 4, 10, 0.82);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      display: none;
-      align-items: flex-end;
-      justify-content: center;
-    }
-
-    .overlay.open {
-      display: flex;
-    }
-
-    .overlay.center-mode {
-      align-items: center;
-      padding: 16px;
-    }
-
-    .sheet {
-      width: 100%;
-      max-width: 620px;
-      max-height: 88vh;
-      overflow-y: auto;
-      background: var(--bg-elevated);
-      border-top: 1px solid var(--border-strong);
-      border-radius: 20px 20px 0 0;
-      padding: 12px 16px 26px;
-      color: var(--text);
-      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-      will-change: transform;
-    }
-
-    .rect-modal {
-      width: 100%;
-      max-width: 440px;
-      max-height: 86vh;
-      overflow-y: auto;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border-strong);
-      border-radius: 16px;
-      padding: 12px 16px 18px;
-      color: var(--text);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(139, 92, 246, 0.14);
-      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-      will-change: transform;
-    }
-
-    .sheet-bar {
-      width: 38px;
-      height: 4px;
-      border-radius: 99px;
-      background: rgba(255, 255, 255, 0.2);
-      margin: 0 auto 12px;
-      cursor: grab;
-    }
-
-    .sheet-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      gap: 10px;
-    }
-
-    .icon-btn {
-      width: 30px;
-      height: 30px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--bg-surface);
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    .type-pill {
-      background: var(--accent-soft);
-      border: 1px solid var(--border-accent);
-      color: #ddd6fe;
-      font-weight: 700;
-      font-size: 11px;
-      letter-spacing: 0.5px;
-      padding: 4px 10px;
-      border-radius: 7px;
-      text-transform: uppercase;
-    }
-
-    /* Central Match Summary Header inside Markets Sheet */
-    .match-hero-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border-strong);
-      border-radius: 14px;
-      padding: 12px 10px;
-      margin-bottom: 14px;
-      text-align: center;
-    }
-
-    .match-hero-league {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-
-    .match-hero-grid {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .hero-team {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-    }
-
-    .hero-crest {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-strong);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--text-secondary);
-    }
-
-    .hero-crest img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-
-    .hero-team-name {
-      font-size: 12.5px;
-      font-weight: 700;
-      color: #fff;
-      line-height: 1.25;
-      word-break: break-word;
-    }
-
-    .hero-center {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      padding: 0 4px;
-    }
-
-    .hero-score {
-      font-size: 20px;
-      font-weight: 800;
-      color: #fff;
-      letter-spacing: 1px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .hero-vs {
-      font-size: 14px;
-      font-weight: 800;
-      color: var(--text-secondary);
-    }
-
-    .hero-time {
-      font-size: 10.5px;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 6px;
-      background: var(--bg-surface);
-      color: var(--text-secondary);
-    }
-
-    .hero-time.live {
-      background: var(--red-soft);
-      color: #fda4af;
-    }
-
-    /* League Picker List */
-    .league-option {
-      width: 100%;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 11px;
-      padding: 11px 12px;
-      margin-bottom: 7px;
-      color: var(--text);
-      font-family: inherit;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      cursor: pointer;
-      text-align: left;
-    }
-
-    .league-option.active {
-      background: var(--accent-soft);
-      border-color: var(--border-accent);
-      color: #fff;
-    }
-
-    .league-option-name {
-      font-size: 13px;
-      font-weight: 600;
-      flex: 1;
-      min-width: 0;
-    }
-
-    /* Coupon & Receipt Rows */
-    .coupon-row {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .coupon-row-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .coupon-row-league {
-      font-size: 10.5px;
-      color: var(--text-muted);
-      margin-bottom: 2px;
-    }
-
-    .coupon-row-match {
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .coupon-row-pick {
-      font-size: 12px;
-      font-weight: 700;
-      color: #a78bfa;
-      margin-top: 2px;
-    }
-
-    .coupon-row-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .coef-tag {
-      background: var(--bg-surface);
-      padding: 4px 8px;
-      border-radius: 7px;
-      font-weight: 700;
-      font-size: 12.5px;
-      color: #fff;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .del-btn {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      border: none;
-      background: var(--red-soft);
-      color: var(--red);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-
-    .presets-row {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 6px;
-      margin: 10px 0;
-    }
-
-    .preset-chip {
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
-      font-family: inherit;
-      border-radius: 8px;
-      padding: 7px 2px;
-      font-size: 11.5px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .preset-chip:active {
-      background: var(--bg-surface-active);
-      color: #fff;
-    }
-
-    .input-box {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border-strong);
-      border-radius: 10px;
-      padding: 11px 13px;
-      color: #fff;
-      font-family: inherit;
-      font-size: 14px;
-      font-weight: 600;
-      outline: none;
-    }
-
-    .input-box:focus {
-      border-color: var(--accent);
-    }
-
-    .summary-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 11px 12px;
-      margin: 12px 0;
-    }
-
-    .summary-line {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 12.5px;
-      color: var(--text-secondary);
-      margin-bottom: 6px;
-    }
-
-    .summary-line:last-child {
-      margin-bottom: 0;
-      padding-top: 7px;
-      border-top: 1px solid var(--border);
-      color: #fff;
-      font-weight: 700;
-      font-size: 14px;
-    }
-
-    .primary-btn {
-      width: 100%;
-      border: none;
-      border-radius: 11px;
-      padding: 13px;
-      background: var(--accent-grad);
-      color: #fff;
-      font-family: inherit;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 6px 18px rgba(109, 40, 217, 0.35);
-    }
-
-    .primary-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .secondary-btn {
-      width: 100%;
-      border: 1px solid var(--border-strong);
-      border-radius: 11px;
-      padding: 12px;
-      background: var(--bg-surface);
-      color: #fff;
-      font-family: inherit;
-      font-size: 13.5px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    /* ===== MARKETS MODAL ===== */
-    .mkt-block {
-      margin-bottom: 14px;
-    }
-
-    .mkt-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 7px;
-    }
-
-    .mkt-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
-    }
-
-    .mkt-grid.cols-3 {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
-    /* ===== MY BETS ===== */
-    .sub-filters {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 12px;
-    }
-
-    .sub-filter {
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
-      font-family: inherit;
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .sub-filter.active {
-      background: var(--accent-soft);
-      border-color: var(--border-accent);
-      color: #ddd6fe;
-    }
-
-    .bet-item {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px;
-      margin-bottom: 9px;
-      cursor: pointer;
-      transition: border-color 0.15s;
-    }
-
-    .bet-item:active {
-      border-color: var(--border-accent);
-    }
-
-    .bet-item-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-
-    .status-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 6px;
-    }
-
-    .st-active { background: var(--amber-soft); color: var(--amber); }
-    .st-won { background: var(--green-soft); color: var(--green); }
-    .st-lost { background: var(--red-soft); color: var(--red); }
-    .st-void { background: rgba(148, 163, 184, 0.14); color: var(--text-secondary); }
-
-    .leg-row {
-      padding: 6px 0;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .leg-row:last-of-type {
-      border-bottom: none;
-    }
-
-    .leg-match {
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .leg-pick {
-      font-size: 11.5px;
-      color: #a78bfa;
-      font-weight: 600;
-    }
-
-    .bet-item-bottom {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      color: var(--text-secondary);
-    }
-
-    /* ===== CHAT ===== */
-    .chat-panel {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      height: calc(100vh - 196px);
-      min-height: 360px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .chat-header {
-      padding: 11px 14px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-weight: 700;
-      font-size: 13px;
-    }
-
-    .chat-header-title {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-    }
-
-    .chat-feed {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 9px;
-    }
-
-    .msg-row {
-      display: flex;
-      gap: 8px;
-      align-items: flex-start;
-    }
-
-    .msg-row.mine {
-      flex-direction: row-reverse;
-    }
-
-    .ava-circle {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: var(--bg-surface-active);
-      border: 1px solid var(--border-strong);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 11.5px;
-      color: #ddd6fe;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-
-    .ava-circle img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .msg-bubble {
-      max-width: 78%;
-      background: var(--bg-surface);
-      border-radius: 12px;
-      padding: 8px 11px;
-    }
-
-    .msg-row.mine .msg-bubble {
-      background: rgba(139, 92, 246, 0.22);
-      border: 1px solid rgba(139, 92, 246, 0.35);
-    }
-
-    .msg-author {
-      font-size: 11px;
-      font-weight: 700;
-      color: #c4b5fd;
-      margin-bottom: 2px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .msg-author span {
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .msg-body {
-      font-size: 13px;
-      word-break: break-word;
-    }
-
-    .chat-bar {
-      display: flex;
-      gap: 8px;
-      padding: 9px 10px;
-      border-top: 1px solid var(--border);
-      background: var(--bg-elevated);
-    }
-
-    .chat-send-btn {
-      width: 40px;
-      border: none;
-      border-radius: 10px;
-      background: var(--accent-grad);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    /* ===== CASHIER & PROFILE ===== */
-    .panel {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      margin-bottom: 10px;
-    }
-
-    .panel-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      font-weight: 700;
-      font-size: 13.5px;
-    }
-
-    .panel-head-title {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-    }
-
-    .select-box {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border-strong);
-      border-radius: 10px;
-      padding: 10px 12px;
-      color: #fff;
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 9px;
-      outline: none;
-    }
-
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .kpi-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-    }
-
-    .kpi-label {
-      font-size: 11.5px;
-      color: var(--text-secondary);
-      margin-bottom: 4px;
-    }
-
-    .kpi-value {
-      font-size: 17px;
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .ref-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 9px;
-    }
-
-    .ref-url {
-      flex: 1;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      padding: 9px 10px;
-      font-size: 12px;
-      color: var(--text-secondary);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .compact-btn {
-      background: var(--accent-grad);
-      border: none;
-      border-radius: 9px;
-      padding: 0 13px;
-      color: #fff;
-      font-family: inherit;
-      font-weight: 700;
-      font-size: 12px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    /* ===== BOTTOM MONOCHROME NAVIGATION ===== */
-    .bottom-nav {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: var(--nav-h);
-      z-index: 900;
-      background: rgba(11, 9, 20, 0.94);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-top: 1px solid var(--border);
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-    }
-
-    .nav-btn {
-      position: relative;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-family: inherit;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 10.5px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: color 0.15s ease;
-    }
-
-    .nav-btn.active {
-      color: #c4b5fd;
-    }
-
-    .nav-btn.active::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      width: 24px;
-      height: 2px;
-      border-radius: 0 0 3px 3px;
-      background: var(--accent);
-    }
-
-    /* ===== TOAST ===== */
-    .toast {
-      position: fixed;
-      top: 66px;
-      left: 50%;
-      transform: translateX(-50%) translateY(-10px);
-      z-index: 1500;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-accent);
-      color: #fff;
-      padding: 9px 15px;
-      border-radius: 10px;
-      font-size: 12.5px;
-      font-weight: 600;
-      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
-      opacity: 0;
-      pointer-events: none;
-      transition: 0.18s ease;
-      white-space: nowrap;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    .empty-box {
-      text-align: center;
-      padding: 36px 16px;
-      color: var(--text-muted);
-      font-size: 13px;
-    }
-  </style>
-</head>
-<body>
-
-  <!-- TOP BAR -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">
-        <svg class="ico ico-sm" viewBox="0 0 24 24" style="fill:currentColor;stroke:none;">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>
-      </div>
-      <span class="brand-name">WINSTARS</span>
-    </div>
-
-    <div class="topbar-controls">
-      <div class="cur-switch" title="Переключить валюту отображения">
-        <button class="cur-btn active" id="cur-stars" onclick="setCurrency('STARS')">★ STARS</button>
-        <button class="cur-btn" id="cur-rub" onclick="setCurrency('RUB')">₽ RUB</button>
-      </div>
-      <div class="balance-pill" onclick="switchTab('cashier')">
-        <span class="balance-val" id="header-balance">0 ★</span>
-        <span class="balance-plus">
-          <svg class="ico ico-xs" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </span>
-      </div>
-    </div>
-  </header>
-
-  <div class="toast" id="toast"></div>
-
-  <!-- PAGE 1: MATCHES -->
-  <main class="page active" id="page-matches">
-    <div class="seg-tabs">
-      <button class="seg-tab active" id="tab-live" onclick="setLineMode('live')">
-        <span class="live-indicator"></span>
-        <span>Live</span>
-        <span class="pill-counter" id="live-count">0</span>
-      </button>
-      <button class="seg-tab" id="tab-prematch" onclick="setLineMode('prematch')">
-        <span>Линия</span>
-        <span class="pill-counter" id="prematch-count">0</span>
-      </button>
-    </div>
-
-    <div class="filter-toolbar">
-      <div class="search-wrap">
-        <svg class="ico ico-sm ico-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" class="search-input" id="match-search" placeholder="Поиск команды или лиги..." oninput="renderMatches()" />
-      </div>
-      <button class="league-picker-btn" id="league-picker-btn" onclick="openLeagueModal()">
-        <svg class="ico ico-sm" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-        <span id="league-picker-label">Все лиги</span>
-      </button>
-    </div>
-
-    <div id="matches-container">
-      <div class="empty-box">Загрузка линии матчей...</div>
-    </div>
-  </main>
-
-  <!-- PAGE 2: MY BETS -->
-  <section class="page" id="page-bets">
-    <div class="sub-filters">
-      <button class="sub-filter active" onclick="setBetsFilter('all', this)">Все</button>
-      <button class="sub-filter" onclick="setBetsFilter('active', this)">Активные</button>
-      <button class="sub-filter" onclick="setBetsFilter('settled', this)">Рассчитанные</button>
-    </div>
-    <div id="bets-container">
-      <div class="empty-box">Загрузка истории ставок...</div>
-    </div>
-  </section>
-
-  <!-- PAGE 3: CHAT -->
-  <section class="page" id="page-chat">
-    <div class="chat-panel">
-      <div class="chat-header">
-        <div class="chat-header-title">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span>Чат игроков</span>
-        </div>
-        <span style="font-size:11px;color:var(--green);" id="chat-status">Онлайн</span>
-      </div>
-      <div class="chat-feed" id="chat-messages"></div>
-      <form class="chat-bar" onsubmit="sendChatMessage(event)">
-        <input type="text" class="input-box" id="chat-input" maxlength="300" placeholder="Сообщение..." style="padding:9px 12px;" />
-        <button type="submit" class="chat-send-btn" aria-label="Отправить">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
-      </form>
-    </div>
-  </section>
-
-  <!-- PAGE 4: CASHIER -->
-  <section class="page" id="page-cashier">
-    <div class="seg-tabs">
-      <button class="seg-tab active" id="cash-tab-dep" onclick="setCashierTab('deposit')">Пополнение</button>
-      <button class="seg-tab" id="cash-tab-wd" onclick="setCashierTab('withdraw')">Вывод</button>
-    </div>
-
-    <div id="cashier-deposit-block">
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-head-title">
-            <svg class="ico ico-sm" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            <span>Telegram Stars</span>
-          </div>
-          <span style="font-size:11px;color:var(--text-muted);">1 ★ = 1.5 ₽</span>
-        </div>
-        <div class="presets-row">
-          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=25">25 ★</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=50">50 ★</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=100">100 ★</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=250">250 ★</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-stars-input').value=500">500 ★</button>
-        </div>
-        <input type="number" id="dep-stars-input" class="input-box" placeholder="Количество Stars (от 10 ★)" style="margin-bottom:10px;" />
-        <button class="primary-btn" onclick="depositStars()">Пополнить в Stars</button>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-head-title">
-            <svg class="ico ico-sm" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-            <span>Перевод по СБП</span>
-          </div>
-          <span style="font-size:11px;color:var(--text-muted);">от 50 ₽</span>
-        </div>
-        <div class="presets-row">
-          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=100">100 ₽</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=300">300 ₽</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=500">500 ₽</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=1000">1000 ₽</button>
-          <button class="preset-chip" onclick="document.getElementById('dep-rub-input').value=2500">2500 ₽</button>
-        </div>
-        <input type="number" id="dep-rub-input" class="input-box" placeholder="Сумма в рублях (от 50 ₽)" style="margin-bottom:10px;" />
-        <button class="secondary-btn" onclick="depositRub()">Пополнить через СБП</button>
-      </div>
-    </div>
-
-    <div id="cashier-withdraw-block" style="display:none;">
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-head-title">
-            <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span>Вывод средств</span>
-          </div>
-        </div>
-        <select id="wd-method" class="select-box" onchange="toggleWithdrawFields()">
-          <option value="STARS">Telegram Stars (от 1000 ★)</option>
-          <option value="RUB">Рубли по СБП (от 1500 ₽)</option>
-        </select>
-
-        <div id="wd-sbp-fields" style="display:none;">
-          <select id="wd-bank" class="select-box">
-            <option value="Т-Банк (Тинькофф)">Т-Банк (Тинькофф)</option>
-            <option value="Сбербанк">Сбербанк</option>
-            <option value="Альфа-Банк">Альфа-Банк</option>
-            <option value="ВТБ">ВТБ</option>
-            <option value="Озон Банк">Озон Банк</option>
-            <option value="Райффайзенбанк">Райффайзенбанк</option>
-          </select>
-          <input type="tel" id="wd-phone" class="input-box" placeholder="+7 (999) 000-00-00" style="margin-bottom:9px;" />
-        </div>
-
-        <input type="number" id="wd-amount" class="input-box" placeholder="Сумма вывода" style="margin-bottom:10px;" />
-        <button class="primary-btn" onclick="submitWithdraw()">Отправить заявку</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <div class="panel-head-title">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-          <span>Промокод</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <input type="text" id="promo-code-input" class="input-box" placeholder="Введите код" style="text-transform:uppercase;" />
-        <button class="compact-btn" onclick="activatePromo()">Применить</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <div class="panel-head-title">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span>История операций</span>
-        </div>
-      </div>
-      <div id="tx-history-list"><div class="empty-box" style="padding:14px;">Операций пока нет</div></div>
-    </div>
-  </section>
-
-  <!-- PAGE 5: PROFILE -->
-  <section class="page" id="page-profile">
-    <div class="panel" style="display:flex;align-items:center;gap:12px;">
-      <div class="ava-circle" style="width:46px;height:46px;font-size:17px;" id="prof-avatar">W</div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;font-size:15px;" id="prof-name">Игрок</div>
-        <div style="font-size:12px;color:var(--text-secondary);" id="prof-username">ID: —</div>
-      </div>
-    </div>
-
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-label">Всего ставок</div>
-        <div class="kpi-value" id="st-total">0</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Выиграно</div>
-        <div class="kpi-value" style="color:var(--green);" id="st-won">0</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Винрейт</div>
-        <div class="kpi-value" id="st-winrate">0%</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Чистый профит</div>
-        <div class="kpi-value" id="st-profit">0 ★</div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <div class="panel-head-title">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-          <span>Динамика баланса</span>
-        </div>
-      </div>
-      <canvas id="profit-chart" height="125" style="width:100%;display:block;"></canvas>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <div class="panel-head-title">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span>Реферальная программа</span>
-        </div>
-        <span class="pill-counter" id="prof-refs">0</span>
-      </div>
-      <div style="font-size:12px;color:var(--text-secondary);">
-        Приглашайте друзей и получайте <b>+5 ★</b> за каждого нового игрока.
-      </div>
-      <div class="ref-row">
-        <div class="ref-url" id="ref-link-text">https://t.me/WinStarsPlaybot</div>
-        <button class="compact-btn" onclick="copyRefLink()">
-          <svg class="ico ico-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          <span>Копия</span>
-        </button>
-      </div>
-    </div>
-  </section>
-
-  <!-- FLOATING PURPLE COUPON BUTTON (ОДИНАР / ЭКСПРЕСС) -->
-  <div id="betslip-fab" onclick="openCouponModal()">
-    <div class="fab-left">
-      <div class="fab-badge" id="fab-count">1</div>
-      <div class="fab-info">
-        <div class="fab-title" id="fab-title">Купон • Одинар</div>
-        <div class="fab-sub" id="fab-sub">Нажмите, чтобы оформить</div>
-      </div>
-    </div>
-    <div class="fab-coef" id="fab-total-odd">× 1.00</div>
-  </div>
-
-  <!-- LEAGUE SELECTOR SHEET -->
-  <div class="overlay" id="league-modal" onclick="if(event.target===this) closeLeagueModal()">
-    <div class="sheet" id="league-sheet">
-      <div class="sheet-bar"></div>
-      <div class="sheet-head">
-        <span style="font-weight:700;font-size:15px;">Выбор лиги</span>
-        <button class="icon-btn" onclick="closeLeagueModal()">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="search-wrap" style="margin-bottom:10px;">
-        <svg class="ico ico-sm ico-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" class="search-input" id="league-modal-search" placeholder="Найти турнир..." oninput="renderLeagueModalList()" />
-      </div>
-      <div id="league-modal-list"></div>
-    </div>
-  </div>
-
-  <!-- RECTANGULAR COUPON MODAL (ОДИНАР / ЭКСПРЕСС) -->
-  <div class="overlay center-mode" id="coupon-modal" onclick="if(event.target===this) closeCouponModal()">
-    <div class="rect-modal" id="coupon-sheet">
-      <div class="sheet-bar"></div>
-      <div class="sheet-head">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span class="type-pill" id="cp-type-badge">ОДИНАР</span>
-          <span style="font-size:12px;color:var(--text-secondary);" id="cp-events-count">1 событие</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button style="background:none;border:none;color:var(--text-secondary);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;" onclick="clearBetSlip()">Очистить</button>
-          <button class="icon-btn" onclick="closeCouponModal()">
-            <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div id="cp-items-list"></div>
-
-      <div class="presets-row" id="cp-presets"></div>
-      <input type="number" id="cp-stake-input" class="input-box" placeholder="Сумма ставки" oninput="recalcCouponWin()" />
-
-      <div class="summary-card">
-        <div class="summary-line">
-          <span>Тип купона</span>
-          <span id="cp-sum-type" style="color:#fff;font-weight:600;">Одинар</span>
-        </div>
-        <div class="summary-line">
-          <span>Общий коэффициент</span>
-          <span id="cp-sum-odd" style="color:#c4b5fd;font-weight:700;">1.00</span>
-        </div>
-        <div class="summary-line">
-          <span>Возможный выигрыш</span>
-          <span id="cp-sum-win" style="color:var(--green);">0 ★</span>
-        </div>
-      </div>
-
-      <button class="primary-btn" id="cp-submit-btn" onclick="submitCouponBet()">Сделать ставку</button>
-    </div>
-  </div>
-
-  <!-- MATCH FULL MARKETS SHEET (WITH CENTRAL MATCH SUMMARY) -->
-  <div class="overlay" id="markets-modal" onclick="if(event.target===this) closeMarketsModal()">
-    <div class="sheet" id="markets-sheet">
-      <div class="sheet-bar"></div>
-      <div class="sheet-head" style="margin-bottom:8px;">
-        <span style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.4px;">Роспись матча</span>
-        <button class="icon-btn" onclick="closeMarketsModal()">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div id="mm-hero"></div>
-      <div id="mm-body"></div>
-    </div>
-  </div>
-
-  <!-- RECTANGULAR BET DETAILS MODAL -->
-  <div class="overlay center-mode" id="bet-detail-modal" onclick="if(event.target===this) closeBetDetailModal()">
-    <div class="rect-modal" id="bet-detail-sheet">
-      <div class="sheet-bar"></div>
-      <div class="sheet-head">
-        <span class="type-pill" id="bd-type">КУПОН</span>
-        <button class="icon-btn" onclick="closeBetDetailModal()">
-          <svg class="ico ico-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div id="bd-body"></div>
-    </div>
-  </div>
-
-  <!-- MONOCHROME BOTTOM NAVIGATION -->
-  <nav class="bottom-nav">
-    <button class="nav-btn active" id="nav-matches" onclick="switchTab('matches')">
-      <svg class="ico" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10"/>
-        <polygon points="12 7 16.5 10.3 14.8 15.5 9.2 15.5 7.5 10.3"/>
-      </svg>
-      <span>Матчи</span>
-    </button>
-    <button class="nav-btn" id="nav-bets" onclick="switchTab('bets')">
-      <svg class="ico" viewBox="0 0 24 24">
-        <path d="M4 4h16v16l-3-2-3 2-2-2-2 2-3-2-3 2V4z"/>
-        <line x1="8" y1="9" x2="16" y2="9"/>
-        <line x1="8" y1="13" x2="13" y2="13"/>
-      </svg>
-      <span>Мои ставки</span>
-    </button>
-    <button class="nav-btn" id="nav-chat" onclick="switchTab('chat')">
-      <svg class="ico" viewBox="0 0 24 24">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-      <span>Чат</span>
-    </button>
-    <button class="nav-btn" id="nav-cashier" onclick="switchTab('cashier')">
-      <svg class="ico" viewBox="0 0 24 24">
-        <rect x="2" y="5" width="20" height="14" rx="2"/>
-        <line x1="2" y1="10" x2="22" y2="10"/>
-      </svg>
-      <span>Касса</span>
-    </button>
-    <button class="nav-btn" id="nav-profile" onclick="switchTab('profile')">
-      <svg class="ico" viewBox="0 0 24 24">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
-      </svg>
-      <span>Профиль</span>
-    </button>
-  </nav>
-
-  <script>
-    const API_BASE_URL = "https://winstarsbot.onrender.com";
-    const WS_CHAT_URL = "wss://winstarsbot.onrender.com/ws/chat";
-
-    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-    }
-
-    const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : null;
-    const USER_ID = tgUser ? String(tgUser.id) : "demo_user_1";
-    const USER_NAME = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") : "Игрок";
-    const USER_USERNAME = tgUser && tgUser.username ? tgUser.username : "";
-    const USER_PHOTO = tgUser && tgUser.photo_url ? tgUser.photo_url : "";
-
-    let STAR_RATE = 1.5;
-    let BOT_USERNAME = "WinStarsPlaybot";
-    let currentCurrency = "STARS";
-    let currentLineMode = "live";
-    let selectedLeague = "ALL";
-    let betsFilter = "all";
-
-    let userData = {
-      id: USER_ID,
-      name: USER_NAME,
-      username: USER_USERNAME,
-      photo_url: USER_PHOTO,
-      balance: 0,
-      referrals: 0,
-      total_bets: 0,
-      won_bets: 0,
-      profit: 0
-    };
-
-    let liveMatches = [];
-    let prematchMatches = [];
-    let userBets = [];
-    let betSlip = [];
-    let activeModalMatchId = null;
-    let chatSocket = null;
-
-    /* Frontend safeguard against dummy "Хозяева - Гости" & blocked youth/women/cyber leagues */
-    const BLOCKED_WORDS = [
-      "хозяева", "гости", "итоги дня", "итоги тура", "угловые", "желтые карточки",
-      "жёлтые карточки", "удары в створ", "офсайды", "фолы", "вбрасывания",
-      "u-17", "u-18", "u-19", "u-20", "u-21", "u-23", "до 17", "до 18", "до 19",
-      "до 20", "до 21", "до 23", "молодеж", "молодёж", "юнош", "юниор", "резерв",
-      "женщин", "жен.", "(ж)", "women", "feminino", "femenina", "frauen",
-      "кибер", "esports", "efootball", "e-football", "fifa", "fc 24", "fc 25",
-      "liga pro", "лига про", "short football", "3x3", "4x4", "5x5", "футзал",
-      "futsal", "мини-футбол", "пляжн", "beach", "simulated", "srl", "лфл", "любител"
-    ];
-
-    function sanitizeMatchList(arr) {
-      return (arr || []).filter((m) => {
-        const t1 = String(m.team1 || "").trim().toLowerCase();
-        const t2 = String(m.team2 || "").trim().toLowerCase();
-        const lg = String(m.league || "").trim().toLowerCase();
-        if (!t1 || !t2 || t1 === "хозяева" || t2 === "гости") return false;
-        const combined = `${t1} ${t2} ${lg}`;
-        return !BLOCKED_WORDS.some((w) => combined.includes(w));
-      });
-    }
-
-    function esc(str) {
-      return String(str ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-    }
-
-    function showToast(msg) {
-      const el = document.getElementById("toast");
-      el.textContent = msg;
-      el.classList.add("show");
-      clearTimeout(el._t);
-      el._t = setTimeout(() => el.classList.remove("show"), 2500);
-    }
-
-    function formatMoney(starsVal) {
-      const s = Number(starsVal || 0);
-      if (currentCurrency === "RUB") {
-        return `${(s * STAR_RATE).toFixed(2)} ₽`;
-      }
-      return `${Number.isInteger(s) ? s : s.toFixed(2)} ★`;
-    }
-
-    function setCurrency(cur) {
-      currentCurrency = cur;
-      document.getElementById("cur-stars").classList.toggle("active", cur === "STARS");
-      document.getElementById("cur-rub").classList.toggle("active", cur === "RUB");
-      updateHeaderBalance();
-      updateProfileUI();
-      if (document.getElementById("coupon-modal").classList.contains("open")) {
-        renderCouponModal();
-      }
-      renderBets();
-    }
-
-    function updateHeaderBalance() {
-      document.getElementById("header-balance").textContent = formatMoney(userData.balance);
-    }
-
-    function switchTab(tab) {
-      document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
-      document.querySelectorAll(".nav-btn").forEach((n) => n.classList.remove("active"));
-      document.getElementById(`page-${tab}`).classList.add("active");
-      document.getElementById(`nav-${tab}`).classList.add("active");
-
-      if (tab === "bets") loadUserBets();
-      if (tab === "cashier") loadTransactions();
-      if (tab === "profile") {
-        updateProfileUI();
-        drawProfitChart();
-      }
-      if (tab === "chat") {
-        const box = document.getElementById("chat-messages");
-        box.scrollTop = box.scrollHeight;
-      }
-    }
-
-    /* ================= SWIPE DOWN TO CLOSE FOR ALL MODALS/SHEETS ================= */
-    function enableSwipeToClose(panelEl, closeCallback) {
-      if (!panelEl) return;
-      let startY = 0;
-      let currentY = 0;
-      let dragging = false;
-
-      panelEl.addEventListener("touchstart", (e) => {
-        if (e.touches.length !== 1) return;
-        const target = e.target;
-        const isHandleOrHeader = Boolean(target.closest(".sheet-bar, .sheet-head, .match-hero-box"));
-        if (panelEl.scrollTop <= 0 || isHandleOrHeader) {
-          startY = e.touches[0].clientY;
-          currentY = startY;
-          dragging = true;
-          panelEl.style.transition = "none";
-        }
-      }, { passive: true });
-
-      panelEl.addEventListener("touchmove", (e) => {
-        if (!dragging) return;
-        currentY = e.touches[0].clientY;
-        const diff = currentY - startY;
-        if (diff > 0 && panelEl.scrollTop <= 0) {
-          panelEl.style.transform = `translateY(${diff}px)`;
-        } else if (diff < 0) {
-          dragging = false;
-          panelEl.style.transform = "";
-        }
-      }, { passive: true });
-
-      panelEl.addEventListener("touchend", () => {
-        if (!dragging) return;
-        dragging = false;
-        const diff = currentY - startY;
-        panelEl.style.transition = "transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)";
-        if (diff > 85) {
-          panelEl.style.transform = "translateY(105%)";
-          setTimeout(() => {
-            closeCallback();
-            panelEl.style.transform = "";
-          }, 190);
-        } else {
-          panelEl.style.transform = "";
-        }
-      });
-    }
-
-    /* ================= INIT & LINE POLLING ================= */
-    async function initApp() {
-      try {
-        const qs = new URLSearchParams({
-          name: USER_NAME,
-          username: USER_USERNAME,
-          photo_url: USER_PHOTO
-        });
-        const res = await fetch(`${API_BASE_URL}/api/init/${encodeURIComponent(USER_ID)}?${qs}`);
-        const data = await res.json();
-        if (data.user) userData = { ...userData, ...data.user };
-        if (data.star_rate) STAR_RATE = Number(data.star_rate);
-        if (data.bot_username) BOT_USERNAME = data.bot_username;
-        liveMatches = sanitizeMatchList(data.live);
-        prematchMatches = sanitizeMatchList(data.prematch);
-
-        if (!liveMatches.length && prematchMatches.length) {
-          currentLineMode = "prematch";
-          document.getElementById("tab-live").classList.remove("active");
-          document.getElementById("tab-prematch").classList.add("active");
-        }
-
-        updateHeaderBalance();
-        updateProfileUI();
-        updateMatchCounters();
-        updateLeaguePickerButton();
-        renderMatches();
-      } catch (e) {
-        document.getElementById("matches-container").innerHTML =
-          '<div class="empty-box">Не удалось загрузить линию. Проверьте соединение.</div>';
-      }
-
-      loadUserBets();
-      initChat();
-      setInterval(refreshMatchesSilent, 12000);
-    }
-
-    async function refreshMatchesSilent() {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/matches`);
-        const data = await res.json();
-        liveMatches = sanitizeMatchList(data.live);
-        prematchMatches = sanitizeMatchList(data.prematch);
-        updateMatchCounters();
-        updateLeaguePickerButton();
-        renderMatches();
-      } catch (_) {}
-    }
-
-    function updateMatchCounters() {
-      document.getElementById("live-count").textContent = liveMatches.length;
-      document.getElementById("prematch-count").textContent = prematchMatches.length;
-    }
-
-    function setLineMode(mode) {
-      currentLineMode = mode;
-      selectedLeague = "ALL";
-      document.getElementById("tab-live").classList.toggle("active", mode === "live");
-      document.getElementById("tab-prematch").classList.toggle("active", mode === "prematch");
-      updateLeaguePickerButton();
-      renderMatches();
-    }
-
-    /* ================= LEAGUE PICKER MODAL ================= */
-    function updateLeaguePickerButton() {
-      const btn = document.getElementById("league-picker-btn");
-      const lbl = document.getElementById("league-picker-label");
-      if (selectedLeague === "ALL") {
-        btn.classList.remove("has-filter");
-        lbl.textContent = "Все лиги";
-      } else {
-        btn.classList.add("has-filter");
-        lbl.textContent = selectedLeague;
-      }
-    }
-
-    function openLeagueModal() {
-      document.getElementById("league-modal-search").value = "";
-      document.getElementById("league-modal").classList.add("open");
-      renderLeagueModalList();
-    }
-
-    function closeLeagueModal() {
-      document.getElementById("league-modal").classList.remove("open");
-    }
-
-    function renderLeagueModalList() {
-      const list = currentLineMode === "live" ? liveMatches : prematchMatches;
-      const q = document.getElementById("league-modal-search").value.trim().toLowerCase();
-
-      const counts = {};
-      list.forEach((m) => {
-        if (!m.league) return;
-        counts[m.league] = (counts[m.league] || 0) + 1;
-      });
-
-      const leagues = Object.keys(counts).filter((lg) => !q || lg.toLowerCase().includes(q));
-      const checkSvg = `<svg class="ico ico-sm" style="color:var(--accent)" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`;
-
-      let html = `
-        <button class="league-option ${selectedLeague === "ALL" ? "active" : ""}" onclick="chooseLeague('ALL')">
-          <span class="league-option-name">Все лиги</span>
-          <span class="pill-counter">${list.length}</span>
-          ${selectedLeague === "ALL" ? checkSvg : ""}
-        </button>`;
-
-      leagues.forEach((lg) => {
-        const isSel = selectedLeague === lg;
-        html += `
-          <button class="league-option ${isSel ? "active" : ""}" data-lg="${esc(lg)}" onclick="chooseLeague(this.dataset.lg)">
-            <span class="league-option-name">${esc(lg)}</span>
-            <span class="pill-counter">${counts[lg]}</span>
-            ${isSel ? checkSvg : ""}
-          </button>`;
-      });
-
-      if (!leagues.length && q) {
-        html += '<div class="empty-box" style="padding:20px;">Турниры не найдены</div>';
-      }
-
-      document.getElementById("league-modal-list").innerHTML = html;
-    }
-
-    function chooseLeague(lg) {
-      selectedLeague = lg;
-      updateLeaguePickerButton();
-      closeLeagueModal();
-      renderMatches();
-    }
-
-    /* ================= RENDER MATCHES ================= */
-    function renderTeamLogo(logoUrl, teamName) {
-      const initials = (teamName || "?").slice(0, 2).toUpperCase();
-      if (logoUrl) {
-        return `<div class="team-crest"><img src="${esc(logoUrl)}" alt="" onerror="this.parentElement.textContent='${esc(initials)}'" /></div>`;
-      }
-      return `<div class="team-crest">${esc(initials)}</div>`;
-    }
-
-    function isOutcomeSelected(matchId, selection) {
-      return betSlip.some(
-        (x) => String(x.match_id) === String(matchId) && String(x.selection) === String(selection)
-      );
-    }
-
-    function renderMatches() {
-      const list = currentLineMode === "live" ? liveMatches : prematchMatches;
-      const q = document.getElementById("match-search").value.trim().toLowerCase();
-      const container = document.getElementById("matches-container");
-
-      const filtered = list.filter((m) => {
-        if (selectedLeague !== "ALL" && m.league !== selectedLeague) return false;
-        if (q) {
-          const hay = `${m.team1} ${m.team2} ${m.league}`.toLowerCase();
-          if (!hay.includes(q)) return false;
-        }
-        return true;
-      });
-
-      if (!filtered.length) {
-        container.innerHTML = `<div class="empty-box">${
-          currentLineMode === "live"
-            ? "Активных Live-матчей сейчас нет. Переключитесь на «Линию»."
-            : "Матчи по вашему запросу не найдены."
-        }</div>`;
-        return;
-      }
-
-      const grouped = {};
-      filtered.forEach((m) => {
-        if (!grouped[m.league]) grouped[m.league] = [];
-        grouped[m.league].push(m);
-      });
-
-      const trophySvg = `<svg class="ico ico-xs" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>`;
-      const clockSvg = `<svg class="ico ico-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-
-      let html = "";
-      for (const [league, matches] of Object.entries(grouped)) {
-        html += `<div class="league-section">
-          <div class="league-title-row">
-            <div class="league-title-left">${trophySvg}<span>${esc(league)}</span></div>
-            <span>${matches.length}</span>
-          </div>`;
-
-        matches.forEach((m) => {
-          const hasX = Number(m.odds?.X || 0) > 1.0;
-          const p1Sel = isOutcomeSelected(m.id, "П1") ? "selected" : "";
-          const xSel = isOutcomeSelected(m.id, "X") ? "selected" : "";
-          const p2Sel = isOutcomeSelected(m.id, "П2") ? "selected" : "";
-
-          html += `
-          <div class="match-card">
-            <div class="match-meta">
-              <div class="match-meta-left">
-                <span class="time-tag ${m.is_live ? "live" : ""}">
-                  ${m.is_live ? '<span class="live-indicator"></span>' : clockSvg}
-                  <span>${esc(m.time_label)}</span>
-                </span>
-                <span class="match-league-inline">${esc(m.league)}</span>
-              </div>
-              <button class="markets-btn" onclick="openMarketsModal('${esc(m.id)}')">
-                <span>+ Роспись</span>
-              </button>
-            </div>
-
-            <div class="teams-list" onclick="openMarketsModal('${esc(m.id)}')">
-              <div class="team-line">
-                <div class="team-left">
-                  ${renderTeamLogo(m.logo1, m.team1)}
-                  <span class="team-label">${esc(m.team1)}</span>
-                </div>
-                ${m.is_live ? `<span class="team-goals">${m.score1}</span>` : ""}
-              </div>
-              <div class="team-line">
-                <div class="team-left">
-                  ${renderTeamLogo(m.logo2, m.team2)}
-                  <span class="team-label">${esc(m.team2)}</span>
-                </div>
-                ${m.is_live ? `<span class="team-goals">${m.score2}</span>` : ""}
-              </div>
-            </div>
-
-            <div class="odds-grid ${hasX ? "" : "cols-2"}">
-              <button class="odd-cell ${p1Sel}" data-mid="${esc(m.id)}" data-sel="П1" data-odd="${m.odds.P1}" onclick="onOddClick(this)">
-                <span class="k">П1</span>
-                <span class="v">${Number(m.odds.P1).toFixed(2)}</span>
-              </button>
-              ${
-                hasX
-                  ? `<button class="odd-cell ${xSel}" data-mid="${esc(m.id)}" data-sel="X" data-odd="${m.odds.X}" onclick="onOddClick(this)">
-                      <span class="k">X</span>
-                      <span class="v">${Number(m.odds.X).toFixed(2)}</span>
-                    </button>`
-                  : ""
-              }
-              <button class="odd-cell ${p2Sel}" data-mid="${esc(m.id)}" data-sel="П2" data-odd="${m.odds.P2}" onclick="onOddClick(this)">
-                <span class="k">П2</span>
-                <span class="v">${Number(m.odds.P2).toFixed(2)}</span>
-              </button>
-            </div>
-          </div>`;
-        });
-
-        html += `</div>`;
-      }
-
-      container.innerHTML = html;
-    }
-
-    /* ================= COUPON (ОДИНАР / ЭКСПРЕСС) ================= */
-    function findMatchById(matchId) {
-      const idStr = String(matchId);
-      return (
-        liveMatches.find((m) => String(m.id) === idStr) ||
-        prematchMatches.find((m) => String(m.id) === idStr) ||
-        null
-      );
-    }
-
-    function onOddClick(btn) {
-      toggleBetSlipItem(btn.dataset.mid, btn.dataset.sel, parseFloat(btn.dataset.odd));
-    }
-
-    function toggleBetSlipItem(matchId, selection, odd) {
-      const mId = String(matchId);
-      const sel = String(selection).trim();
-      const oddNum = Math.round(Number(odd) * 100) / 100;
-      if (!mId || !sel || !(oddNum > 1.0)) return;
-
-      const idx = betSlip.findIndex((item) => String(item.match_id) === mId);
-      if (idx !== -1) {
-        if (betSlip[idx].selection === sel) {
-          betSlip.splice(idx, 1);
-        } else {
-          betSlip[idx].selection = sel;
-          betSlip[idx].odd = oddNum;
-        }
-      } else {
-        const m = findMatchById(mId);
-        betSlip.push({
-          match_id: mId,
-          match_title: m ? `${m.team1} - ${m.team2}` : `Матч #${mId}`,
-          league: m ? m.league : "",
-          selection: sel,
-          odd: oddNum
-        });
-      }
-
-      if (tg && tg.HapticFeedback) {
-        tg.HapticFeedback.selectionChanged();
-      }
-      updateBetSlipUI();
-    }
-
-    function getTotalCouponOdd() {
-      if (!betSlip.length) return 1.0;
-      const prod = betSlip.reduce((acc, ev) => acc * Number(ev.odd || 1), 1);
-      return Math.round(prod * 100) / 100;
-    }
-
-    function updateBetSlipUI() {
-      const fab = document.getElementById("betslip-fab");
-      const cnt = betSlip.length;
-
-      if (cnt === 0) {
-        fab.style.display = "none";
-        closeCouponModal();
-      } else {
-        const isExpress = cnt > 1;
-        fab.style.display = "flex";
-        document.getElementById("fab-count").textContent = String(cnt);
-        document.getElementById("fab-title").textContent = isExpress
-          ? "Купон • Экспресс"
-          : "Купон • Одинар";
-        document.getElementById("fab-sub").textContent = isExpress
-          ? `${cnt} события в купоне`
-          : `${betSlip[0].match_title} — ${betSlip[0].selection}`;
-        document.getElementById("fab-total-odd").textContent = `× ${getTotalCouponOdd().toFixed(2)}`;
-      }
-
-      document.querySelectorAll(".odd-cell[data-mid][data-sel]").forEach((btn) => {
-        const active = isOutcomeSelected(btn.dataset.mid, btn.dataset.sel);
-        btn.classList.toggle("selected", active);
-      });
-
-      if (document.getElementById("coupon-modal").classList.contains("open")) {
-        renderCouponModal();
-      }
-    }
-
-    function openCouponModal() {
-      if (!betSlip.length) return;
-      document.getElementById("coupon-modal").classList.add("open");
-      renderCouponModal();
-    }
-
-    function closeCouponModal() {
-      document.getElementById("coupon-modal").classList.remove("open");
-    }
-
-    function removeBetSlipIndex(idx) {
-      betSlip.splice(idx, 1);
-      updateBetSlipUI();
-    }
-
-    function clearBetSlip() {
-      betSlip = [];
-      updateBetSlipUI();
-    }
-
-    function renderCouponModal() {
-      const cnt = betSlip.length;
-      const isExpress = cnt > 1;
-      const totalOdd = getTotalCouponOdd();
-
-      document.getElementById("cp-type-badge").textContent = isExpress ? "ЭКСПРЕСС" : "ОДИНАР";
-      document.getElementById("cp-events-count").textContent =
-        cnt === 1 ? "1 событие" : cnt < 5 ? `${cnt} события` : `${cnt} событий`;
-      document.getElementById("cp-sum-type").textContent = isExpress
-        ? `Экспресс (${cnt})`
-        : "Одинар";
-      document.getElementById("cp-sum-odd").textContent = totalOdd.toFixed(2);
-
-      const closeSvg = `<svg class="ico ico-xs" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-      document.getElementById("cp-items-list").innerHTML = betSlip
-        .map(
-          (item, i) => `
-          <div class="coupon-row">
-            <div class="coupon-row-info">
-              <div class="coupon-row-league">${esc(item.league)}</div>
-              <div class="coupon-row-match">${esc(item.match_title)}</div>
-              <div class="coupon-row-pick">${esc(item.selection)}</div>
-            </div>
-            <div class="coupon-row-actions">
-              <span class="coef-tag">${Number(item.odd).toFixed(2)}</span>
-              <button class="del-btn" onclick="removeBetSlipIndex(${i})" aria-label="Удалить">${closeSvg}</button>
-            </div>
-          </div>`
-        )
-        .join("");
-
-      const sym = currentCurrency === "RUB" ? "₽" : "★";
-      const presets = currentCurrency === "RUB" ? [50, 150, 300, 500] : [10, 25, 50, 100];
-      const maxVal =
-        currentCurrency === "RUB"
-          ? Math.floor(Number(userData.balance || 0) * STAR_RATE)
-          : Math.floor(Number(userData.balance || 0));
-
-      document.getElementById("cp-presets").innerHTML =
-        presets
-          .map(
-            (v) =>
-              `<button class="preset-chip" onclick="document.getElementById('cp-stake-input').value=${v};recalcCouponWin()">${v} ${sym}</button>`
-          )
-          .join("") +
-        `<button class="preset-chip" onclick="document.getElementById('cp-stake-input').value=${Math.max(1, maxVal)};recalcCouponWin()">МАКС</button>`;
-
-      recalcCouponWin();
-    }
-
-    function recalcCouponWin() {
-      const stake = parseFloat(document.getElementById("cp-stake-input").value) || 0;
-      const win = (stake * getTotalCouponOdd()).toFixed(2);
-      const sym = currentCurrency === "RUB" ? "₽" : "★";
-      document.getElementById("cp-sum-win").textContent = `${win} ${sym}`;
-    }
-
-    async function submitCouponBet() {
-      if (!betSlip.length) return;
-      const amount = parseFloat(document.getElementById("cp-stake-input").value);
-      if (!(amount > 0)) {
-        showToast("Введите сумму ставки");
-        return;
-      }
-
-      const btn = document.getElementById("cp-submit-btn");
-      btn.disabled = true;
-      btn.textContent = "Оформление...";
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/bet`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: USER_ID,
-            match_id: betSlip[0].match_id,
-            selection: betSlip[0].selection,
-            odd: getTotalCouponOdd(),
-            amount: amount,
-            currency: currentCurrency,
-            events: betSlip
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          showToast(data.detail || "Ошибка при размещении ставки");
-          return;
-        }
-
-        if (typeof data.balance === "number") {
-          userData.balance = data.balance;
-          updateHeaderBalance();
-        }
-        userData.total_bets = Number(userData.total_bets || 0) + 1;
-        updateProfileUI();
-
-        document.getElementById("cp-stake-input").value = "";
-        clearBetSlip();
-        showToast("Ставка принята");
-        loadUserBets();
-      } catch (e) {
-        showToast("Ошибка соединения с сервером");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Сделать ставку";
-      }
-    }
-
-    /* ================= FULL MATCH MARKETS + CENTRAL SUMMARY ================= */
-    function renderMatchHero(match) {
-      if (!match) {
-        document.getElementById("mm-hero").innerHTML = "";
-        return;
-      }
-      const init1 = (match.team1 || "?").slice(0, 2).toUpperCase();
-      const init2 = (match.team2 || "?").slice(0, 2).toUpperCase();
-      const logo1Html = match.logo1
-        ? `<img src="${esc(match.logo1)}" alt="" onerror="this.parentElement.textContent='${esc(init1)}'" />`
-        : esc(init1);
-      const logo2Html = match.logo2
-        ? `<img src="${esc(match.logo2)}" alt="" onerror="this.parentElement.textContent='${esc(init2)}'" />`
-        : esc(init2);
-
-      document.getElementById("mm-hero").innerHTML = `
-        <div class="match-hero-box">
-          <div class="match-hero-league">${esc(match.league)}</div>
-          <div class="match-hero-grid">
-            <div class="hero-team">
-              <div class="hero-crest">${logo1Html}</div>
-              <div class="hero-team-name">${esc(match.team1)}</div>
-            </div>
-            <div class="hero-center">
-              ${
-                match.is_live
-                  ? `<div class="hero-score">${match.score1} : ${match.score2}</div>`
-                  : `<div class="hero-vs">VS</div>`
-              }
-              <div class="hero-time ${match.is_live ? "live" : ""}">${esc(match.time_label)}</div>
-            </div>
-            <div class="hero-team">
-              <div class="hero-crest">${logo2Html}</div>
-              <div class="hero-team-name">${esc(match.team2)}</div>
-            </div>
-          </div>
-        </div>`;
-    }
-
-    async function openMarketsModal(matchId) {
-      activeModalMatchId = String(matchId);
-      const cached = findMatchById(matchId);
-      document.getElementById("markets-modal").classList.add("open");
-      renderMatchHero(cached);
-
-      if (cached && cached.markets) {
-        renderMatchMarkets(cached);
-      } else {
-        document.getElementById("mm-body").innerHTML = '<div class="empty-box">Загрузка рынков...</div>';
-      }
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/match/${encodeURIComponent(matchId)}/markets`);
-        if (res.ok) {
-          const full = await res.json();
-          if (activeModalMatchId === String(matchId)) {
-            renderMatchHero(full);
-            renderMatchMarkets(full);
-          }
-        }
-      } catch (_) {}
-    }
-
-    function renderMatchMarkets(match) {
-      const markets = match.markets || [];
-      if (!markets.length) {
-        document.getElementById("mm-body").innerHTML =
-          '<div class="empty-box">Дополнительные рынки временно недоступны.</div>';
-        return;
-      }
-
-      document.getElementById("mm-body").innerHTML = markets
-        .map((mkt) => {
-          const colsClass = mkt.outcomes.length === 3 ? "cols-3" : "";
-          const buttons = mkt.outcomes
-            .map((o) => {
-              const selCls = isOutcomeSelected(match.id, o.label) ? "selected" : "";
-              return `
-              <button class="odd-cell ${selCls}" data-mid="${esc(match.id)}" data-sel="${esc(o.label)}" data-odd="${o.odd}" onclick="onOddClick(this)">
-                <span class="k">${esc(o.label)}</span>
-                <span class="v">${Number(o.odd).toFixed(2)}</span>
-              </button>`;
-            })
-            .join("");
-          return `<div class="mkt-block">
-            <div class="mkt-title">${esc(mkt.title)}</div>
-            <div class="mkt-grid ${colsClass}">${buttons}</div>
-          </div>`;
-        })
-        .join("");
-    }
-
-    function closeMarketsModal() {
-      activeModalMatchId = null;
-      document.getElementById("markets-modal").classList.remove("open");
-    }
-
-    /* ================= USER BETS & RECTANGULAR BET RECEIPT MODAL ================= */
-    async function loadUserBets() {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/bets/${encodeURIComponent(USER_ID)}`);
-        if (res.ok) {
-          userBets = await res.json();
-          renderBets();
-          drawProfitChart();
-        }
-      } catch (_) {}
-    }
-
-    function setBetsFilter(f, btn) {
-      betsFilter = f;
-      document.querySelectorAll(".sub-filter").forEach((p) => p.classList.remove("active"));
-      btn.classList.add("active");
-      renderBets();
-    }
-
-    function statusMeta(st) {
-      if (st === "won") {
-        return {
-          text: "Выигрыш",
-          cls: "st-won",
-          svg: `<svg class="ico ico-xs" style="color:var(--green)" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`
-        };
-      }
-      if (st === "lost") {
-        return {
-          text: "Проигрыш",
-          cls: "st-lost",
-          svg: `<svg class="ico ico-xs" style="color:var(--red)" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
-        };
-      }
-      if (st === "void") {
-        return {
-          text: "Возврат",
-          cls: "st-void",
-          svg: `<svg class="ico ico-xs" style="color:var(--text-secondary)" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`
-        };
-      }
-      return {
-        text: "В игре",
-        cls: "st-active",
-        svg: `<svg class="ico ico-xs" style="color:var(--amber)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
-      };
-    }
-
-    function renderBets() {
-      const container = document.getElementById("bets-container");
-      const filtered = userBets.filter((b) => {
-        if (betsFilter === "active") return b.status === "active";
-        if (betsFilter === "settled") return b.status !== "active";
-        return true;
-      });
-
-      if (!filtered.length) {
-        container.innerHTML = '<div class="empty-box">Ставок в этом разделе пока нет.</div>';
-        return;
-      }
-
-      container.innerHTML = filtered
-        .map((b, idx) => {
-          const st = statusMeta(b.status);
-          const events = b.events && b.events.length ? b.events : [b];
-          const isExp = events.length > 1 || b.bet_type === "express";
-          const sym = b.currency === "RUB" ? "₽" : "★";
-
-          const legsHtml = events
-            .map((ev) => {
-              const evSt = statusMeta(ev.status || b.status);
-              return `
-              <div class="leg-row">
-                <div style="min-width:0;flex:1;">
-                  <div class="leg-match">${esc(ev.match_title)} ${ev.final_score ? `(${esc(ev.final_score)})` : ""}</div>
-                  <div class="leg-pick">${esc(ev.selection)} • кф ${Number(ev.odd || b.odd).toFixed(2)}</div>
-                </div>
-                <div>${evSt.svg}</div>
-              </div>`;
-            })
-            .join("");
-
-          const potOrPay =
-            b.status === "won"
-              ? `<span style="color:var(--green);font-weight:700;">+${Number(b.payout).toFixed(2)} ${sym}</span>`
-              : b.status === "void"
-              ? `<span style="color:var(--text-secondary);font-weight:600;">Возврат ${Number(b.amount).toFixed(2)} ${sym}</span>`
-              : `<span>Выплата: <b style="color:#fff;">${(Number(b.amount) * Number(b.odd)).toFixed(2)} ${sym}</b></span>`;
-
-          return `
-          <div class="bet-item" onclick="openBetDetail(${idx})">
-            <div class="bet-item-top">
-              <span class="type-pill">${isExp ? `ЭКСПРЕСС (${events.length})` : "ОДИНАР"}</span>
-              <span class="status-chip ${st.cls}">${st.text}</span>
-            </div>
-            ${legsHtml}
-            <div class="bet-item-bottom">
-              <span>Ставка: <b style="color:#fff;">${Number(b.amount).toFixed(2)} ${sym}</b> (×${Number(b.odd).toFixed(2)})</span>
-              ${potOrPay}
-            </div>
-          </div>`;
-        })
-        .join("");
-    }
-
-    function openBetDetail(filteredIdx) {
-      const filtered = userBets.filter((b) => {
-        if (betsFilter === "active") return b.status === "active";
-        if (betsFilter === "settled") return b.status !== "active";
-        return true;
-      });
-      const b = filtered[filteredIdx];
-      if (!b) return;
-
-      const events = b.events && b.events.length ? b.events : [b];
-      const isExp = events.length > 1 || b.bet_type === "express";
-      const sym = b.currency === "RUB" ? "₽" : "★";
-      const st = statusMeta(b.status);
-
-      document.getElementById("bd-type").textContent = isExp
-        ? `ЭКСПРЕСС • ${events.length} СОБ.`
-        : "ОДИНАР";
-
-      document.getElementById("bd-body").innerHTML = `
-        <div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:12px;color:var(--text-secondary);">Купон #${esc(String(b.id || "").slice(-6))}</span>
-          <span class="status-chip ${st.cls}">${st.text}</span>
-        </div>
-        ${events
-          .map((ev) => {
-            const evSt = statusMeta(ev.status || b.status);
-            return `
-            <div class="coupon-row">
-              <div class="coupon-row-info">
-                <div class="coupon-row-league">${esc(ev.league || "")}</div>
-                <div class="coupon-row-match">${esc(ev.match_title)} ${ev.final_score ? `[${esc(ev.final_score)}]` : ""}</div>
-                <div class="coupon-row-pick">${esc(ev.selection)}</div>
-              </div>
-              <div class="coupon-row-actions">
-                <span class="coef-tag">${Number(ev.odd || b.odd).toFixed(2)}</span>
-                ${evSt.svg}
-              </div>
-            </div>`;
-          })
-          .join("")}
-        <div class="summary-card">
-          <div class="summary-line"><span>Сумма ставки</span><span>${Number(b.amount).toFixed(2)} ${sym}</span></div>
-          <div class="summary-line"><span>Общий коэффициент</span><span>${Number(b.odd).toFixed(2)}</span></div>
-          <div class="summary-line"><span>${b.status === "won" ? "Итоговый выигрыш" : "Возможный выигрыш"}</span><span style="color:${b.status === "lost" ? "var(--red)" : "var(--green)"};">${
-            b.status === "won"
-              ? `+${Number(b.payout).toFixed(2)} ${sym}`
-              : b.status === "lost"
-              ? `0.00 ${sym}`
-              : `${(Number(b.amount) * Number(b.odd)).toFixed(2)} ${sym}`
-          }</span></div>
-        </div>
-      `;
-
-      document.getElementById("bet-detail-modal").classList.add("open");
-    }
-
-    function closeBetDetailModal() {
-      document.getElementById("bet-detail-modal").classList.remove("open");
-    }
-
-    /* ================= CHAT ================= */
-    async function initChat() {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/chat/history`);
-        if (res.ok) {
-          const msgs = await res.json();
-          renderChatHistory(msgs);
-        }
-      } catch (_) {}
-
-      connectChatWS();
-    }
-
-    function connectChatWS() {
-      try {
-        chatSocket = new WebSocket(WS_CHAT_URL);
-        chatSocket.onopen = () => {
-          document.getElementById("chat-status").textContent = "Онлайн";
-          document.getElementById("chat-status").style.color = "var(--green)";
-        };
-        chatSocket.onmessage = (ev) => {
-          const data = JSON.parse(ev.data);
-          if (data.type === "history") {
-            renderChatHistory(data.messages || []);
-          } else if (data.type === "message" && data.message) {
-            appendChatMessage(data.message);
-          }
-        };
-        chatSocket.onclose = () => {
-          document.getElementById("chat-status").textContent = "Переподключение...";
-          document.getElementById("chat-status").style.color = "var(--text-muted)";
-          setTimeout(connectChatWS, 4000);
-        };
-      } catch (_) {}
-    }
-
-    function renderChatHistory(msgs) {
-      const box = document.getElementById("chat-messages");
-      box.innerHTML = "";
-      msgs.forEach(appendChatMessage);
-    }
-
-    function appendChatMessage(m) {
-      const box = document.getElementById("chat-messages");
-      const isMine = String(m.user_id) === String(USER_ID);
-      const initial = (m.user || "И").slice(0, 1).toUpperCase();
-      const avaHtml = m.photo_url
-        ? `<img src="${esc(m.photo_url)}" alt="" onerror="this.parentElement.textContent='${esc(initial)}'" />`
-        : esc(initial);
-
-      const div = document.createElement("div");
-      div.className = `msg-row ${isMine ? "mine" : ""}`;
-      div.innerHTML = `
-        <div class="ava-circle">${avaHtml}</div>
-        <div class="msg-bubble">
-          <div class="msg-author">${esc(m.user)} <span>${esc(m.time || "")}</span></div>
-          <div class="msg-body">${esc(m.text)}</div>
-        </div>`;
-      box.appendChild(div);
-      box.scrollTop = box.scrollHeight;
-    }
-
-    async function sendChatMessage(e) {
-      e.preventDefault();
-      const inp = document.getElementById("chat-input");
-      const text = inp.value.trim();
-      if (!text) return;
-      inp.value = "";
-
-      const payload = {
-        user_id: USER_ID,
-        user: userData.name || USER_NAME,
-        username: userData.username || USER_USERNAME,
-        photo_url: userData.photo_url || USER_PHOTO,
-        text: text
-      };
-
-      if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
-        chatSocket.send(JSON.stringify(payload));
-      } else {
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/chat/send`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-          if (data.message) appendChatMessage(data.message);
-        } catch (_) {
-          showToast("Не удалось отправить сообщение");
-        }
-      }
-    }
-
-    /* ================= CASHIER ================= */
-    function setCashierTab(tab) {
-      document.getElementById("cash-tab-dep").classList.toggle("active", tab === "deposit");
-      document.getElementById("cash-tab-wd").classList.toggle("active", tab === "withdraw");
-      document.getElementById("cashier-deposit-block").style.display = tab === "deposit" ? "block" : "none";
-      document.getElementById("cashier-withdraw-block").style.display = tab === "withdraw" ? "block" : "none";
-    }
-
-    function toggleWithdrawFields() {
-      const m = document.getElementById("wd-method").value;
-      document.getElementById("wd-sbp-fields").style.display = m === "RUB" ? "block" : "none";
-    }
-
-    async function depositStars() {
-      const stars = parseInt(document.getElementById("dep-stars-input").value, 10);
-      if (!(stars >= 10)) {
-        showToast("Минимальное пополнение 10 ★");
-        return;
-      }
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/invoice`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: USER_ID, stars })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.invoice_url) {
-          showToast(data.detail || "Ошибка создания счёта");
-          return;
-        }
-        if (tg && tg.openInvoice) {
-          tg.openInvoice(data.invoice_url, async (status) => {
-            if (status === "paid") {
-              showToast(`Баланс пополнен на ${stars} ★`);
-              await initApp();
-              loadTransactions();
+import asyncio
+import json
+import logging
+import os
+import re
+import time
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
+import uvicorn
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.enums import ParseMode
+from aiogram.filters import Command, CommandStart
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    PreCheckoutQuery,
+    WebAppInfo,
+)
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+try:
+    from curl_cffi import requests as cffi_requests
+except ImportError:
+    cffi_requests = None
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("winstars")
+
+# ================= CONFIGURATION =================
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+FIREBASE_URL = os.getenv(
+    "FIREBASE_URL", "https://winstars-435f1-default-rtdb.firebaseio.com"
+).rstrip("/")
+FIREBASE_SECRET = os.getenv("FIREBASE_SECRET", "").strip()
+
+ADMIN_IDS = {
+    x.strip()
+    for x in os.getenv("ADMIN_IDS", "").split(",")
+    if x.strip()
+}
+
+BOT_USERNAME = os.getenv("BOT_USERNAME", "WinStarsPlaybot").strip()
+WEBAPP_URL = os.getenv(
+    "WEBAPP_URL", "https://starland-comics.github.io/winstarsbot/"
+).strip()
+STAR_RATE = float(os.getenv("STAR_RATE", "1.5"))
+REFERRAL_BONUS = float(os.getenv("REFERRAL_BONUS", "5.0"))
+
+MSK = timezone(timedelta(hours=3))
+
+FONBET_MIRRORS = [
+    "https://line01w.bk6bba-resources.com",
+    "https://line02w.bk6bba-resources.com",
+    "https://line03w.bk6bba-resources.com",
+    "https://line04w.bk6bba-resources.com",
+]
+
+# Фильтр заглушек ("Хозяева - Гости", статистика, итоги тура)
+BLOCKED_EVENT_PATTERNS = [
+    r"^хозяева$",
+    r"^гости$",
+    r"хозяева\s*[-—]\s*гости",
+    r"итоги\s+(дня|тура)",
+    r"специальн(ые|ая)\s+ставк",
+    r"кто\s+выше",
+    r"сравнение",
+    r"\((угловые|ж/к|желтые|жёлтые|удары|фолы|офсайды|вбрасывания|штанги|сейвы|гол)\)",
+]
+
+# Фильтр нежелательных лиг (молодёжные, женские, кибер, мини/пляж, любители)
+BLOCKED_LEAGUE_PATTERNS = [
+    r"\bu[-\s]?(15|16|17|18|19|20|21|22|23)\b",
+    r"\bдо\s*(15|16|17|18|19|20|21|22|23)\b",
+    r"молод[её]ж",
+    r"юнош",
+    r"юниор",
+    r"резерв",
+    r"женщин",
+    r"\bжен\.",
+    r"\(ж\)",
+    r"\bwomen\b",
+    r"\bfemin",
+    r"\bfrauen\b",
+    r"\bfemminile\b",
+    r"кибер",
+    r"esport",
+    r"e-?football",
+    r"\bfifa\b",
+    r"\bfc\s?2[456]\b",
+    r"liga\s*pro",
+    r"лига\s*про",
+    r"short\s*football",
+    r"\b[345]x[345]\b",
+    r"мини-?футбол",
+    r"футзал",
+    r"\bfutsal\b",
+    r"пляжн",
+    r"\bbeach\b",
+    r"simulated",
+    r"\bsrl\b",
+    r"любител",
+    r"\bлфл\b",
+    r"\blfl\b",
+]
+
+
+def is_clean_event(team1: str, team2: str, league: str) -> bool:
+    t1 = (team1 or "").strip()
+    t2 = (team2 or "").strip()
+    lg = (league or "").strip()
+    if not t1 or not t2 or not lg:
+        return False
+
+    t1_l, t2_l, lg_l = t1.lower(), t2.lower(), lg.lower()
+    pair_l = f"{t1_l} - {t2_l}"
+
+    for pat in BLOCKED_EVENT_PATTERNS:
+        if re.search(pat, t1_l) or re.search(pat, t2_l) or re.search(pat, pair_l):
+            return False
+
+    for pat in BLOCKED_LEAGUE_PATTERNS:
+        if re.search(pat, lg_l) or re.search(pat, pair_l):
+            return False
+
+    return True
+
+
+def fb_key(raw: str) -> str:
+    """Санитизация ключей для Firebase Realtime Database."""
+    return re.sub(r"[.$#\[\]/]", "_", str(raw).strip())
+
+
+# ================= FIREBASE RTDB ASYNC CLIENT =================
+http_client: Optional[httpx.AsyncClient] = None
+
+
+def _fb_url(path: str) -> str:
+    clean = path.strip("/")
+    base = f"{FIREBASE_URL}/{clean}.json"
+    if FIREBASE_SECRET:
+        return f"{base}?auth={FIREBASE_SECRET}"
+    return base
+
+
+async def fb_get(path: str, default: Any = None) -> Any:
+    if http_client is None:
+        return default
+    try:
+        resp = await http_client.get(_fb_url(path))
+        if resp.status_code == 200:
+            data = resp.json()
+            return default if data is None else data
+    except Exception as e:
+        logger.error("Firebase GET %s error: %s", path, e)
+    return default
+
+
+async def fb_put(path: str, data: Any) -> bool:
+    if http_client is None:
+        return False
+    try:
+        resp = await http_client.put(_fb_url(path), json=data)
+        return resp.status_code == 200
+    except Exception as e:
+        logger.error("Firebase PUT %s error: %s", path, e)
+        return False
+
+
+async def fb_patch(path: str, data: Dict[str, Any]) -> bool:
+    if http_client is None:
+        return False
+    try:
+        resp = await http_client.patch(_fb_url(path), json=data)
+        return resp.status_code == 200
+    except Exception as e:
+        logger.error("Firebase PATCH %s error: %s", path, e)
+        return False
+
+
+async def fb_delete(path: str) -> bool:
+    if http_client is None:
+        return False
+    try:
+        resp = await http_client.delete(_fb_url(path))
+        return resp.status_code == 200
+    except Exception as e:
+        logger.error("Firebase DELETE %s error: %s", path, e)
+        return False
+
+
+async def get_or_create_user(
+    user_id: str,
+    name: str = "Игрок",
+    username: str = "",
+    photo_url: str = "",
+    referrer_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    uid = fb_key(user_id)
+    existing = await fb_get(f"users/{uid}")
+    if isinstance(existing, dict) and existing.get("id"):
+        updates: Dict[str, Any] = {}
+        if name and name != "Игрок" and existing.get("name") != name:
+            updates["name"] = name
+        if username and existing.get("username") != username:
+            updates["username"] = username
+        if photo_url and existing.get("photo_url") != photo_url:
+            updates["photo_url"] = photo_url
+        if updates:
+            await fb_patch(f"users/{uid}", updates)
+            existing.update(updates)
+        return existing
+
+    new_user: Dict[str, Any] = {
+        "id": uid,
+        "name": name or "Игрок",
+        "username": username or "",
+        "photo_url": photo_url or "",
+        "balance": 0.0,
+        "referrals": 0,
+        "referred_by": None,
+        "total_bets": 0,
+        "won_bets": 0,
+        "profit": 0.0,
+        "created_at": datetime.now(MSK).isoformat(),
+    }
+
+    if referrer_id and fb_key(referrer_id) != uid:
+        ref_uid = fb_key(referrer_id)
+        ref_user = await fb_get(f"users/{ref_uid}")
+        if isinstance(ref_user, dict) and ref_user.get("id"):
+            new_user["referred_by"] = ref_uid
+            new_ref_bal = round(float(ref_user.get("balance", 0)) + REFERRAL_BONUS, 2)
+            new_ref_cnt = int(ref_user.get("referrals", 0)) + 1
+            await fb_patch(
+                f"users/{ref_uid}",
+                {"balance": new_ref_bal, "referrals": new_ref_cnt},
+            )
+            tx_id = uuid.uuid4().hex[:10].upper()
+            await fb_put(
+                f"transactions/{tx_id}",
+                {
+                    "id": tx_id,
+                    "user_id": ref_uid,
+                    "type": "deposit",
+                    "method": "Реферальный бонус",
+                    "currency": "STARS",
+                    "amount_rub": round(REFERRAL_BONUS * STAR_RATE, 2),
+                    "amount_stars": REFERRAL_BONUS,
+                    "status": "completed",
+                    "details": f"Приглашён игрок {name or uid}",
+                    "created_at": datetime.now(MSK).strftime("%d.%m %H:%M"),
+                },
+            )
+
+    await fb_put(f"users/{uid}", new_user)
+    return new_user
+
+
+# ================= FONBET LINE PARSER & SCORE TRACKER =================
+LINE_CACHE: Dict[str, Any] = {
+    "live": [],
+    "prematch": [],
+    "by_id": {},
+    "logos": {},
+    "updated_at": 0.0,
+}
+
+# Память последних зафиксированных счетов для авторасчёта
+MATCH_SCORES_MEM: Dict[str, Dict[str, Any]] = {}
+
+
+def fetch_json_mirror(path: str) -> Optional[Dict[str, Any]]:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+    }
+    for base in FONBET_MIRRORS:
+        url = f"{base}{path}"
+        try:
+            if cffi_requests is not None:
+                resp = cffi_requests.get(
+                    url, headers=headers, impersonate="chrome120", timeout=10
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+            else:
+                with httpx.Client(timeout=10) as client:
+                    resp = client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        return resp.json()
+        except Exception:
+            continue
+    return None
+
+
+def parse_fonbet_line(raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    sports = {s["id"]: s for s in raw.get("sports", [])}
+    events = raw.get("events", [])
+    custom_factors = raw.get("customFactors", [])
+
+    factors_by_event: Dict[int, Dict[int, Dict[str, Any]]] = {}
+    for cf in custom_factors:
+        eid = cf.get("e")
+        if eid is None:
+            continue
+        fmap = factors_by_event.setdefault(eid, {})
+        for f in cf.get("factors", []):
+            fmap[f.get("f")] = f
+
+    live_list: List[Dict[str, Any]] = []
+    prematch_list: List[Dict[str, Any]] = []
+    by_id: Dict[str, Dict[str, Any]] = {}
+    finished_updates: Dict[str, Dict[str, Any]] = {}
+    logos_cache = LINE_CACHE.get("logos", {})
+    prev_by_id = LINE_CACHE.get("by_id", {})
+    seen_ids = set()
+
+    for ev in events:
+        if ev.get("level", 1) != 1:
+            continue
+        sport_id = ev.get("sportId")
+        sport_obj = sports.get(sport_id, {})
+        if sport_obj.get("parentId") != 1 and sport_id != 1:
+            continue
+
+        league_name = sport_obj.get("name", "Футбол")
+        league_name = re.sub(
+            r"^Футбол\.\s*", "", league_name, flags=re.IGNORECASE
+        ).strip()
+
+        team1 = (ev.get("team1") or "").strip()
+        team2 = (ev.get("team2") or "").strip()
+        if not is_clean_event(team1, team2, league_name):
+            continue
+
+        eid = str(ev.get("id"))
+        seen_ids.add(eid)
+        fmap = factors_by_event.get(ev.get("id"), {})
+
+        is_live = ev.get("place") == "live"
+        score1 = int(ev.get("score1") or 0)
+        score2 = int(ev.get("score2") or 0)
+        timer_sec = int(ev.get("timerSeconds") or 0)
+        minute = max(1, timer_sec // 60) if is_live else 0
+
+        if is_live:
+            MATCH_SCORES_MEM[eid] = {
+                "score1": score1,
+                "score2": score2,
+                "minute": minute,
+                "is_live": True,
+                "finished": False,
+                "team1": team1,
+                "team2": team2,
+                "updated_at": time.time(),
             }
-          });
-        } else {
-          window.open(data.invoice_url, "_blank");
+
+        p1 = fmap.get(921, {}).get("v")
+        px = fmap.get(922, {}).get("v")
+        p2 = fmap.get(923, {}).get("v")
+        if not p1 or not p2:
+            continue
+
+        if is_live:
+            time_label = f"{minute}'"
+        else:
+            start_ts = ev.get("startTime", 0)
+            dt = (
+                datetime.fromtimestamp(start_ts, tz=MSK)
+                if start_ts
+                else datetime.now(MSK)
+            )
+            time_label = dt.strftime("%d.%m %H:%M")
+
+        # Роспись рынков
+        markets: List[Dict[str, Any]] = []
+        main_outcomes = [{"label": "П1", "odd": round(float(p1), 2)}]
+        if px and float(px) > 1.0:
+            main_outcomes.append({"label": "X", "odd": round(float(px), 2)})
+        main_outcomes.append({"label": "П2", "odd": round(float(p2), 2)})
+        markets.append({"title": "Основные исходы", "outcomes": main_outcomes})
+
+        dc_1x = fmap.get(924, {}).get("v")
+        dc_12 = fmap.get(1571, {}).get("v")
+        dc_x2 = fmap.get(925, {}).get("v")
+        if dc_1x and dc_x2:
+            dc_out = [{"label": "1X", "odd": round(float(dc_1x), 2)}]
+            if dc_12:
+                dc_out.append({"label": "12", "odd": round(float(dc_12), 2)})
+            dc_out.append({"label": "X2", "odd": round(float(dc_x2), 2)})
+            markets.append({"title": "Двойной шанс", "outcomes": dc_out})
+
+        tot_over = fmap.get(930)
+        tot_under = fmap.get(931)
+        if tot_over and tot_under and tot_over.get("v") and tot_under.get("v"):
+            pt = tot_over.get("pt", "2.5")
+            markets.append(
+                {
+                    "title": f"Тотал голов ({pt})",
+                    "outcomes": [
+                        {"label": f"ТБ {pt}", "odd": round(float(tot_over["v"]), 2)},
+                        {"label": f"ТМ {pt}", "odd": round(float(tot_under["v"]), 2)},
+                    ],
+                }
+            )
+
+        h1 = fmap.get(927)
+        h2 = fmap.get(928)
+        if h1 and h2 and h1.get("v") and h2.get("v"):
+            pt1 = h1.get("pt", "0")
+            pt2 = h2.get("pt", "0")
+            markets.append(
+                {
+                    "title": "Фора",
+                    "outcomes": [
+                        {"label": f"Ф1 ({pt1})", "odd": round(float(h1["v"]), 2)},
+                        {"label": f"Ф2 ({pt2})", "odd": round(float(h2["v"]), 2)},
+                    ],
+                }
+            )
+
+        btts_y = fmap.get(1801, {}).get("v")
+        btts_n = fmap.get(1802, {}).get("v")
+        if btts_y and btts_n:
+            markets.append(
+                {
+                    "title": "Обе забьют",
+                    "outcomes": [
+                        {"label": "ОЗ Да", "odd": round(float(btts_y), 2)},
+                        {"label": "ОЗ Нет", "odd": round(float(btts_n), 2)},
+                    ],
+                }
+            )
+
+        t1_id = str(ev.get("team1Id", ""))
+        t2_id = str(ev.get("team2Id", ""))
+        logo1 = logos_cache.get(fb_key(team1.lower())) or (
+            f"https://www.fon.bet/images/teams/{t1_id}.png" if t1_id else ""
+        )
+        logo2 = logos_cache.get(fb_key(team2.lower())) or (
+            f"https://www.fon.bet/images/teams/{t2_id}.png" if t2_id else ""
+        )
+
+        match_obj = {
+            "id": eid,
+            "league": league_name,
+            "team1": team1,
+            "team2": team2,
+            "logo1": logo1,
+            "logo2": logo2,
+            "is_live": is_live,
+            "score1": score1,
+            "score2": score2,
+            "time_label": time_label,
+            "start_time": ev.get("startTime", 0),
+            "odds": {
+                "P1": round(float(p1), 2),
+                "X": round(float(px), 2) if px else 0.0,
+                "P2": round(float(p2), 2),
+            },
+            "markets": markets,
         }
-      } catch (_) {
-        showToast("Ошибка соединения");
-      }
-    }
 
-    async function depositRub() {
-      const amount = parseFloat(document.getElementById("dep-rub-input").value);
-      if (!(amount >= 50)) {
-        showToast("Минимальное пополнение 50 ₽");
-        return;
-      }
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/cashier/deposit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: USER_ID, amount, currency: "RUB", method: "sbp" })
-        });
-        const data = await res.json();
-        showToast(data.message || "Заявка создана");
-        loadTransactions();
-      } catch (_) {
-        showToast("Ошибка соединения");
-      }
-    }
+        by_id[eid] = match_obj
+        if is_live:
+            live_list.append(match_obj)
+        else:
+            prematch_list.append(match_obj)
 
-    async function submitWithdraw() {
-      const cur = document.getElementById("wd-method").value;
-      const amount = parseFloat(document.getElementById("wd-amount").value);
-      const bank = document.getElementById("wd-bank").value;
-      const details = document.getElementById("wd-phone").value.trim();
+    # Матчи, которые были в Live, но пропали из ленты после 80+ минуты -> считаем завершёнными
+    for old_id, old_m in prev_by_id.items():
+        if old_m.get("is_live") and old_id not in seen_ids:
+            mem = MATCH_SCORES_MEM.get(old_id)
+            if mem and mem.get("minute", 0) >= 80:
+                mem["finished"] = True
+                mem["is_live"] = False
+                finished_updates[old_id] = mem
 
-      if (!(amount > 0)) {
-        showToast("Введите сумму вывода");
-        return;
-      }
+    prematch_list.sort(key=lambda x: x.get("start_time", 0))
+    LINE_CACHE["live"] = live_list
+    LINE_CACHE["prematch"] = prematch_list[:250]
+    LINE_CACHE["by_id"] = by_id
+    LINE_CACHE["updated_at"] = time.time()
+    return finished_updates
 
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/cashier/withdraw`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: USER_ID,
-            amount,
-            currency: cur,
-            method: cur === "RUB" ? "sbp" : "stars",
-            bank: cur === "RUB" ? bank : "",
-            details: cur === "RUB" ? details : ""
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          showToast(data.detail || "Ошибка заявки на вывод");
-          return;
+
+# ================= BET EVALUATION & SETTLEMENT ENGINE =================
+def evaluate_selection(selection: str, s1: int, s2: int) -> Optional[str]:
+    """
+    Возвращает 'won', 'lost', 'void' или None (если исход нестандартный).
+    """
+    sel = (selection or "").strip()
+    total = s1 + s2
+
+    if sel == "П1":
+        return "won" if s1 > s2 else "lost"
+    if sel == "X":
+        return "won" if s1 == s2 else "lost"
+    if sel == "П2":
+        return "won" if s2 > s1 else "lost"
+    if sel == "1X":
+        return "won" if s1 >= s2 else "lost"
+    if sel == "12":
+        return "won" if s1 != s2 else "lost"
+    if sel == "X2":
+        return "won" if s2 >= s1 else "lost"
+    if sel == "ОЗ Да":
+        return "won" if (s1 > 0 and s2 > 0) else "lost"
+    if sel == "ОЗ Нет":
+        return "won" if (s1 == 0 or s2 == 0) else "lost"
+
+    m_tb = re.match(r"^ТБ\s*([0-9.]+)$", sel)
+    if m_tb:
+        line = float(m_tb.group(1))
+        if total > line:
+            return "won"
+        if total == line:
+            return "void"
+        return "lost"
+
+    m_tm = re.match(r"^ТМ\s*([0-9.]+)$", sel)
+    if m_tm:
+        line = float(m_tm.group(1))
+        if total < line:
+            return "won"
+        if total == line:
+            return "void"
+        return "lost"
+
+    m_f1 = re.match(r"^Ф1\s*\(([+-]?[0-9.]+)\)$", sel)
+    if m_f1:
+        handicap = float(m_f1.group(1))
+        diff = (s1 + handicap) - s2
+        if diff > 0:
+            return "won"
+        if diff == 0:
+            return "void"
+        return "lost"
+
+    m_f2 = re.match(r"^Ф2\s*\(([+-]?[0-9.]+)\)$", sel)
+    if m_f2:
+        handicap = float(m_f2.group(1))
+        diff = (s2 + handicap) - s1
+        if diff > 0:
+            return "won"
+        if diff == 0:
+            return "void"
+        return "lost"
+
+    return None
+
+
+async def settle_match_in_bets(
+    target_match_id: str, s1: int, s2: int, bot_instance: Optional[Bot] = None
+) -> int:
+    """Рассчитывает все активные ставки, содержащие target_match_id."""
+    all_bets = await fb_get("bets", {})
+    if not isinstance(all_bets, dict):
+        return 0
+
+    settled_count = 0
+    final_score_str = f"{s1}:{s2}"
+
+    for bet_id, bet in all_bets.items():
+        if not isinstance(bet, dict) or bet.get("status") != "active":
+            continue
+
+        events = bet.get("events")
+        if not isinstance(events, list) or not events:
+            events = [
+                {
+                    "match_id": str(bet.get("match_id", "")),
+                    "match_title": bet.get("match_title", ""),
+                    "selection": bet.get("selection", ""),
+                    "odd": float(bet.get("odd", 1.0)),
+                    "status": "active",
+                    "final_score": "",
+                }
+            ]
+
+        changed = False
+        for ev in events:
+            if str(ev.get("match_id")) == str(target_match_id) and ev.get("status") == "active":
+                res = evaluate_selection(ev.get("selection", ""), s1, s2)
+                if res:
+                    ev["status"] = res
+                    ev["final_score"] = final_score_str
+                    changed = True
+
+        if not changed:
+            continue
+
+        # Проверяем общий статус купона (ординар или экспресс)
+        statuses = [ev.get("status", "active") for ev in events]
+        new_coupon_status = "active"
+        effective_odd = 1.0
+
+        if "lost" in statuses:
+            new_coupon_status = "lost"
+        elif all(st in ("won", "void") for st in statuses):
+            if all(st == "void" for st in statuses):
+                new_coupon_status = "void"
+                effective_odd = 1.0
+            else:
+                new_coupon_status = "won"
+                for ev in events:
+                    if ev.get("status") == "won":
+                        effective_odd *= float(ev.get("odd", 1.0))
+                effective_odd = round(effective_odd, 2)
+
+        bet_patch: Dict[str, Any] = {
+            "events": events,
+            "status": new_coupon_status,
         }
-        if (typeof data.balance === "number") {
-          userData.balance = data.balance;
-          updateHeaderBalance();
-        }
-        document.getElementById("wd-amount").value = "";
-        showToast("Заявка на вывод создана");
-        loadTransactions();
-      } catch (_) {
-        showToast("Ошибка соединения");
-      }
+
+        uid = fb_key(bet.get("user_id", ""))
+        stake_stars = float(bet.get("amount_stars", 0))
+        stake_disp = float(bet.get("amount", 0))
+        cur = bet.get("currency", "STARS")
+        sym = "₽" if cur == "RUB" else "★"
+
+        if new_coupon_status == "won":
+            payout_stars = round(stake_stars * effective_odd, 2)
+            payout_disp = round(stake_disp * effective_odd, 2)
+            bet_patch["odd"] = effective_odd
+            bet_patch["payout"] = payout_disp
+            bet_patch["payout_stars"] = payout_stars
+
+            user = await fb_get(f"users/{uid}")
+            if isinstance(user, dict):
+                new_bal = round(float(user.get("balance", 0)) + payout_stars, 2)
+                new_won = int(user.get("won_bets", 0)) + 1
+                new_prof = round(
+                    float(user.get("profit", 0)) + (payout_stars - stake_stars), 2
+                )
+                await fb_patch(
+                    f"users/{uid}",
+                    {"balance": new_bal, "won_bets": new_won, "profit": new_prof},
+                )
+
+            if bot_instance and uid.isdigit():
+                try:
+                    await bot_instance.send_message(
+                        int(uid),
+                        f"✅ <b>Купон #{bet_id} выиграл!</b>\n"
+                        f"Счёт матча: <b>{final_score_str}</b>\n"
+                        f"Выплата: <b>+{payout_disp:.2f} {sym}</b>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
+
+        elif new_coupon_status == "void":
+            bet_patch["odd"] = 1.0
+            bet_patch["payout"] = stake_disp
+            bet_patch["payout_stars"] = stake_stars
+
+            user = await fb_get(f"users/{uid}")
+            if isinstance(user, dict):
+                new_bal = round(float(user.get("balance", 0)) + stake_stars, 2)
+                await fb_patch(f"users/{uid}", {"balance": new_bal})
+
+            if bot_instance and uid.isdigit():
+                try:
+                    await bot_instance.send_message(
+                        int(uid),
+                        f"↩️ <b>Возврат по купону #{bet_id}</b>\n"
+                        f"Счёт матча: <b>{final_score_str}</b>\n"
+                        f"Возвращено: <b>{stake_disp:.2f} {sym}</b>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
+
+        elif new_coupon_status == "lost":
+            user = await fb_get(f"users/{uid}")
+            if isinstance(user, dict):
+                new_prof = round(float(user.get("profit", 0)) - stake_stars, 2)
+                await fb_patch(f"users/{uid}", {"profit": new_prof})
+
+            if bot_instance and uid.isdigit():
+                try:
+                    await bot_instance.send_message(
+                        int(uid),
+                        f"❌ <b>Купон #{bet_id} не сыграл</b>\n"
+                        f"Счёт матча: <b>{final_score_str}</b>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
+
+        await fb_patch(f"bets/{bet_id}", bet_patch)
+        settled_count += 1
+
+    return settled_count
+
+
+async def run_auto_settlement(bot_instance: Optional[Bot] = None) -> int:
+    results = await fb_get("match_results", {})
+    if not isinstance(results, dict):
+        return 0
+    total_settled = 0
+    for mid, info in results.items():
+        if isinstance(info, dict) and info.get("finished"):
+            cnt = await settle_match_in_bets(
+                str(mid),
+                int(info.get("score1", 0)),
+                int(info.get("score2", 0)),
+                bot_instance=bot_instance,
+            )
+            total_settled += cnt
+    return total_settled
+
+
+async def line_updater_loop(bot_instance: Optional[Bot] = None) -> None:
+    while True:
+        try:
+            logos = await fb_get("logos", {})
+            if isinstance(logos, dict):
+                LINE_CACHE["logos"] = logos
+
+            raw = await asyncio.to_thread(
+                fetch_json_mirror, "/events/list?lang=ru&scopeMarket=1600"
+            )
+            if raw and "events" in raw:
+                finished_map = parse_fonbet_line(raw)
+                for mid, info in finished_map.items():
+                    await fb_put(f"match_results/{fb_key(mid)}", info)
+                    await settle_match_in_bets(
+                        mid, info["score1"], info["score2"], bot_instance=bot_instance
+                    )
+        except Exception as e:
+            logger.error("Line updater error: %s", e)
+        await asyncio.sleep(15)
+
+
+async def settle_bets_worker(bot_instance: Optional[Bot] = None) -> None:
+    while True:
+        await asyncio.sleep(45)
+        try:
+            await run_auto_settlement(bot_instance=bot_instance)
+        except Exception as e:
+            logger.error("Settle worker error: %s", e)
+
+
+# ================= AIOGRAM 3 TELEGRAM BOT =================
+bot: Optional[Bot] = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
+dp = Dispatcher()
+router = Router()
+
+
+def is_admin(user_id: int) -> bool:
+    return str(user_id) in ADMIN_IDS
+
+
+def main_webapp_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Открыть WinStars",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            ]
+        ]
+    )
+
+
+@router.message(CommandStart())
+async def cmd_start(message: Message) -> None:
+    if not message.from_user:
+        return
+    u = message.from_user
+    parts = (message.text or "").split(maxsplit=1)
+    ref_id = None
+    if len(parts) > 1 and parts[1].startswith("ref_"):
+        ref_id = parts[1].replace("ref_", "").strip()
+
+    full_name = " ".join(filter(None, [u.first_name, u.last_name])) or "Игрок"
+    await get_or_create_user(
+        str(u.id),
+        name=full_name,
+        username=u.username or "",
+        referrer_id=ref_id,
+    )
+
+    await message.answer(
+        f"Добро пожаловать в <b>WINSTARS</b>, {full_name}!\n\n"
+        f"• Актуальная футбольная линия и Live-события\n"
+        f"• Одинары и экспрессы с мгновенным расчётом\n"
+        f"• Пополнение и вывод в Telegram Stars и по СБП\n\n"
+        f"Нажмите кнопку ниже, чтобы запустить приложение:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=main_webapp_keyboard(),
+    )
+
+
+@router.pre_checkout_query()
+async def process_pre_checkout(query: PreCheckoutQuery) -> None:
+    await query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def process_successful_payment(message: Message) -> None:
+    if not message.successful_payment or not message.from_user:
+        return
+    sp = message.successful_payment
+    payload = sp.invoice_payload or ""
+    # Формат payload: topup_<user_id>_<stars>_<ts>
+    parts = payload.split("_")
+    uid = fb_key(parts[1]) if len(parts) >= 3 else fb_key(str(message.from_user.id))
+    stars = float(sp.total_amount)
+
+    user = await get_or_create_user(uid)
+    new_bal = round(float(user.get("balance", 0)) + stars, 2)
+    await fb_patch(f"users/{uid}", {"balance": new_bal})
+
+    tx_id = uuid.uuid4().hex[:10].upper()
+    await fb_put(
+        f"transactions/{tx_id}",
+        {
+            "id": tx_id,
+            "user_id": uid,
+            "type": "deposit",
+            "method": "Telegram Stars",
+            "currency": "STARS",
+            "amount_rub": round(stars * STAR_RATE, 2),
+            "amount_stars": stars,
+            "status": "completed",
+            "details": "Оплата Telegram Stars",
+            "created_at": datetime.now(MSK).strftime("%d.%m %H:%M"),
+        },
+    )
+
+    await message.answer(
+        f"✅ <b>Баланс пополнен на {int(stars)} ★!</b>\n"
+        f"Текущий баланс: <b>{new_bal} ★</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+# ================= ADMIN COMMANDS & CALLBACKS =================
+@router.message(Command("admin"))
+async def cmd_admin(message: Message) -> None:
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+
+    users = await fb_get("users", {})
+    bets = await fb_get("bets", {})
+    txs = await fb_get("transactions", {})
+
+    u_cnt = len(users) if isinstance(users, dict) else 0
+    b_cnt = len(bets) if isinstance(bets, dict) else 0
+    active_b = (
+        sum(1 for b in bets.values() if isinstance(b, dict) and b.get("status") == "active")
+        if isinstance(bets, dict)
+        else 0
+    )
+    pending_tx = (
+        [t for t in txs.values() if isinstance(t, dict) and t.get("status") == "pending"]
+        if isinstance(txs, dict)
+        else []
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"Заявки кассы ({len(pending_tx)})",
+                    callback_data="adm_pending_tx",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Пересчитать ставки (/recalc)",
+                    callback_data="adm_recalc",
+                )
+            ],
+        ]
+    )
+
+    await message.answer(
+        f"<b>Панель администратора WinStars</b>\n\n"
+        f"• Игроков: <b>{u_cnt}</b>\n"
+        f"• Всего ставок: <b>{b_cnt}</b> (активных: <b>{active_b}</b>)\n"
+        f"• Заявок в ожидании: <b>{len(pending_tx)}</b>\n\n"
+        f"<b>Команды:</b>\n"
+        f"<code>/settle &lt;match_id&gt; &lt;счёт&gt;</code> — закрыть матч (напр. <code>/settle 12345 2:1</code>)\n"
+        f"<code>/recalc</code> — авторасчёт по архиву результатов\n"
+        f"<code>/addbal &lt;user_id&gt; &lt;stars&gt;</code> — начислить/списать Stars\n"
+        f"<code>/promo &lt;КОД&gt; &lt;БОНУС&gt; [ЛИМИТ]</code> — создать промокод\n"
+        f"<code>/logo &lt;команда&gt; &lt;url&gt;</code> — задать логотип команды",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data == "adm_recalc")
+async def cb_adm_recalc(call: CallbackQuery) -> None:
+    if not call.from_user or not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    cnt = await run_auto_settlement(bot_instance=bot)
+    await call.answer(f"Пересчитано ставок: {cnt}", show_alert=True)
+
+
+@router.callback_query(F.data == "adm_pending_tx")
+async def cb_adm_pending_tx(call: CallbackQuery) -> None:
+    if not call.from_user or not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    txs = await fb_get("transactions", {})
+    pending = (
+        [t for t in txs.values() if isinstance(t, dict) and t.get("status") == "pending"]
+        if isinstance(txs, dict)
+        else []
+    )
+    if not pending:
+        await call.answer("Нет ожидающих заявок", show_alert=True)
+        return
+
+    await call.answer()
+    for t in pending[:10]:
+        tid = t.get("id")
+        is_dep = t.get("type") == "deposit"
+        title = "Пополнение СБП" if is_dep else f"Вывод ({t.get('method')})"
+        amt_str = (
+            f"{t.get('amount_rub')} ₽ ({t.get('amount_stars')} ★)"
+            if t.get("currency") == "RUB"
+            else f"{t.get('amount_stars')} ★"
+        )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Одобрить", callback_data=f"tx_ok:{tid}"
+                    ),
+                    InlineKeyboardButton(
+                        text="Отклонить", callback_data=f"tx_no:{tid}"
+                    ),
+                ]
+            ]
+        )
+        await call.message.answer(
+            f"<b>Заявка #{tid}</b> — {title}\n"
+            f"Игрок: <code>{t.get('user_id')}</code>\n"
+            f"Сумма: <b>{amt_str}</b>\n"
+            f"Реквизиты: {t.get('details', '—')}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
+
+
+@router.callback_query(F.data.startswith("tx_ok:"))
+async def cb_tx_approve(call: CallbackQuery) -> None:
+    if not call.from_user or not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    tid = call.data.split(":", 1)[1]
+    tx = await fb_get(f"transactions/{tid}")
+    if not isinstance(tx, dict) or tx.get("status") != "pending":
+        await call.answer("Заявка уже обработана", show_alert=True)
+        return
+
+    uid = fb_key(tx.get("user_id", ""))
+    stars = float(tx.get("amount_stars", 0))
+    if tx.get("type") == "deposit":
+        user = await get_or_create_user(uid)
+        new_bal = round(float(user.get("balance", 0)) + stars, 2)
+        await fb_patch(f"users/{uid}", {"balance": new_bal})
+
+    await fb_patch(f"transactions/{tid}", {"status": "completed"})
+    await call.message.edit_text(
+        f"✅ Заявка <b>#{tid}</b> одобрена.", parse_mode=ParseMode.HTML
+    )
+    if bot and uid.isdigit():
+        try:
+            msg_txt = (
+                f"✅ Пополнение <b>#{tid}</b> на <b>{stars} ★</b> зачислено!"
+                if tx.get("type") == "deposit"
+                else f"✅ Заявка на вывод <b>#{tid}</b> выполнена!"
+            )
+            await bot.send_message(int(uid), msg_txt, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("tx_no:"))
+async def cb_tx_reject(call: CallbackQuery) -> None:
+    if not call.from_user or not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    tid = call.data.split(":", 1)[1]
+    tx = await fb_get(f"transactions/{tid}")
+    if not isinstance(tx, dict) or tx.get("status") != "pending":
+        await call.answer("Заявка уже обработана", show_alert=True)
+        return
+
+    uid = fb_key(tx.get("user_id", ""))
+    stars = float(tx.get("amount_stars", 0))
+    # При отклонении вывода возвращаем списанные Stars пользователю
+    if tx.get("type") == "withdraw":
+        user = await get_or_create_user(uid)
+        new_bal = round(float(user.get("balance", 0)) + stars, 2)
+        await fb_patch(f"users/{uid}", {"balance": new_bal})
+
+    await fb_patch(
+        f"transactions/{tid}",
+        {"status": "rejected", "reject_reason": "Отклонено администратором"},
+    )
+    await call.message.edit_text(
+        f"❌ Заявка <b>#{tid}</b> отклонена.", parse_mode=ParseMode.HTML
+    )
+    if bot and uid.isdigit():
+        try:
+            msg_txt = (
+                f"❌ Заявка на вывод <b>#{tid}</b> отклонена. Средства (<b>{stars} ★</b>) возвращены на баланс."
+                if tx.get("type") == "withdraw"
+                else f"❌ Заявка на пополнение <b>#{tid}</b> отклонена."
+            )
+            await bot.send_message(int(uid), msg_txt, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
+@router.message(Command("settle"))
+async def cmd_settle(message: Message) -> None:
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3 or not re.match(r"^\d+[:\-]\d+$", parts[2]):
+        await message.answer("Формат: <code>/settle &lt;match_id&gt; 2:1</code>", parse_mode=ParseMode.HTML)
+        return
+
+    mid = parts[1].strip()
+    s1_str, s2_str = re.split(r"[:\-]", parts[2])
+    s1, s2 = int(s1_str), int(s2_str)
+
+    await fb_put(
+        f"match_results/{fb_key(mid)}",
+        {
+            "score1": s1,
+            "score2": s2,
+            "finished": True,
+            "updated_at": time.time(),
+        },
+    )
+    cnt = await settle_match_in_bets(mid, s1, s2, bot_instance=bot)
+    await message.answer(
+        f"✅ Матч <code>{mid}</code> закрыт со счётом <b>{s1}:{s2}</b>.\n"
+        f"Рассчитано купонов: <b>{cnt}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("recalc"))
+async def cmd_recalc(message: Message) -> None:
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    cnt = await run_auto_settlement(bot_instance=bot)
+    await message.answer(f"🔄 Перерасчёт завершён. Обновлено купонов: <b>{cnt}</b>", parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("addbal"))
+async def cmd_addbal(message: Message) -> None:
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer("Формат: <code>/addbal &lt;user_id&gt; &lt;stars&gt;</code>", parse_mode=ParseMode.HTML)
+        return
+    uid = fb_key(parts[1])
+    delta = float(parts[2])
+    user = await get_or_create_user(uid)
+    new_bal = round(max(0.0, float(user.get("balance", 0)) + delta), 2)
+    await fb_patch(f"users/{uid}", {"balance": new_bal})
+    await message.answer(
+        f"✅ Баланс игрока <code>{uid}</code> обновлён: <b>{new_bal} ★</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("promo"))
+async def cmd_promo(message: Message) -> None:
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer(
+            "Формат: <code>/promo КОД БОНУС [МАКС_ИСПОЛЬЗОВАНИЙ]</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    code = fb_key(parts[1].upper())
+    bonus = float(parts[2])
+    max_uses = int(parts[3]) if len(parts) >= 4 else 100
+    await fb_put(
+        f"promos/{code}",
+        {"bonus": bonus, "max_uses": max_uses, "used_by": []},
+    )
+    await message.answer(
+        f"🎁 Промокод <code>{code}</code> на <b>{bonus} ★</b> (лимит: {max_uses}) создан.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("logo"))
+async def cmd_logo(message: Message) -> None:
+    if not message.from_user or not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer(
+            "Формат: <code>/logo НазваниеКоманды https://...png</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    team_k = fb_key(parts[1].lower())
+    url = parts[2].strip()
+    await fb_patch("logos", {team_k: url})
+    LINE_CACHE.setdefault("logos", {})[team_k] = url
+    await message.answer(f"🖼 Логотип для <b>{parts[1]}</b> сохранён.", parse_mode=ParseMode.HTML)
+
+
+dp.include_router(router)
+
+
+# ================= FASTAPI LIFESPAN & APP =================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global http_client
+    http_client = httpx.AsyncClient(timeout=12.0)
+
+    tasks = [
+        asyncio.create_task(line_updater_loop(bot_instance=bot)),
+        asyncio.create_task(settle_bets_worker(bot_instance=bot)),
+    ]
+
+    if bot is not None:
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            tasks.append(asyncio.create_task(dp.start_polling(bot)))
+            logger.info("Aiogram polling started.")
+        except Exception as e:
+            logger.error("Failed to start bot polling: %s", e)
+
+    yield
+
+    for t in tasks:
+        t.cancel()
+    if bot is not None:
+        await bot.session.close()
+    if http_client is not None:
+        await http_client.aclose()
+
+
+app = FastAPI(title="WinStars API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ================= API SCHEMAS =================
+class BetEventItem(BaseModel):
+    match_id: str
+    match_title: str
+    league: Optional[str] = ""
+    selection: str
+    odd: float
+
+
+class PlaceBetRequest(BaseModel):
+    user_id: str
+    match_id: str
+    selection: str
+    odd: float
+    amount: float
+    currency: str = "STARS"
+    events: List[BetEventItem] = []
+
+
+class InvoiceRequest(BaseModel):
+    user_id: str
+    stars: int
+
+
+class DepositRubRequest(BaseModel):
+    user_id: str
+    amount: float
+    currency: str = "RUB"
+    method: str = "sbp"
+
+
+class WithdrawRequest(BaseModel):
+    user_id: str
+    amount: float
+    currency: str = "STARS"
+    method: str = "stars"
+    bank: str = ""
+    details: str = ""
+
+
+class PromoRequest(BaseModel):
+    user_id: str
+    code: str
+
+
+class ChatSendRequest(BaseModel):
+    user_id: str
+    user: str
+    username: str = ""
+    photo_url: str = ""
+    text: str
+
+
+# ================= API ENDPOINTS =================
+@app.get("/")
+@app.get("/health")
+async def healthcheck() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "live_count": len(LINE_CACHE["live"]),
+        "prematch_count": len(LINE_CACHE["prematch"]),
     }
 
-    async function activatePromo() {
-      const code = document.getElementById("promo-code-input").value.trim().toUpperCase();
-      if (!code) {
-        showToast("Введите промокод");
-        return;
-      }
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/promo/activate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: USER_ID, code })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          showToast(data.detail || "Промокод недействителен");
-          return;
-        }
-        userData.balance = data.balance;
-        updateHeaderBalance();
-        document.getElementById("promo-code-input").value = "";
-        showToast(`Промокод активирован: +${data.bonus} ★`);
-        loadTransactions();
-      } catch (_) {
-        showToast("Ошибка соединения");
-      }
+
+@app.get("/api/init/{user_id}")
+async def api_init(
+    user_id: str, name: str = "Игрок", username: str = "", photo_url: str = ""
+) -> Dict[str, Any]:
+    user = await get_or_create_user(
+        user_id, name=name, username=username, photo_url=photo_url
+    )
+    return {
+        "user": user,
+        "star_rate": STAR_RATE,
+        "bot_username": BOT_USERNAME,
+        "live": LINE_CACHE["live"],
+        "prematch": LINE_CACHE["prematch"],
     }
 
-    async function loadTransactions() {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(USER_ID)}`);
-        if (!res.ok) return;
-        const list = await res.json();
-        const box = document.getElementById("tx-history-list");
-        if (!list.length) {
-          box.innerHTML = '<div class="empty-box" style="padding:14px;">Операций пока нет</div>';
-          return;
-        }
-        box.innerHTML = list
-          .map((t) => {
-            const isDep = t.type === "deposit";
-            const amt =
-              t.currency === "RUB" ? `${t.amount_rub} ₽` : `${t.amount_stars} ★`;
-            const stCls =
-              t.status === "completed"
-                ? "st-won"
-                : t.status === "rejected"
-                ? "st-lost"
-                : "st-active";
-            const stTxt =
-              t.status === "completed"
-                ? "Выполнено"
-                : t.status === "rejected"
-                ? "Отклонено"
-                : "В обработке";
-            return `
-            <div class="leg-row">
-              <div>
-                <div class="leg-match">${isDep ? "Пополнение" : "Вывод"} (${esc(t.method)})</div>
-                <div style="font-size:11px;color:var(--text-secondary);">${esc(t.reject_reason || t.details || "")}</div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-weight:700;color:${isDep ? "var(--green)" : "#fff"};">${isDep ? "+" : "-"}${amt}</div>
-                <span class="status-chip ${stCls}">${stTxt}</span>
-              </div>
-            </div>`;
-          })
-          .join("");
-      } catch (_) {}
+
+@app.get("/api/matches")
+async def api_matches() -> Dict[str, Any]:
+    return {
+        "live": LINE_CACHE["live"],
+        "prematch": LINE_CACHE["prematch"],
     }
 
-    /* ================= PROFILE & CHART ================= */
-    function updateProfileUI() {
-      document.getElementById("prof-name").textContent = userData.name || USER_NAME;
-      document.getElementById("prof-username").textContent = userData.username
-        ? `@${userData.username} • ID ${USER_ID}`
-        : `ID ${USER_ID}`;
 
-      const avaEl = document.getElementById("prof-avatar");
-      if (userData.photo_url) {
-        avaEl.innerHTML = `<img src="${esc(userData.photo_url)}" alt="" />`;
-      } else {
-        avaEl.textContent = (userData.name || "W").slice(0, 1).toUpperCase();
-      }
+@app.get("/api/match/{match_id}/markets")
+async def api_match_markets(match_id: str) -> Dict[str, Any]:
+    m = LINE_CACHE["by_id"].get(str(match_id))
+    if not m:
+        raise HTTPException(status_code=404, detail="Матч не найден в текущей линии")
+    return m
 
-      const total = Number(userData.total_bets || 0);
-      const won = Number(userData.won_bets || 0);
-      const winrate = total > 0 ? Math.round((won / total) * 100) : 0;
-      const profitStars = Number(userData.profit || 0);
 
-      document.getElementById("st-total").textContent = total;
-      document.getElementById("st-won").textContent = won;
-      document.getElementById("st-winrate").textContent = `${winrate}%`;
+@app.post("/api/bet")
+async def api_place_bet(req: PlaceBetRequest) -> Dict[str, Any]:
+    uid = fb_key(req.user_id)
+    user = await get_or_create_user(uid)
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Сумма ставки должна быть больше 0")
 
-      const profEl = document.getElementById("st-profit");
-      profEl.textContent = `${profitStars >= 0 ? "+" : ""}${formatMoney(profitStars)}`;
-      profEl.style.color = profitStars >= 0 ? "var(--green)" : "var(--red)";
+    cur = req.currency.upper()
+    stake_stars = (
+        round(req.amount / STAR_RATE, 2) if cur == "RUB" else round(req.amount, 2)
+    )
+    if stake_stars < 1:
+        raise HTTPException(status_code=400, detail="Минимальная ставка 1 ★")
 
-      const refs = Number(userData.referrals || 0);
-      document.getElementById("prof-refs").textContent = String(refs);
-      document.getElementById("ref-link-text").textContent =
-        `https://t.me/${BOT_USERNAME}?start=ref_${USER_ID}`;
+    if float(user.get("balance", 0)) < stake_stars:
+        raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
+
+    events_list = (
+        [e.model_dump() for e in req.events]
+        if req.events
+        else [
+            {
+                "match_id": req.match_id,
+                "match_title": f"Матч #{req.match_id}",
+                "league": "",
+                "selection": req.selection,
+                "odd": req.odd,
+            }
+        ]
+    )
+
+    total_odd = 1.0
+    for ev in events_list:
+        ev["status"] = "active"
+        ev["final_score"] = ""
+        total_odd *= float(ev["odd"])
+    total_odd = round(total_odd, 2)
+
+    new_balance = round(float(user.get("balance", 0)) - stake_stars, 2)
+    new_total_bets = int(user.get("total_bets", 0)) + 1
+    await fb_patch(
+        f"users/{uid}",
+        {"balance": new_balance, "total_bets": new_total_bets},
+    )
+
+    bet_id = uuid.uuid4().hex[:10].upper()
+    bet_record = {
+        "id": bet_id,
+        "user_id": uid,
+        "bet_type": "express" if len(events_list) > 1 else "single",
+        "match_id": events_list[0]["match_id"],
+        "match_title": events_list[0]["match_title"],
+        "selection": events_list[0]["selection"],
+        "odd": total_odd,
+        "amount": round(req.amount, 2),
+        "amount_stars": stake_stars,
+        "currency": cur,
+        "payout": 0.0,
+        "payout_stars": 0.0,
+        "status": "active",
+        "events": events_list,
+        "ts": time.time(),
+        "created_at": datetime.now(MSK).strftime("%d.%m.%Y %H:%M"),
     }
 
-    function copyRefLink() {
-      const link = document.getElementById("ref-link-text").textContent;
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(link);
-        showToast("Ссылка скопирована");
-      }
+    await fb_put(f"bets/{bet_id}", bet_record)
+    return {"status": "ok", "bet": bet_record, "balance": new_balance}
+
+
+@app.get("/api/bets/{user_id}")
+async def api_user_bets(user_id: str) -> List[Dict[str, Any]]:
+    uid = fb_key(user_id)
+    all_bets = await fb_get("bets", {})
+    if not isinstance(all_bets, dict):
+        return []
+    res = [
+        b
+        for b in all_bets.values()
+        if isinstance(b, dict) and fb_key(b.get("user_id", "")) == uid
+    ]
+    res.sort(key=lambda x: float(x.get("ts", 0)), reverse=True)
+    return res
+
+
+@app.post("/api/invoice")
+@app.post("/api/cashier/invoice")
+async def api_create_invoice(req: InvoiceRequest) -> Dict[str, Any]:
+    if req.stars < 10:
+        raise HTTPException(status_code=400, detail="Минимальное пополнение 10 ★")
+    if not BOT_TOKEN or http_client is None:
+        raise HTTPException(status_code=500, detail="BOT_TOKEN не настроен на сервере")
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/createInvoiceLink"
+    payload = {
+        "title": f"Пополнение WinStars ({req.stars} ★)",
+        "description": f"Зачисление {req.stars} Stars на баланс WinStars",
+        "payload": f"topup_{fb_key(req.user_id)}_{req.stars}_{int(time.time())}",
+        "currency": "XTR",
+        "prices": [{"label": "Stars", "amount": req.stars}],
     }
+    resp = await http_client.post(url, json=payload)
+    data = resp.json()
+    if not data.get("ok"):
+        raise HTTPException(
+            status_code=400, detail=data.get("description", "Ошибка Telegram API")
+        )
+    return {"invoice_url": data["result"]}
 
-    function drawProfitChart() {
-      const canvas = document.getElementById("profit-chart");
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      const w = rect.width || 320;
-      const h = 125;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      ctx.scale(dpr, dpr);
-      ctx.clearRect(0, 0, w, h);
 
-      const settled = [...userBets]
-        .filter((b) => b.status === "won" || b.status === "lost")
-        .reverse();
+@app.post("/api/cashier/deposit")
+async def api_deposit_rub(req: DepositRubRequest) -> Dict[str, Any]:
+    if req.amount < 50:
+        raise HTTPException(status_code=400, detail="Минимальное пополнение 50 ₽")
+    uid = fb_key(req.user_id)
+    await get_or_create_user(uid)
 
-      const points = [0];
-      let acc = 0;
-      settled.forEach((b) => {
-        const stake = Number(b.amount_stars || 0);
-        const pay = Number(b.payout_stars || 0);
-        acc += pay - stake;
-        points.push(Number(acc.toFixed(2)));
-      });
-      if (points.length === 1) points.push(0);
-
-      const minV = Math.min(...points, -5);
-      const maxV = Math.max(...points, 5);
-      const span = maxV - minV || 1;
-      const pad = 12;
-
-      const zeroY = h - pad - ((0 - minV) / span) * (h - pad * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.07)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(pad, zeroY);
-      ctx.lineTo(w - pad, zeroY);
-      ctx.stroke();
-
-      const lineColor = acc >= 0 ? "#10b981" : "#f43f5e";
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      points.forEach((val, idx) => {
-        const x = pad + (idx / (points.length - 1)) * (w - pad * 2);
-        const y = h - pad - ((val - minV) / span) * (h - pad * 2);
-        if (idx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+    tx_id = uuid.uuid4().hex[:8].upper()
+    tx = {
+        "id": tx_id,
+        "user_id": uid,
+        "type": "deposit",
+        "method": "СБП",
+        "currency": "RUB",
+        "amount_rub": round(req.amount, 2),
+        "amount_stars": round(req.amount / STAR_RATE, 2),
+        "status": "pending",
+        "details": "Ожидает проверки перевода СБП",
+        "ts": time.time(),
+        "created_at": datetime.now(MSK).strftime("%d.%m %H:%M"),
     }
+    await fb_put(f"transactions/{tx_id}", tx)
 
-    // Bind swipe-down gestures to all bottom sheets & rectangular modals
-    enableSwipeToClose(document.getElementById("league-sheet"), closeLeagueModal);
-    enableSwipeToClose(document.getElementById("coupon-sheet"), closeCouponModal);
-    enableSwipeToClose(document.getElementById("markets-sheet"), closeMarketsModal);
-    enableSwipeToClose(document.getElementById("bet-detail-sheet"), closeBetDetailModal);
+    if bot:
+        for adm in ADMIN_IDS:
+            if adm.isdigit():
+                try:
+                    await bot.send_message(
+                        int(adm),
+                        f"💳 Новая заявка на пополнение СБП <b>#{tx_id}</b>\n"
+                        f"Игрок: <code>{uid}</code> | Сумма: <b>{req.amount} ₽</b>\n"
+                        f"Откройте /admin для подтверждения.",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
 
-    initApp();
-  </script>
-</body>
-</html>
+    return {"status": "ok", "message": "Заявка на пополнение по СБП создана", "tx": tx}
+
+
+@app.post("/api/cashier/withdraw")
+async def api_withdraw(req: WithdrawRequest) -> Dict[str, Any]:
+    uid = fb_key(req.user_id)
+    user = await get_or_create_user(uid)
+    cur = req.currency.upper()
+
+    if cur == "RUB":
+        if req.amount < 1500:
+            raise HTTPException(status_code=400, detail="Минимальный вывод 1500 ₽")
+        if not req.details:
+            raise HTTPException(status_code=400, detail="Укажите номер телефона для СБП")
+        stars_needed = round(req.amount / STAR_RATE, 2)
+        amt_rub = round(req.amount, 2)
+    else:
+        if req.amount < 1000:
+            raise HTTPException(status_code=400, detail="Минимальный вывод 1000 ★")
+        stars_needed = round(req.amount, 2)
+        amt_rub = round(req.amount * STAR_RATE, 2)
+
+    if float(user.get("balance", 0)) < stars_needed:
+        raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
+
+    new_balance = round(float(user.get("balance", 0)) - stars_needed, 2)
+    await fb_patch(f"users/{uid}", {"balance": new_balance})
+
+    tx_id = uuid.uuid4().hex[:8].upper()
+    tx = {
+        "id": tx_id,
+        "user_id": uid,
+        "type": "withdraw",
+        "method": "СБП" if cur == "RUB" else "Telegram Stars",
+        "currency": cur,
+        "amount_rub": amt_rub,
+        "amount_stars": stars_needed,
+        "status": "pending",
+        "details": f"{req.bank} {req.details}".strip() if cur == "RUB" else "Вывод Stars",
+        "ts": time.time(),
+        "created_at": datetime.now(MSK).strftime("%d.%m %H:%M"),
+    }
+    await fb_put(f"transactions/{tx_id}", tx)
+
+    if bot:
+        for adm in ADMIN_IDS:
+            if adm.isdigit():
+                try:
+                    await bot.send_message(
+                        int(adm),
+                        f"📤 Новая заявка на вывод <b>#{tx_id}</b>\n"
+                        f"Игрок: <code>{uid}</code> | Сумма: <b>{stars_needed} ★</b>\n"
+                        f"Откройте /admin для обработки.",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
+
+    return {"status": "ok", "balance": new_balance, "tx": tx}
+
+
+@app.post("/api/promo/activate")
+async def api_activate_promo(req: PromoRequest) -> Dict[str, Any]:
+    uid = fb_key(req.user_id)
+    user = await get_or_create_user(uid)
+    code = fb_key(req.code.strip().upper())
+
+    promo = await fb_get(f"promos/{code}")
+    if not isinstance(promo, dict):
+        raise HTTPException(status_code=404, detail="Промокод не найден")
+
+    used_by = promo.get("used_by") or []
+    if uid in used_by:
+        raise HTTPException(status_code=400, detail="Вы уже активировали этот промокод")
+    if len(used_by) >= int(promo.get("max_uses", 100)):
+        raise HTTPException(status_code=400, detail="Лимит активаций промокода исчерпан")
+
+    bonus = float(promo.get("bonus", 0))
+    used_by.append(uid)
+    await fb_patch(f"promos/{code}", {"used_by": used_by})
+
+    new_balance = round(float(user.get("balance", 0)) + bonus, 2)
+    await fb_patch(f"users/{uid}", {"balance": new_balance})
+
+    tx_id = uuid.uuid4().hex[:8].upper()
+    await fb_put(
+        f"transactions/{tx_id}",
+        {
+            "id": tx_id,
+            "user_id": uid,
+            "type": "deposit",
+            "method": f"Промокод {code}",
+            "currency": "STARS",
+            "amount_rub": round(bonus * STAR_RATE, 2),
+            "amount_stars": bonus,
+            "status": "completed",
+            "details": "Бонус по промокоду",
+            "ts": time.time(),
+            "created_at": datetime.now(MSK).strftime("%d.%m %H:%M"),
+        },
+    )
+    return {"status": "ok", "bonus": bonus, "balance": new_balance}
+
+
+@app.get("/api/transactions/{user_id}")
+async def api_transactions(user_id: str) -> List[Dict[str, Any]]:
+    uid = fb_key(user_id)
+    all_tx = await fb_get("transactions", {})
+    if not isinstance(all_tx, dict):
+        return []
+    res = [
+        t
+        for t in all_tx.values()
+        if isinstance(t, dict) and fb_key(t.get("user_id", "")) == uid
+    ]
+    res.sort(key=lambda x: float(x.get("ts", 0)), reverse=True)
+    return res
+
+
+# ================= WEBSOCKET & HTTP CHAT =================
+class ChatConnectionManager:
+    def __init__(self) -> None:
+        self.active: List[WebSocket] = []
+
+    async def connect(self, ws: WebSocket) -> None:
+        await ws.accept()
+        self.active.append(ws)
+
+    def disconnect(self, ws: WebSocket) -> None:
+        if ws in self.active:
+            self.active.remove(ws)
+
+    async def broadcast(self, payload: Dict[str, Any]) -> None:
+        dead: List[WebSocket] = []
+        for ws in self.active:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+
+chat_manager = ChatConnectionManager()
+
+
+async def get_recent_chat_messages(limit: int = 60) -> List[Dict[str, Any]]:
+    raw = await fb_get("chat", {})
+    if isinstance(raw, list):
+        msgs = [m for m in raw if isinstance(m, dict)]
+    elif isinstance(raw, dict):
+        msgs = [m for m in raw.values() if isinstance(m, dict)]
+    else:
+        msgs = []
+    msgs.sort(key=lambda x: float(x.get("ts", 0)))
+    return msgs[-limit:]
+
+
+async def save_chat_message(data: Dict[str, Any]) -> Dict[str, Any]:
+    msg_id = uuid.uuid4().hex[:10]
+    msg = {
+        "id": msg_id,
+        "user_id": str(data.get("user_id", "")),
+        "user": str(data.get("user", "Игрок"))[:40],
+        "username": str(data.get("username", ""))[:40],
+        "photo_url": str(data.get("photo_url", "")),
+        "text": str(data.get("text", "")).strip()[:300],
+        "ts": time.time(),
+        "time": datetime.now(MSK).strftime("%H:%M"),
+    }
+    await fb_put(f"chat/{msg_id}", msg)
+    return msg
+
+
+@app.get("/api/chat/history")
+async def api_chat_history() -> List[Dict[str, Any]]:
+    return await get_recent_chat_messages(60)
+
+
+@app.post("/api/chat/send")
+async def api_chat_send(req: ChatSendRequest) -> Dict[str, Any]:
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+    msg = await save_chat_message(req.model_dump())
+    await chat_manager.broadcast({"type": "message", "message": msg})
+    return {"status": "ok", "message": msg}
+
+
+@app.websocket("/ws/chat")
+async def ws_chat_endpoint(ws: WebSocket) -> None:
+    await chat_manager.connect(ws)
+    history = await get_recent_chat_messages(60)
+    await ws.send_json({"type": "history", "messages": history})
+    try:
+        while True:
+            raw = await ws.receive_json()
+            if str(raw.get("text", "")).strip():
+                msg = await save_chat_message(raw)
+                await chat_manager.broadcast({"type": "message", "message": msg})
+    except WebSocketDisconnect:
+        chat_manager.disconnect(ws)
+    except Exception:
+        chat_manager.disconnect(ws)
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
