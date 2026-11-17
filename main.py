@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -68,8 +69,9 @@ LOGO_CACHE: Dict[str, str] = {}
 LOGO_FAIL_TS: Dict[str, float] = {}
 ADMIN_REJECT_STATE: Dict[int, str] = {}
 
-# ================= 1. ЖЁСТКИЙ ФИЛЬТР: ТОЛЬКО НАСТОЯЩИЙ ФУТБОЛ =================
+# ================= 1. ЖЁСТКИЙ ФИЛЬТР ЛИГ: ТОЛЬКО НУЖНЫЙ МУЖСКОЙ ФУТБОЛ =================
 FORBIDDEN_LEAGUE_WORDS = (
+    # Другие виды спорта и форматы
     "гандбол",
     "handball",
     "футзал",
@@ -97,6 +99,29 @@ FORBIDDEN_LEAGUE_WORDS = (
     "по 40",
     "по 35",
     "по 30",
+    # Любительские и низшие полупрофессиональные лиги
+    "северн",
+    "northern",
+    "южн",
+    "southern",
+    "истмиан",
+    "истмийск",
+    "isthmian",
+    "национальная лига",
+    "national league",
+    "трофей фа",
+    "трофей фл",
+    "fa trophy",
+    "efl trophy",
+    "rfef",
+    "терсера",
+    "серия c",
+    "серия с",
+    "серия d",
+    "серия д",
+    "serie c",
+    "serie d",
+    # Женский, молодёжный, кибер, любители, статистика
     "жен",
     "женщин",
     "women",
@@ -134,6 +159,7 @@ FORBIDDEN_LEAGUE_WORDS = (
     "до 20",
     "до 21",
     "до 23",
+    "юношеск",
     "молодеж",
     "молодёж",
     "youth",
@@ -178,10 +204,12 @@ FORBIDDEN_TEAM_WORDS = (
 )
 
 GLOBAL_ALLOWED_TOURNAMENTS = (
+    # Все мужские еврокубки
     "лига чемпионов",
     "лига европы",
     "лига конференций",
     "суперкубок уефа",
+    # Сборные и крупные международные турниры
     "лига наций",
     "чемпионат мира",
     "чемпионат европы",
@@ -200,20 +228,37 @@ GLOBAL_ALLOWED_TOURNAMENTS = (
 COUNTRY_ALLOWED_RULES: Dict[str, Tuple[str, ...]] = {
     "англия": ("премьер-лига", "чемпионшип", "кубок", "суперкубок"),
     "испания": ("примера дивизион", "ла лига", "сегунда", "кубок", "суперкубок"),
-    "италия": ("серия a", "серия а", "серия b", "серия б", "кубок", "суперкубок"),
-    "германия": ("бундеслига", "2-я бундеслига", "кубок", "суперкубок"),
-    "франция": ("лига 1", "лига 2", "кубок", "суперкубок"),
-    "россия": ("премьер-лига", "фнл", "первая лига", "вторая лига", "кубок", "суперкубок"),
+    "италия": ("серия a", "серия а", "кубок", "суперкубок"),
+    "германия": ("бундеслига", "кубок", "суперкубок"),
+    "франция": ("лига 1", "кубок", "суперкубок"),
+    "россия": ("премьер-лига", "фнл", "первая лига", "кубок", "суперкубок"),
     "беларусь": ("высшая лига", "первая лига", "кубок", "суперкубок"),
     "казахстан": ("премьер-лига", "первая лига", "кубок", "суперкубок"),
     "украина": ("премьер-лига", "первая лига", "кубок", "суперкубок"),
-    "португалия": ("примейра", "сегунда", "кубок", "суперкубок"),
+    "португалия": ("примейра", "сегунда", "лига 2", "кубок", "суперкубок"),
     "нидерланды": ("эредивизи", "эрстедивизи", "первый дивизион", "кубок", "суперкубок"),
-    "турция": ("суперлига", "1-я лига", "кубок", "суперкубок"),
+    "турция": ("суперлига", "кубок", "суперкубок"),
+    "бельгия": ("про-лига", "высшая лига", "челленджер", "первый дивизион", "кубок", "суперкубок"),
+    "шотландия": ("премьершип", "премьер-лига", "чемпионшип", "кубок", "суперкубок"),
+    "греция": ("суперлига", "суперлига 2", "кубок", "суперкубок"),
+    "австрия": ("бундеслига", "2-я лига", "кубок", "суперкубок"),
+    "швейцария": ("суперлига", "челлендж-лига", "кубок", "суперкубок"),
     "саудовская аравия": ("про-лига", "премьер-лига", "первый дивизион", "кубок", "суперкубок"),
     "сша": ("mls", "млс", "кубок", "usl"),
     "бразилия": ("серия a", "серия а", "серия b", "серия б", "кубок", "суперкубок"),
-    "аргентина": ("примера", "профессиональная лига", "кубок", "суперкубок"),
+    "аргентина": ("примера", "профессиональная лига", "насьональ", "кубок", "суперкубок"),
+}
+
+COUNTRY_FORBIDDEN_SUBS: Dict[str, Tuple[str, ...]] = {
+    "англия": ("северн", "южн", "истмиан", "истмийск", "националь", "1-я лига", "2-я лига", "трофей"),
+    "испания": ("rfef", "федерасьон", "терсера"),
+    "италия": ("серия b", "серия б", "серия c", "серия с", "серия d", "серия д"),
+    "германия": ("2-я бундеслига", "бундеслига 2", "2. бундеслига", "3-я", "региональ"),
+    "франция": ("лига 2", "насьональ"),
+    "турция": ("1-я лига", "2-я лига", "3-я лига"),
+    "россия": ("вторая лига", "дивизион а", "дивизион б", "мфл"),
+    "португалия": ("лига 3",),
+    "шотландия": ("1-я лига", "2-я лига"),
 }
 
 LEAGUE_COUNTRY_EN: Dict[str, Tuple[str, ...]] = {
@@ -229,6 +274,11 @@ LEAGUE_COUNTRY_EN: Dict[str, Tuple[str, ...]] = {
     "португалия": ("portugal",),
     "нидерланды": ("netherlands",),
     "турция": ("turkey", "türkiye"),
+    "бельгия": ("belgium",),
+    "шотландия": ("scotland", "united kingdom"),
+    "греция": ("greece",),
+    "австрия": ("austria",),
+    "швейцария": ("switzerland",),
     "саудовская аравия": ("saudi arabia",),
     "сша": ("usa", "united states"),
     "бразилия": ("brazil",),
@@ -259,13 +309,8 @@ def is_allowed_event(league_name: str, t1: str, t2: str) -> bool:
 
     for country, allowed_subs in COUNTRY_ALLOWED_RULES.items():
         if l_low.startswith(f"{country}.") or l_low.startswith(f"{country} "):
-            if country == "англия" and any(
-                bad in l_low for bad in ("1-я лига", "2-я лига", "национальная")
-            ):
-                return False
-            if country == "испания" and "федерасьон" in l_low:
-                return False
-            if country == "германия" and "3-я" in l_low:
+            bad_subs = COUNTRY_FORBIDDEN_SUBS.get(country, ())
+            if any(bad in l_low for bad in bad_subs):
                 return False
             return any(sub in l_low for sub in allowed_subs)
 
@@ -502,7 +547,6 @@ NATIONAL_TEAM_ISO: Dict[str, str] = {
     "сан-томе и принсипи": "st",
 }
 
-# Словарь точных международных названий клубов для поисковых API
 TEAM_ALIASES_EN: Dict[str, str] = {
     "крылья советов": "Krylya Sovetov",
     "пари нн": "Pari Nizhny Novgorod",
@@ -682,8 +726,6 @@ def normalize_tokens(name: str) -> List[str]:
 
 def has_reserve_marker(name: str) -> bool:
     tokens = set(normalize_tokens(name))
-    reserve_tokens = {"2", "ii", "b", "castilla", "fortuna", "vetusta", "promesas", "atlético", "atletico", "mirandilla"}
-    # "atletico" сам по себе может быть в Атлетико Мадрид, поэтому проверяем хвост " B" / " II" / " 2"
     if re.search(r"(?:^|\s)(?:2|II|B|Б)$", name.strip(), flags=re.IGNORECASE):
         return True
     return bool(tokens & {"castilla", "fortuna", "vetusta", "promesas", "mirandilla", "ii"})
@@ -698,13 +740,11 @@ def is_valid_team_candidate(
     if not candidate_name:
         return False
 
-    # 1. Проверка страны, если API её вернул
     if expected_countries and candidate_country:
         c_low = candidate_country.lower().strip()
         if not any(exp in c_low or c_low in exp for exp in expected_countries):
             return False
 
-    # 2. Основной клуб не может матчиться с дублем и наоборот
     if has_reserve_marker(query_latin) != has_reserve_marker(candidate_name):
         return False
 
@@ -713,7 +753,6 @@ def is_valid_team_candidate(
     if not q_tokens or not c_tokens:
         return False
 
-    # 3. Уникальные (не-общие) слова города/клуба обязаны совпасть!
     distinctive_q = [t for t in q_tokens if len(t) >= 4 and t not in GENERIC_FOOTBALL_TOKENS]
     for dq in distinctive_q:
         matched_token = any(
@@ -726,7 +765,6 @@ def is_valid_team_candidate(
         if not matched_token:
             return False
 
-    # 4. Общая схожесть названия
     q_core = " ".join(t for t in q_tokens if t not in {"fc", "fk", "cf", "cd", "ac", "sc"})
     c_core = " ".join(t for t in c_tokens if t not in {"fc", "fk", "cf", "cd", "ac", "sc"})
     if not q_core or not c_core:
@@ -824,11 +862,8 @@ class FirebaseDB:
 db = FirebaseDB(FIREBASE_URL, FIREBASE_SECRET)
 
 
-# ================= ТОЧНЫЙ РЕЗОЛВЕР ЛОГОТИПОВ (4 ИСТОЧНИКА + ВАЛИДАЦИЯ) =================
+# ================= ТОЧНЫЙ РЕЗОЛВЕР ЛОГОТИПОВ =================
 async def load_logo_cache_from_db():
-    # Сносим старый грязный кэш с чужими логотипами и фото из Wikipedia
-    await db.delete("team_logos")
-
     saved = await db.get("team_logos_v2")
     if isinstance(saved, dict):
         for k, v in saved.items():
@@ -855,7 +890,6 @@ async def build_team_queries(session: AsyncSession, clean_name: str) -> List[str
     if translit and translit not in queries:
         queries.append(translit)
 
-    # Перевод через Google Translate только если название ещё не переведено
     if not re.fullmatch(r"[A-Za-z0-9\s\.\-&']+", clean_name):
         try:
             norm_ru = re.sub(r"\s+(?:2|II|Б)$", " B", clean_name, flags=re.IGNORECASE)
@@ -927,9 +961,7 @@ async def search_sofascore_logo(
     return ""
 
 
-async def search_fotmob_logo(
-    session: AsyncSession, queries: List[str]
-) -> str:
+async def search_fotmob_logo(session: AsyncSession, queries: List[str]) -> str:
     endpoints = (
         "https://apigw.fotmob.com/searchapi/suggest?lang=en&term=",
         "https://www.fotmob.com/api/data/search/suggest?lang=en&term=",
@@ -963,9 +995,7 @@ async def search_fotmob_logo(
     return ""
 
 
-async def search_espn_logo(
-    session: AsyncSession, queries: List[str]
-) -> str:
+async def search_espn_logo(session: AsyncSession, queries: List[str]) -> str:
     for q in queries:
         try:
             url = (
@@ -1322,34 +1352,28 @@ class FonbetScraper:
         if not root_football_ids:
             root_football_ids = {1}
 
-        football_comp_ids: set[int] = set()
-        for s in data.get("sports") or []:
-            sid = s.get("id")
-            if sid is None:
-                continue
-            sid_int = int(sid)
-            s_name = str(s.get("name") or "").lower()
-            if any(bad in s_name for bad in FORBIDDEN_LEAGUE_WORDS):
-                continue
-
-            pid = s.get("parentId")
-            pids = [int(x) for x in (s.get("parentIds") or []) if str(x).isdigit()]
-            if (pid is not None and int(pid) in root_football_ids) or (
-                pids and pids[0] in root_football_ids
-            ):
-                football_comp_ids.add(sid_int)
-
-        for s in data.get("sports") or []:
-            sid = s.get("id")
-            if sid is None:
-                continue
-            sid_int = int(sid)
-            s_name = str(s.get("name") or "").lower()
-            if any(bad in s_name for bad in FORBIDDEN_LEAGUE_WORDS):
-                continue
-            pid = s.get("parentId")
-            if pid is not None and int(pid) in football_comp_ids:
-                football_comp_ids.add(sid_int)
+        # Собираем все уровни вложенности турниров внутри «Футбол» (включая все стадии ЛЧ, ЛЕ, ЛК и кубков)
+        football_comp_ids: set[int] = set(root_football_ids)
+        added = True
+        while added:
+            added = False
+            for s in data.get("sports") or []:
+                sid = s.get("id")
+                if sid is None:
+                    continue
+                sid_int = int(sid)
+                if sid_int in football_comp_ids:
+                    continue
+                s_name = str(s.get("name") or "").lower()
+                if any(bad in s_name for bad in FORBIDDEN_LEAGUE_WORDS):
+                    continue
+                pid = s.get("parentId")
+                pids = [int(x) for x in (s.get("parentIds") or []) if str(x).isdigit()]
+                if (pid is not None and int(pid) in football_comp_ids) or any(
+                    p in football_comp_ids for p in pids
+                ):
+                    football_comp_ids.add(sid_int)
+                    added = True
 
         misc_map: Dict[int, dict] = {}
         for m in data.get("eventMiscs") or []:
@@ -1509,24 +1533,46 @@ class FonbetScraper:
 scraper = FonbetScraper()
 
 
-# ================= ДВИЖОК СТАВОК И АВТОРАСЧЁТА =================
+# ================= ДВИЖОК СТАВОК (ОДИНАР + ЭКСПРЕСС) И АВТОРАСЧЁТА =================
 def normalize_bet(bet: dict) -> dict:
-    events = bet.get("events")
-    first_ev = events[0] if isinstance(events, list) and events else {}
+    raw_events = bet.get("events")
+    events: List[Dict[str, Any]] = []
+    if isinstance(raw_events, list):
+        for ev in raw_events:
+            if isinstance(ev, dict):
+                ev_st = str(ev.get("status") or "active").lower()
+                if ev_st in ("pending", "open", "wait"):
+                    ev_st = "active"
+                events.append(
+                    {
+                        "match_id": str(ev.get("match_id") or ""),
+                        "match_title": ev.get("match_title") or ev.get("match") or "Событие",
+                        "league": ev.get("league") or "",
+                        "selection": ev.get("selection") or ev.get("outcome") or "Исход",
+                        "odd": round(float(ev.get("odd") or ev.get("coefficient") or 1.0), 2),
+                        "status": ev_st,
+                        "final_score": ev.get("final_score", ""),
+                    }
+                )
+
+    is_express = len(events) > 1 or str(bet.get("bet_type") or "").lower() == "express"
+    first_ev = events[0] if events else {}
 
     match_id = str(bet.get("match_id") or first_ev.get("match_id") or "")
     match_title = (
         bet.get("match_title")
-        or first_ev.get("match_title")
-        or first_ev.get("match")
+        or (f"Экспресс ({len(events)} соб.)" if is_express else first_ev.get("match_title"))
         or "Событие"
     )
-    league = bet.get("league") or first_ev.get("league") or ""
+    league = bet.get("league") or ("Экспресс" if is_express else first_ev.get("league") or "")
     selection = (
         bet.get("selection")
         or bet.get("outcome")
-        or first_ev.get("outcome")
-        or first_ev.get("selection")
+        or (
+            " + ".join(f"{e['match_title']} ({e['selection']})" for e in events)
+            if is_express
+            else first_ev.get("selection")
+        )
         or "Исход"
     )
     odd = float(
@@ -1534,7 +1580,6 @@ def normalize_bet(bet: dict) -> dict:
         or bet.get("coefficient")
         or bet.get("odd")
         or bet.get("coef")
-        or first_ev.get("coefficient")
         or first_ev.get("odd")
         or 1.0
     )
@@ -1556,12 +1601,28 @@ def normalize_bet(bet: dict) -> dict:
         or (round(payout / STAR_TO_RUB, 2) if currency == "RUB" else payout)
     )
 
+    if not events and match_id:
+        events = [
+            {
+                "match_id": match_id,
+                "match_title": match_title,
+                "league": league,
+                "selection": selection,
+                "odd": round(odd, 2),
+                "status": status,
+                "final_score": bet.get("final_score", ""),
+            }
+        ]
+
     return {
+        "bet_type": "express" if is_express else "single",
+        "events": events,
         "match_id": match_id,
         "match_title": match_title,
         "league": league,
         "selection": selection,
         "odd": round(odd, 2),
+        "total_coefficient": round(odd, 2),
         "amount": amount,
         "amount_stars": amount_stars,
         "currency": currency,
@@ -1700,11 +1761,110 @@ async def settle_match_bets(
     ht2: Optional[int] = None,
 ) -> int:
     active_list = await collect_all_active_bets()
-    q_low = target_query.strip().lower()
+    q_clean = target_query.strip()
+    q_low = q_clean.lower()
     settled_count = 0
 
     for bet_path, b_id, user_id, norm in active_list:
-        by_id = norm["match_id"] == target_query.strip()
+        events = norm.get("events") or []
+
+        # Многособытийный экспресс
+        if len(events) > 1:
+            updated_any = False
+            for ev in events:
+                if ev.get("status") != "active":
+                    continue
+                by_id = ev.get("match_id") == q_clean
+                by_name = len(q_low) >= 3 and q_low in str(ev.get("match_title", "")).lower()
+                if by_id or by_name:
+                    ev_res = evaluate_outcome(ev["selection"], s1, s2, ht1=ht1, ht2=ht2)
+                    if ev_res != "active":
+                        ev["status"] = ev_res
+                        ev["final_score"] = f"{s1}:{s2}"
+                        updated_any = True
+
+            if not updated_any:
+                continue
+
+            statuses = [ev.get("status", "active") for ev in events]
+            if "lost" in statuses:
+                overall_res = "lost"
+            elif "active" in statuses:
+                # Часть событий экспресса ещё не завершилась — сохраняем прогресс событий
+                patch_progress = {"events": events}
+                await db.patch(bet_path, patch_progress)
+                if user_id:
+                    await db.patch(f"users/{user_id}/bets/{b_id}", patch_progress)
+                await db.patch(f"active_bets/{b_id}", patch_progress)
+                continue
+            elif all(st == "void" for st in statuses):
+                overall_res = "void"
+            else:
+                overall_res = "won"
+
+            eff_odd = 1.0
+            for ev in events:
+                if ev.get("status") == "won":
+                    eff_odd *= float(ev.get("odd", 1.0))
+            eff_odd = round(eff_odd, 2)
+
+            amount = norm["amount"]
+            payout = (
+                round(amount * eff_odd, 2)
+                if overall_res == "won"
+                else (round(amount, 2) if overall_res == "void" else 0.0)
+            )
+            payout_stars = (
+                round(payout / STAR_TO_RUB, 2) if norm["currency"] == "RUB" else payout
+            )
+            stake_stars = norm["amount_stars"]
+
+            patch_payload = {
+                "status": overall_res,
+                "events": events,
+                "total_coefficient": eff_odd,
+                "odd": eff_odd,
+                "payout": payout,
+                "payout_stars": payout_stars,
+                "settled_at": int(time.time()),
+            }
+            await db.patch(bet_path, patch_payload)
+            if user_id:
+                await db.patch(f"users/{user_id}/bets/{b_id}", patch_payload)
+            await db.patch(f"bets/{b_id}", patch_payload)
+            await db.delete(f"active_bets/{b_id}")
+
+            if user_id:
+                user = await db.get(f"users/{user_id}") or {}
+                cur_bal = float(user.get("balance", 0))
+                won_bets = int(user.get("won_bets", 0)) + (1 if overall_res == "won" else 0)
+                net_profit = float(user.get("profit", user.get("net_profit", 0))) + (
+                    payout_stars - stake_stars
+                )
+                await db.patch(
+                    f"users/{user_id}",
+                    {
+                        "balance": round(cur_bal + payout_stars, 2),
+                        "won_bets": won_bets,
+                        "profit": round(net_profit, 2),
+                        "net_profit": round(net_profit, 2),
+                    },
+                )
+                if notify_bot and overall_res == "won":
+                    try:
+                        await notify_bot.send_message(
+                            int(user_id),
+                            f"Экспресс зашёл! +{payout_stars:.2f} ★ ({payout_stars * STAR_TO_RUB:.2f} ₽)\n"
+                            f"{norm['match_title']} @ {eff_odd}",
+                        )
+                    except Exception:
+                        pass
+
+            settled_count += 1
+            continue
+
+        # Одиночная ставка
+        by_id = norm["match_id"] == q_clean
         by_name = len(q_low) >= 3 and q_low in norm["match_title"].lower()
         if not (by_id or by_name):
             continue
@@ -1726,8 +1886,13 @@ async def settle_match_bets(
         )
         stake_stars = norm["amount_stars"]
 
+        if events:
+            events[0]["status"] = result
+            events[0]["final_score"] = f"{s1}:{s2}"
+
         patch_payload = {
             "status": result,
+            "events": events,
             "final_score": f"{s1}:{s2}",
             "payout": payout,
             "payout_stars": payout_stars,
@@ -1769,9 +1934,9 @@ async def settle_match_bets(
 
         settled_count += 1
 
-    if target_query.isdigit():
+    if q_clean.isdigit():
         await db.patch(
-            f"match_archive/{target_query}",
+            f"match_archive/{q_clean}",
             {
                 "score1": s1,
                 "score2": s2,
@@ -1787,12 +1952,18 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
     pending_matches: Dict[str, Dict[str, Any]] = {}
 
     for _, _, _, norm in active_list:
-        key = norm["match_id"] or norm["match_title"]
-        if key and key not in pending_matches:
-            pending_matches[key] = {
-                "title": norm["match_title"],
-                "created_at": int(norm.get("created_at") or 0),
-            }
+        evs = norm.get("events") or []
+        if evs:
+            for ev in evs:
+                if ev.get("status") != "active":
+                    continue
+                k = ev.get("match_id") or ev.get("match_title")
+                if k and k not in pending_matches:
+                    pending_matches[k] = {"title": ev.get("match_title", "")}
+        else:
+            key = norm["match_id"] or norm["match_title"]
+            if key and key not in pending_matches:
+                pending_matches[key] = {"title": norm["match_title"]}
 
     if not pending_matches:
         return {"checked": 0, "settled": 0, "unresolved": {}}
@@ -1861,7 +2032,7 @@ async def run_full_recalc(notify_bot: Optional[Bot] = None) -> Dict[str, Any]:
     }
 
 
-# ================= ФОНОВЫЙ ПАРСЕР И ПАРАЛЛЕЛЬНЫЙ ДОГРУЗЧИК ЛОГОТИПОВ =================
+# ================= ФОНОВЫЙ ПАРСЕР И ДОГРУЗЧИК ЛОГОТИПОВ =================
 async def logo_background_loader(matches: List[Dict[str, Any]]):
     unique_teams: Dict[str, str] = {}
     for m in matches:
@@ -2335,10 +2506,13 @@ async def cmd_pending_matches(message: Message):
         return
     grouped: Dict[str, Dict[str, Any]] = {}
     for _, _, _, norm in active_list:
-        key = norm["match_id"] or norm["match_title"].split()[0]
-        if key not in grouped:
-            grouped[key] = {"title": norm["match_title"], "count": 0}
-        grouped[key]["count"] += 1
+        for ev in norm.get("events") or []:
+            if ev.get("status") != "active":
+                continue
+            key = ev["match_id"] or ev["match_title"].split()[0]
+            if key not in grouped:
+                grouped[key] = {"title": ev["match_title"], "count": 0}
+            grouped[key]["count"] += 1
 
     lines = ["**Активные нерассчитанные матчи:**\n"]
     for key, info in grouped.items():
@@ -2451,13 +2625,22 @@ app.add_middleware(
 )
 
 
-class BetRequest(BaseModel):
-    user_id: str
+class BetEventItem(BaseModel):
     match_id: str
     selection: str
     odd: float
+    match_title: str = ""
+    league: str = ""
+
+
+class BetRequest(BaseModel):
+    user_id: str
+    match_id: str = ""
+    selection: str = ""
+    odd: float = 0.0
     amount: float
     currency: str = "STARS"
+    events: Optional[List[BetEventItem]] = None
 
 
 class InvoiceRequest(BaseModel):
@@ -2596,9 +2779,6 @@ async def api_match_markets(match_id: str):
 
 @app.post("/api/bet")
 async def api_place_bet(req: BetRequest):
-    if req.odd <= 1.0:
-        raise HTTPException(status_code=400, detail="Некорректный коэффициент")
-
     cur = req.currency.upper()
     stake_stars = (
         round(req.amount / STAR_TO_RUB, 2) if cur == "RUB" else round(req.amount, 2)
@@ -2614,24 +2794,86 @@ async def api_place_bet(req: BetRequest):
     if balance < stake_stars:
         raise HTTPException(status_code=400, detail="Недостаточно средств на балансе")
 
-    match = LINE_CACHE["by_id"].get(req.match_id)
-    if not match:
-        raise HTTPException(status_code=400, detail="Приём ставок приостановлен")
+    raw_items: List[BetEventItem] = []
+    if req.events and len(req.events) > 0:
+        raw_items = req.events
+    elif req.match_id and req.selection and req.odd > 1.0:
+        raw_items = [
+            BetEventItem(
+                match_id=req.match_id,
+                selection=req.selection,
+                odd=req.odd,
+            )
+        ]
+    else:
+        raise HTTPException(status_code=400, detail="Купон пуст")
 
+    seen_matches: set[str] = set()
+    validated_events: List[Dict[str, Any]] = []
+    odds_list: List[float] = []
+
+    for item in raw_items:
+        if item.odd <= 1.0:
+            raise HTTPException(status_code=400, detail="Некорректный коэффициент")
+        if item.match_id in seen_matches:
+            raise HTTPException(
+                status_code=400, detail="Нельзя добавить два исхода на один матч в экспресс"
+            )
+        seen_matches.add(item.match_id)
+
+        match = LINE_CACHE["by_id"].get(item.match_id)
+        if not match:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Приём ставок на матч {item.match_title or item.match_id} приостановлен",
+            )
+
+        m_title = f"{match['team1']} - {match['team2']}"
+        odd_val = round(float(item.odd), 2)
+        odds_list.append(odd_val)
+        validated_events.append(
+            {
+                "match_id": item.match_id,
+                "match_title": m_title,
+                "league": match["league"],
+                "selection": item.selection,
+                "outcome": item.selection,
+                "odd": odd_val,
+                "coefficient": odd_val,
+                "status": "active",
+            }
+        )
+
+    is_express = len(validated_events) > 1
+    total_odd = round(math.prod(odds_list), 2)
     new_balance = round(balance - stake_stars, 2)
     total_bets = int(user.get("total_bets", 0)) + 1
-    match_title = f"{match['team1']} - {match['team2']}"
-    potential_win = round(req.amount * req.odd, 2)
+    potential_win = round(req.amount * total_odd, 2)
+
+    if is_express:
+        match_title = f"Экспресс ({len(validated_events)} соб.)"
+        league_label = "Экспресс"
+        selection_label = " • ".join(
+            f"{e['match_title']} ({e['selection']})" for e in validated_events
+        )
+        primary_match_id = validated_events[0]["match_id"]
+    else:
+        match_title = validated_events[0]["match_title"]
+        league_label = validated_events[0]["league"]
+        selection_label = validated_events[0]["selection"]
+        primary_match_id = validated_events[0]["match_id"]
 
     bet_data = {
         "user_id": req.user_id,
-        "match_id": req.match_id,
+        "bet_type": "express" if is_express else "single",
+        "events": validated_events,
+        "match_id": primary_match_id,
         "match_title": match_title,
-        "league": match["league"],
-        "selection": req.selection,
-        "outcome": req.selection,
-        "total_coefficient": round(req.odd, 2),
-        "odd": round(req.odd, 2),
+        "league": league_label,
+        "selection": selection_label,
+        "outcome": selection_label,
+        "total_coefficient": total_odd,
+        "odd": total_odd,
         "amount": round(req.amount, 2),
         "amount_stars": stake_stars,
         "currency": cur,
