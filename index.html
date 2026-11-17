@@ -3,21 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>WINSTARS</title>
+  <title>WINSTARS — Спортивные прогнозы</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0c0912;
-      --card: #161120;
-      --card-inner: #211a30;
-      --border: rgba(255, 255, 255, 0.06);
-      --accent: #a855f7;
-      --accent-glow: rgba(168, 85, 247, 0.35);
-      --green: #22c55e;
-      --red: #ef4444;
-      --red-glow: rgba(239, 68, 68, 0.45);
+      --bg: #0b0914;
+      --bg-card: #141122;
+      --bg-surface: #1c1830;
+      --bg-surface-hover: #25203d;
+      --border: rgba(255, 255, 255, 0.07);
+      --border-accent: rgba(139, 92, 246, 0.45);
+      --primary: #8b5cf6;
+      --primary-dark: #6d28d9;
+      --primary-grad: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      --green: #10b981;
+      --green-bg: rgba(16, 185, 129, 0.14);
+      --red: #f43f5e;
+      --red-bg: rgba(244, 63, 94, 0.14);
+      --amber: #f59e0b;
       --text: #f8fafc;
-      --muted: #94a3b8;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --nav-h: 66px;
     }
 
     * {
@@ -25,2295 +35,2493 @@
       margin: 0;
       padding: 0;
       -webkit-tap-highlight-color: transparent;
-      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      overflow-x: hidden;
+      min-height: 100vh;
     }
 
     body {
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100dvh;
-      padding-bottom: 78px;
-      overflow-x: hidden;
+      padding-top: 62px;
+      padding-bottom: 140px;
     }
 
+    /* ===== TOP HEADER ===== */
     .topbar {
-      position: sticky;
+      position: fixed;
       top: 0;
-      z-index: 35;
-      background: rgba(12, 9, 18, 0.94);
-      backdrop-filter: blur(12px);
+      left: 0;
+      right: 0;
+      height: 60px;
+      z-index: 800;
+      background: rgba(11, 9, 20, 0.9);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
+      padding: 0 14px;
     }
 
     .brand {
-      font-size: 19px;
-      font-weight: 800;
-      letter-spacing: 1.5px;
-      color: #fff;
-    }
-
-    .topbar-right {
-      position: relative;
       display: flex;
       align-items: center;
-      gap: 9px;
+      gap: 8px;
+      font-weight: 900;
+      font-size: 17px;
+      letter-spacing: 0.6px;
     }
 
-    .balance-pill {
-      background: var(--card-inner);
-      border: 1px solid rgba(168, 85, 247, 0.38);
-      padding: 6px 13px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 700;
-      color: #fff;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      user-select: none;
-    }
-
-    .currency-dropdown {
-      position: absolute;
-      top: 42px;
-      right: 40px;
-      width: 225px;
-      background: #1a1326;
-      border: 1px solid rgba(168, 85, 247, 0.4);
-      border-radius: 14px;
-      padding: 6px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75);
-      display: none;
-      z-index: 50;
-    }
-
-    .currency-dropdown.open {
-      display: block;
-      animation: fadeScale 0.14s ease-out;
-    }
-
-    .cur-option {
-      width: 100%;
-      background: transparent;
-      border: none;
-      color: var(--text);
-      padding: 10px 11px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: left;
-    }
-
-    .cur-option.active {
-      background: rgba(168, 85, 247, 0.18);
-      color: #fff;
-    }
-
-    .cur-option-sub {
-      font-size: 11px;
-      color: var(--muted);
-      font-weight: 500;
-    }
-
-    .avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #7e22ce, #a855f7);
+    .brand-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--primary-grad);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
-      font-weight: 700;
-      overflow: hidden;
-      flex-shrink: 0;
+      font-size: 16px;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.45);
     }
 
-    .avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
+    .brand span {
+      background: linear-gradient(90deg, #fff 20%, #c4b5fd 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
-    .controls {
+    .topbar-right {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
+      gap: 8px;
     }
 
-    .seg-toggle {
+    .cur-switch {
       display: flex;
-      background: var(--card);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 3px;
-      flex-shrink: 0;
+      border-radius: 10px;
+      padding: 2px;
     }
 
-    .seg-btn {
+    .cur-btn {
       border: none;
       background: transparent;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
-      padding: 7px 14px;
-      border-radius: 9px;
-      cursor: pointer;
-      transition: 0.2s;
-    }
-
-    .seg-btn.active {
-      background: linear-gradient(135deg, #9333ea, #a855f7);
-      color: #fff;
-      box-shadow: 0 2px 12px var(--accent-glow);
-    }
-
-    .league-picker-btn {
-      flex: 1;
-      min-width: 0;
-      background: var(--card);
-      border: 1px solid rgba(168, 85, 247, 0.25);
-      color: var(--text);
-      font-size: 13px;
-      font-weight: 600;
-      padding: 9px 12px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      cursor: pointer;
-    }
-
-    .league-picker-text {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .league-list-item {
-      width: 100%;
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 11px 13px;
-      border-radius: 12px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: left;
-    }
-
-    .league-list-item.active {
-      background: rgba(168, 85, 247, 0.18);
-      border-color: var(--accent);
-      color: #fff;
-    }
-
-    .league-count-pill {
-      background: var(--card-inner);
-      color: var(--muted);
+      color: var(--text-muted);
+      font-weight: 800;
       font-size: 11px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 999px;
-      flex-shrink: 0;
+      padding: 5px 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.15s;
     }
 
-    .container {
-      padding: 4px 16px 20px;
+    .cur-btn.active {
+      background: var(--primary-grad);
+      color: #fff;
     }
 
-    .tab-view {
+    .balance-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      border-radius: 12px;
+      padding: 5px 6px 5px 11px;
+      cursor: pointer;
+    }
+
+    .balance-val {
+      font-weight: 800;
+      font-size: 13px;
+      color: #fff;
+    }
+
+    .balance-plus {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: var(--primary-grad);
+      color: #fff;
+      font-weight: 900;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ===== PAGES ===== */
+    .page {
       display: none;
+      padding: 12px 14px;
+      max-width: 640px;
+      margin: 0 auto;
     }
 
-    .tab-view.active {
+    .page.active {
       display: block;
     }
 
-    .match-card {
-      background: var(--card);
+    /* ===== MATCHES CONTROLS ===== */
+    .mode-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      background: var(--bg-card);
+      padding: 5px;
+      border-radius: 14px;
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 13px 14px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
-    .match-card-header {
+    .mode-tab {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-weight: 700;
+      font-size: 13px;
+      padding: 9px 10px;
+      border-radius: 10px;
+      cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    /* КРАСНЫЙ ПУЛЬСИРУЮЩИЙ СТАТУС LIVE */
-    .match-status {
-      flex-shrink: 0;
-      white-space: nowrap;
-      display: inline-flex;
-      align-items: center;
+      justify-content: center;
       gap: 6px;
-      font-size: 12px;
-      font-weight: 800;
-      color: #ff4d5e;
-      background: rgba(239, 68, 68, 0.13);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      padding: 3px 9px;
-      border-radius: 999px;
-      animation: liveBadgeGlow 2s ease-in-out infinite;
+      transition: 0.15s;
     }
 
-    .match-status.prematch {
-      color: var(--muted);
-      font-weight: 600;
-      background: transparent;
-      border: none;
-      padding: 0;
-      animation: none;
+    .mode-tab.active {
+      background: var(--bg-surface);
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
     }
 
     .live-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: #ef4444;
-      box-shadow: 0 0 8px #ef4444;
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red);
+      animation: pulse 1.4s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.8); }
+    }
+
+    .count-pill {
+      background: rgba(139, 92, 246, 0.2);
+      color: #c4b5fd;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 999px;
+    }
+
+    .search-box {
+      position: relative;
+      margin-bottom: 10px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px 10px 36px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .search-ico {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+
+    .league-chips {
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      scrollbar-width: none;
+    }
+
+    .league-chips::-webkit-scrollbar {
+      display: none;
+    }
+
+    .league-chip {
       flex-shrink: 0;
-      animation: liveDotPulse 1.4s ease-in-out infinite;
-    }
-
-    @keyframes liveDotPulse {
-      0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-        box-shadow: 0 0 8px #ef4444;
-      }
-      50% {
-        opacity: 0.35;
-        transform: scale(0.8);
-        box-shadow: 0 0 2px #ef4444;
-      }
-    }
-
-    @keyframes liveBadgeGlow {
-      0%, 100% {
-        border-color: rgba(239, 68, 68, 0.35);
-      }
-      50% {
-        border-color: rgba(239, 68, 68, 0.12);
-      }
-    }
-
-    .match-league {
-      flex: 1;
-      min-width: 0;
-      text-align: right;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 999px;
+      padding: 6px 12px;
       font-size: 12px;
-      color: var(--muted);
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .league-chip.active {
+      background: var(--primary-grad);
+      border-color: transparent;
+      color: #fff;
+    }
+
+    /* ===== LEAGUE GROUP & MATCH CARD ===== */
+    .league-block {
+      margin-bottom: 14px;
+    }
+
+    .league-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .match-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 9px;
+    }
+
+    .match-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 11px;
+    }
+
+    .match-time-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      padding: 3px 8px;
+      border-radius: 7px;
+    }
+
+    .match-time-badge.is-live {
+      color: #fda4af;
+      background: var(--red-bg);
+    }
+
+    .markets-more-btn {
+      background: rgba(139, 92, 246, 0.14);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+
+    .teams-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 11px;
+      cursor: pointer;
+    }
+
+    .team-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .team-info {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .team-logo-box {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 800;
+      color: #c4b5fd;
+    }
+
+    .team-logo-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .team-name {
+      font-weight: 700;
+      font-size: 13.5px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .match-body {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 14px;
-      cursor: pointer;
-    }
-
-    .team-col {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 7px;
-      min-width: 0;
-    }
-
-    .team-logo-box {
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      background: var(--card-inner);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 700;
-      color: #cbd5e1;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-
-    .team-logo-box img {
-      width: 32px;
-      height: 32px;
-      object-fit: contain;
-    }
-
-    .team-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #f1f5f9;
-      line-height: 1.25;
-      max-width: 100%;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-
-    .score-center {
-      font-size: 24px;
-      font-weight: 800;
-      color: var(--accent);
-      letter-spacing: 1px;
-      padding: 0 6px;
-    }
-
-    .score-center.vs {
+    .team-score {
+      font-weight: 900;
       font-size: 15px;
-      color: var(--muted);
+      color: #fff;
+      min-width: 18px;
+      text-align: right;
     }
 
     .odds-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+      gap: 7px;
+    }
+
+    .odds-row.two-cols {
+      grid-template-columns: repeat(2, 1fr);
     }
 
     .odd-btn {
-      background: var(--card-inner);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 8px 6px;
+      padding: 8px 10px;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 3px;
+      justify-content: space-between;
+      color: #fff;
       cursor: pointer;
-      transition: 0.15s;
+      transition: 0.14s;
     }
 
     .odd-btn:active {
-      background: var(--accent);
       transform: scale(0.97);
     }
 
-    .odd-label {
-      font-size: 11px;
-      color: var(--muted);
+    .odd-btn .o-lbl {
+      font-size: 11.5px;
       font-weight: 600;
+      color: var(--text-muted);
     }
 
-    .odd-val {
-      font-size: 14px;
-      font-weight: 700;
+    .odd-btn .o-val {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--green);
+    }
+
+    .odd-btn.selected {
+      background: var(--primary-grad);
+      border-color: #c4b5fd;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
+    }
+
+    .odd-btn.selected .o-lbl,
+    .odd-btn.selected .o-val {
       color: #fff;
     }
 
-    .bottom-nav {
+    /* ===== FLOATING PURPLE COUPON BUTTON ===== */
+    #betslip-fab {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 40;
-      background: rgba(15, 11, 22, 0.96);
-      backdrop-filter: blur(14px);
-      border-top: 1px solid var(--border);
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
-    }
-
-    .nav-item {
-      background: none;
-      border: none;
-      color: var(--muted);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      font-size: 11px;
-      font-weight: 500;
-      cursor: pointer;
-    }
-
-    .nav-item.active {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .nav-item svg {
-      width: 20px;
-      height: 20px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.9;
-    }
-
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 60;
-      background: rgba(0, 0, 0, 0.78);
-      backdrop-filter: blur(5px);
+      left: 14px;
+      right: 14px;
+      bottom: 74px;
+      max-width: 612px;
+      margin: 0 auto;
+      z-index: 880;
       display: none;
-      align-items: flex-end;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 15px;
+      border-radius: 16px;
+      background: var(--primary-grad);
+      color: #fff;
+      box-shadow: 0 10px 28px rgba(109, 40, 217, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      cursor: pointer;
+      user-select: none;
+      animation: slideUp 0.2s ease;
     }
 
-    .modal-backdrop.center-modal {
+    @keyframes slideUp {
+      from { transform: translateY(16px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    #betslip-fab:active {
+      transform: scale(0.985);
+    }
+
+    .fab-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .fab-count {
+      min-width: 27px;
+      height: 27px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+      font-weight: 900;
+      font-size: 13px;
+      display: flex;
       align-items: center;
       justify-content: center;
-      padding: 16px;
     }
 
-    .modal-backdrop.open {
+    .fab-texts {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fab-title {
+      font-weight: 800;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .fab-sub {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    .fab-odd {
+      background: rgba(11, 9, 20, 0.38);
+      padding: 6px 11px;
+      border-radius: 11px;
+      font-weight: 900;
+      font-size: 14px;
+    }
+
+    /* ===== MODALS & BOTTOM SHEETS ===== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      background: rgba(6, 5, 12, 0.8);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .modal-overlay.open {
       display: flex;
     }
 
     .sheet {
       width: 100%;
-      max-height: 88dvh;
-      background: #130e1c;
-      border-top: 1px solid rgba(168, 85, 247, 0.28);
+      max-width: 640px;
+      max-height: 88vh;
+      overflow-y: auto;
+      background: #151224;
+      border-top: 1px solid var(--border-accent);
       border-radius: 22px 22px 0 0;
-      padding: 14px 16px calc(22px + env(safe-area-inset-bottom));
-      overflow-y: auto;
-      animation: slideUp 0.2s ease-out;
+      padding: 16px 16px 26px;
+      color: #fff;
     }
 
-    .rect-modal {
-      width: 100%;
-      max-width: 400px;
-      max-height: 88dvh;
-      background: #150f21;
-      border: 1px solid rgba(168, 85, 247, 0.38);
-      border-radius: 18px;
-      padding: 18px 16px;
-      overflow-y: auto;
-      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.85);
-      animation: fadeScale 0.18s ease-out;
+    .sheet-handle {
+      width: 38px;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 0 auto 12px;
     }
 
-    .rect-modal-header {
+    .sheet-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 14px;
     }
 
-    .modal-close-btn {
+    .sheet-close {
       width: 30px;
       height: 30px;
-      border-radius: 8px;
-      background: var(--card-inner);
-      border: 1px solid var(--border);
-      color: var(--muted);
+      border-radius: 9px;
+      border: none;
+      background: var(--bg-surface);
+      color: var(--text-muted);
       font-size: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       cursor: pointer;
     }
 
-    @keyframes slideUp {
-      from { transform: translateY(30px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-
-    @keyframes fadeScale {
-      from { transform: scale(0.95); opacity: 0; }
-      to { transform: scale(1); opacity: 1; }
-    }
-
-    .sheet-handle {
-      width: 38px;
-      height: 4px;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.18);
-      margin: 0 auto 14px;
-    }
-
-    .market-match-hero {
-      background: linear-gradient(180deg, rgba(168, 85, 247, 0.14) 0%, rgba(33, 26, 48, 0.65) 100%);
-      border: 1px solid rgba(168, 85, 247, 0.25);
-      border-radius: 16px;
-      padding: 14px 12px;
-      margin-bottom: 16px;
-      text-align: center;
-    }
-
-    .hero-league {
+    .coupon-badge {
+      background: rgba(139, 92, 246, 0.22);
+      border: 1px solid rgba(139, 92, 246, 0.55);
+      color: #ddd6fe;
+      font-weight: 900;
       font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 12px;
-      font-weight: 500;
+      letter-spacing: 0.5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      text-transform: uppercase;
     }
 
-    .hero-scoreboard {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
+    .coupon-item {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 11px 12px;
+      margin-bottom: 8px;
+      display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
     }
 
-    .hero-team {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
+    .coupon-item-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .coupon-item-league {
+      font-size: 10.5px;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+    }
+
+    .coupon-item-match {
       font-size: 13px;
       font-weight: 700;
-      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .hero-team .team-logo-box {
-      width: 48px;
-      height: 48px;
-      font-size: 15px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .hero-team .team-logo-box img {
-      width: 36px;
-      height: 36px;
-    }
-
-    .hero-center {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .hero-score {
-      font-size: 26px;
-      font-weight: 800;
-      color: var(--accent);
-      letter-spacing: 1.5px;
-    }
-
-    .hero-time-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(239, 68, 68, 0.16);
-      border: 1px solid rgba(239, 68, 68, 0.35);
-      color: #ff4d5e;
-      padding: 3px 11px;
-      border-radius: 999px;
+    .coupon-item-sel {
       font-size: 12px;
+      font-weight: 700;
+      color: #a78bfa;
+      margin-top: 3px;
+    }
+
+    .coupon-item-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .coupon-item-odd {
+      background: #282242;
+      padding: 5px 9px;
+      border-radius: 9px;
       font-weight: 800;
-      animation: liveBadgeGlow 2s ease-in-out infinite;
+      font-size: 13px;
+      color: var(--green);
     }
 
-    .hero-time-badge.prematch {
-      background: rgba(148, 163, 184, 0.14);
-      border-color: transparent;
-      color: var(--muted);
-      animation: none;
+    .coupon-item-del {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: none;
+      background: var(--red-bg);
+      color: var(--red);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
     }
 
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    .preset-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 8px 2px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .preset-btn:active {
+      background: var(--primary);
+    }
+
+    .field-input {
+      width: 100%;
+      background: #0e0c18;
+      border: 1px solid var(--border-accent);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      outline: none;
+    }
+
+    .coupon-summary {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      margin: 12px 0;
+    }
+
+    .sum-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 7px;
+    }
+
+    .sum-row:last-child {
+      margin-bottom: 0;
+      padding-top: 7px;
+      border-top: 1px solid var(--border);
+      color: #fff;
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .btn-primary {
+      width: 100%;
+      border: none;
+      border-radius: 14px;
+      padding: 14px;
+      background: var(--primary-grad);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(109, 40, 217, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    /* ===== MATCH MARKETS MODAL ===== */
     .market-group {
       margin-bottom: 14px;
     }
 
     .market-title {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
-      color: #cbd5e1;
-      margin-bottom: 8px;
+      color: var(--text-muted);
+      margin-bottom: 7px;
     }
 
     .market-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
+      gap: 7px;
     }
 
     .market-grid.cols-3 {
       grid-template-columns: repeat(3, 1fr);
     }
 
-    .slip-box {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
+    /* ===== MY BETS ===== */
+    .filter-pills {
+      display: flex;
+      gap: 7px;
       margin-bottom: 12px;
     }
 
-    .slip-input {
-      width: 100%;
-      background: var(--card-inner);
+    .filter-pill {
+      background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 14px;
-      color: #fff;
-      font-size: 16px;
-      font-weight: 700;
-      outline: none;
-      margin: 10px 0;
-    }
-
-    .quick-amounts {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .q-btn {
-      background: var(--card-inner);
-      border: 1px solid var(--border);
-      color: #fff;
-      border-radius: 9px;
-      padding: 7px 0;
+      color: var(--text-muted);
+      padding: 7px 13px;
+      border-radius: 999px;
       font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .primary-btn {
-      width: 100%;
-      background: linear-gradient(135deg, #9333ea, #a855f7);
-      border: none;
-      border-radius: 13px;
-      padding: 14px;
-      color: #fff;
-      font-size: 15px;
       font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 4px 18px var(--accent-glow);
     }
 
-    .primary-btn:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
+    .filter-pill.active {
+      background: var(--primary-grad);
+      color: #fff;
+      border-color: transparent;
     }
 
-    .pay-tiles-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .pay-tile {
-      background: var(--card);
+    .bet-card {
+      background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 16px 12px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      gap: 9px;
-      cursor: pointer;
-      transition: 0.18s;
-      aspect-ratio: 1 / 0.92;
-    }
-
-    .pay-tile.active {
-      background: linear-gradient(180deg, rgba(168, 85, 247, 0.18) 0%, var(--card) 100%);
-      border-color: var(--accent);
-      box-shadow: 0 0 18px rgba(168, 85, 247, 0.22);
-    }
-
-    .pay-tile-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      background: var(--card-inner);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .pay-tile-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #fff;
-    }
-
-    .pay-tile-min {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-    }
-
-    .bank-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin: 8px 0 12px;
-    }
-
-    .bank-item {
-      background: var(--card-inner);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 10px;
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      color: #e2e8f0;
-    }
-
-    .bank-item.active {
-      border-color: var(--accent);
-      background: rgba(168, 85, 247, 0.2);
-      color: #fff;
-    }
-
-    .bet-item {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 14px;
+      padding: 13px;
       margin-bottom: 10px;
       cursor: pointer;
     }
 
-    .badge {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 6px;
+    .bet-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 9px;
     }
-    .badge.active, .badge.pending { background: rgba(234, 179, 8, 0.16); color: #facc15; }
-    .badge.won { background: rgba(34, 197, 94, 0.16); color: var(--green); }
-    .badge.lost { background: rgba(239, 68, 68, 0.16); color: var(--red); }
-    .badge.void, .badge.refund { background: rgba(148, 163, 184, 0.16); color: var(--muted); }
 
+    .bet-type-tag {
+      font-size: 11px;
+      font-weight: 800;
+      color: #c4b5fd;
+      background: rgba(139, 92, 246, 0.16);
+      padding: 3px 8px;
+      border-radius: 7px;
+    }
+
+    .status-badge {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 999px;
+    }
+
+    .st-active { background: rgba(245, 158, 11, 0.16); color: var(--amber); }
+    .st-won { background: var(--green-bg); color: var(--green); }
+    .st-lost { background: var(--red-bg); color: var(--red); }
+    .st-void { background: rgba(148, 163, 184, 0.18); color: #cbd5e1; }
+
+    .bet-leg {
+      padding: 6px 0;
+      border-bottom: 1px dashed var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .bet-leg:last-of-type {
+      border-bottom: none;
+    }
+
+    .bet-leg-title {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .bet-leg-sub {
+      font-size: 11.5px;
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .bet-card-foot {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ===== CHAT ===== */
     .chat-box {
-      height: calc(100dvh - 205px);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      height: calc(100vh - 205px);
+      min-height: 360px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-head {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .chat-messages {
+      flex: 1;
       overflow-y: auto;
+      padding: 12px;
       display: flex;
       flex-direction: column;
       gap: 9px;
-      padding-bottom: 10px;
     }
 
     .chat-msg {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 10px 12px;
-      font-size: 13px;
       display: flex;
+      gap: 9px;
       align-items: flex-start;
-      gap: 10px;
     }
 
-    .chat-avatar {
-      width: 34px;
-      height: 34px;
+    .chat-msg.mine {
+      flex-direction: row-reverse;
+    }
+
+    .chat-ava {
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #6d28d9, #a855f7);
+      background: var(--primary-grad);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
-      font-weight: 700;
-      color: #fff;
-      overflow: hidden;
+      font-weight: 800;
+      font-size: 12px;
       flex-shrink: 0;
+      overflow: hidden;
     }
 
-    .chat-avatar img {
+    .chat-ava img {
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
 
-    .chat-body {
-      flex: 1;
-      min-width: 0;
+    .chat-bubble {
+      max-width: 78%;
+      background: var(--bg-surface);
+      border-radius: 14px;
+      padding: 8px 11px;
     }
 
-    .chat-header-line {
+    .chat-msg.mine .chat-bubble {
+      background: rgba(139, 92, 246, 0.25);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+    }
+
+    .chat-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #c4b5fd;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .chat-meta span {
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    .chat-text {
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .chat-form {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+      border-top: 1px solid var(--border);
+      background: #100d1c;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 10px 12px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .chat-send {
+      background: var(--primary-grad);
+      border: none;
+      border-radius: 11px;
+      padding: 0 15px;
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* ===== CASHIER & PROFILE ===== */
+    .card-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-weight: 800;
+      font-size: 14px;
+      margin-bottom: 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-      margin-bottom: 3px;
     }
 
-    .chat-input-row {
+    .select-input {
+      width: 100%;
+      background: #0e0c18;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 12px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 9px;
+      outline: none;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 9px;
+      margin-bottom: 12px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .stat-lbl {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .stat-val {
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    .ref-box {
       display: flex;
       gap: 8px;
       margin-top: 8px;
     }
 
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-top: 12px;
-    }
-
-    .stat-card {
-      background: var(--card);
+    .ref-link {
+      flex: 1;
+      background: #0e0c18;
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-    }
-
-    .toast {
-      position: fixed;
-      top: 66px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 90;
-      background: #241b35;
-      border: 1px solid var(--accent);
-      color: #fff;
-      padding: 9px 16px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 600;
-      display: none;
+      border-radius: 10px;
+      padding: 9px 10px;
+      font-size: 12px;
+      color: #c4b5fd;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .receipt-icon-circle {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      margin: 0 auto 10px;
+    .btn-sm {
+      background: var(--primary-grad);
+      border: none;
+      border-radius: 10px;
+      padding: 0 13px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* ===== BOTTOM NAVIGATION ===== */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-h);
+      z-index: 900;
+      background: rgba(14, 11, 24, 0.96);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+    }
+
+    .nav-item {
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
-      font-weight: 800;
+      gap: 3px;
+      font-size: 10.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .nav-item .nav-ico {
+      font-size: 18px;
+    }
+
+    .nav-item.active {
+      color: #c4b5fd;
+    }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-12px);
+      z-index: 1500;
+      background: #1f1a33;
+      border: 1px solid var(--border-accent);
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.2s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 36px 16px;
+      color: var(--text-muted);
+      font-size: 13px;
     }
   </style>
 </head>
 <body>
-  <div id="toast" class="toast"></div>
 
+  <!-- TOP HEADER -->
   <header class="topbar">
-    <div class="brand">WINSTARS</div>
+    <div class="brand">
+      <div class="brand-icon">★</div>
+      <span>WINSTARS</span>
+    </div>
     <div class="topbar-right">
-      <div class="balance-pill" id="balancePillBtn" onclick="toggleCurrencyMenu(event)">
-        <span id="balanceVal">0 ★</span>
-        <span style="font-size:11px;color:var(--muted);">▾</span>
+      <div class="cur-switch">
+        <button class="cur-btn active" id="cur-stars" onclick="setCurrency('STARS')">★ STARS</button>
+        <button class="cur-btn" id="cur-rub" onclick="setCurrency('RUB')">₽ RUB</button>
       </div>
-
-      <div class="currency-dropdown" id="currencyDropdown">
-        <button class="cur-option active" id="curOptStars" onclick="selectCurrency('STARS')">
-          <div>
-            <div>Telegram Stars (★)</div>
-            <div class="cur-option-sub" id="curMenuStarsBal">0 ★</div>
-          </div>
-          <span id="curCheckStars" style="color:var(--accent);font-weight:800;">✓</span>
-        </button>
-        <button class="cur-option" id="curOptRub" onclick="selectCurrency('RUB')">
-          <div>
-            <div>Рубли (₽)</div>
-            <div class="cur-option-sub" id="curMenuRubBal">0 ₽</div>
-          </div>
-          <span id="curCheckRub" style="color:var(--accent);font-weight:800;display:none;">✓</span>
-        </button>
-        <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 4px 2px;border-top:1px solid var(--border);margin-top:4px;">
-          Курс обмена: 1 ★ = 1.5 ₽
-        </div>
+      <div class="balance-pill" onclick="switchTab('cashier')">
+        <span class="balance-val" id="header-balance">0 ★</span>
+        <span class="balance-plus">+</span>
       </div>
-
-      <div class="avatar" id="userAvatar">W</div>
     </div>
   </header>
 
-  <!-- СОБЫТИЯ -->
-  <section id="tab-events" class="tab-view active">
-    <div class="controls">
-      <div class="seg-toggle">
-        <button class="seg-btn active" id="btnLive" onclick="setMode('live')">Live</button>
-        <button class="seg-btn" id="btnPrematch" onclick="setMode('prematch')">Скоро</button>
-      </div>
-      <button class="league-picker-btn" onclick="openLeagueModal()">
-        <span class="league-picker-text" id="selectedLeagueLabel">Все лиги</span>
-        <span style="color:var(--muted);font-size:11px;flex-shrink:0;">▾</span>
+  <div class="toast" id="toast"></div>
+
+  <!-- PAGE 1: MATCHES -->
+  <main class="page active" id="page-matches">
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tab-live" onclick="setLineMode('live')">
+        <span class="live-dot"></span>
+        <span>Live</span>
+        <span class="count-pill" id="live-count">0</span>
+      </button>
+      <button class="mode-tab" id="tab-prematch" onclick="setLineMode('prematch')">
+        <span>Линия</span>
+        <span class="count-pill" id="prematch-count">0</span>
       </button>
     </div>
-    <div class="container" id="matchesList">
-      <div style="text-align:center;color:var(--muted);padding:40px 0;">Загрузка линии...</div>
+
+    <div class="search-box">
+      <span class="search-ico">🔍</span>
+      <input type="text" class="search-input" id="match-search" placeholder="Поиск команды или турнира..." oninput="renderMatches()" />
+    </div>
+
+    <div class="league-chips" id="league-chips"></div>
+    <div id="matches-container">
+      <div class="empty-state">Загрузка линии матчей...</div>
+    </div>
+  </main>
+
+  <!-- PAGE 2: MY BETS -->
+  <section class="page" id="page-bets">
+    <div class="filter-pills">
+      <button class="filter-pill active" onclick="setBetsFilter('all', this)">Все</button>
+      <button class="filter-pill" onclick="setBetsFilter('active', this)">Активные</button>
+      <button class="filter-pill" onclick="setBetsFilter('settled', this)">Рассчитанные</button>
+    </div>
+    <div id="bets-container">
+      <div class="empty-state">Загрузка ваших ставок...</div>
     </div>
   </section>
 
-  <!-- СТАВКИ -->
-  <section id="tab-bets" class="tab-view">
-    <div class="container" style="padding-top:14px;">
-      <div class="seg-toggle" style="width:100%;margin-bottom:14px;">
-        <button class="seg-btn active" style="flex:1;padding:8px 6px;" id="bTabAll" onclick="setBetsFilter('all')">Все купоны</button>
-        <button class="seg-btn" style="flex:1;padding:8px 6px;" id="bTabPending" onclick="setBetsFilter('pending')">Ожидающие</button>
-        <button class="seg-btn" style="flex:1;padding:8px 6px;" id="bTabSettled" onclick="setBetsFilter('settled')">Рассчитанные</button>
+  <!-- PAGE 3: LIVE CHAT -->
+  <section class="page" id="page-chat">
+    <div class="chat-box">
+      <div class="chat-head">
+        <span>💬 Чат игроков WinStars</span>
+        <span style="font-size:11px;color:var(--green);" id="chat-status">● Онлайн</span>
       </div>
-      <div id="betsList"></div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <form class="chat-form" onsubmit="sendChatMessage(event)">
+        <input type="text" class="chat-input" id="chat-input" maxlength="300" placeholder="Написать сообщение..." />
+        <button type="submit" class="chat-send">➤</button>
+      </form>
     </div>
   </section>
 
-  <!-- ЧАТ -->
-  <section id="tab-chat" class="tab-view">
-    <div class="container" style="padding-top:12px;">
-      <div id="chatMessages" class="chat-box"></div>
-      <div class="chat-input-row">
-        <input id="chatInput" class="slip-input" style="margin:0;font-size:14px;font-weight:500;" placeholder="Написать в чат..." onkeydown="if(event.key==='Enter') sendChat()" />
-        <button class="primary-btn" style="width:auto;padding:0 18px;" onclick="sendChat()">➤</button>
+  <!-- PAGE 4: CASHIER -->
+  <section class="page" id="page-cashier">
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="cash-tab-dep" onclick="setCashierTab('deposit')">Пополнение</button>
+      <button class="mode-tab" id="cash-tab-wd" onclick="setCashierTab('withdraw')">Вывод средств</button>
+    </div>
+
+    <!-- DEPOSIT BLOCK -->
+    <div id="cashier-deposit-block">
+      <div class="card-box">
+        <div class="card-title">
+          <span>⭐ Пополнение Telegram Stars</span>
+          <span style="font-size:11px;color:var(--text-muted);">1 ★ = 1.5 ₽</span>
+        </div>
+        <div class="presets-grid">
+          <button class="preset-btn" onclick="document.getElementById('dep-stars-input').value=25">25 ★</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-stars-input').value=50">50 ★</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-stars-input').value=100">100 ★</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-stars-input').value=250">250 ★</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-stars-input').value=500">500 ★</button>
+        </div>
+        <input type="number" id="dep-stars-input" class="field-input" placeholder="Количество Stars (от 10 ★)" style="margin-bottom:10px;" />
+        <button class="btn-primary" onclick="depositStars()">Оплатить в Telegram Stars</button>
       </div>
+
+      <div class="card-box">
+        <div class="card-title">
+          <span>💳 Пополнение в рублях (СБП)</span>
+          <span style="font-size:11px;color:var(--text-muted);">от 50 ₽</span>
+        </div>
+        <div class="presets-grid">
+          <button class="preset-btn" onclick="document.getElementById('dep-rub-input').value=100">100 ₽</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-rub-input').value=300">300 ₽</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-rub-input').value=500">500 ₽</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-rub-input').value=1000">1000 ₽</button>
+          <button class="preset-btn" onclick="document.getElementById('dep-rub-input').value=2500">2500 ₽</button>
+        </div>
+        <input type="number" id="dep-rub-input" class="field-input" placeholder="Сумма в рублях (от 50 ₽)" style="margin-bottom:10px;" />
+        <button class="btn-primary" style="background:#1e293b;box-shadow:none;" onclick="depositRub()">Пополнить через СБП</button>
+      </div>
+    </div>
+
+    <!-- WITHDRAW BLOCK -->
+    <div id="cashier-withdraw-block" style="display:none;">
+      <div class="card-box">
+        <div class="card-title"><span>📤 Вывод средств</span></div>
+        <select id="wd-method" class="select-input" onchange="toggleWithdrawFields()">
+          <option value="STARS">Telegram Stars (минимум 1000 ★)</option>
+          <option value="RUB">Рубли по СБП (минимум 1500 ₽)</option>
+        </select>
+
+        <div id="wd-sbp-fields" style="display:none;">
+          <select id="wd-bank" class="select-input">
+            <option value="Т-Банк (Тинькофф)">Т-Банк (Тинькофф)</option>
+            <option value="Сбербанк">Сбербанк</option>
+            <option value="Альфа-Банк">Альфа-Банк</option>
+            <option value="ВТБ">ВТБ</option>
+            <option value="Озон Банк">Озон Банк</option>
+            <option value="Райффайзенбанк">Райффайзенбанк</option>
+          </select>
+          <input type="tel" id="wd-phone" class="field-input" placeholder="+7 (999) 000-00-00" style="margin-bottom:9px;" />
+        </div>
+
+        <input type="number" id="wd-amount" class="field-input" placeholder="Сумма вывода" style="margin-bottom:10px;" />
+        <button class="btn-primary" onclick="submitWithdraw()">Создать заявку на вывод</button>
+      </div>
+    </div>
+
+    <!-- PROMOCODE -->
+    <div class="card-box">
+      <div class="card-title"><span>🎁 Активация промокода</span></div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="promo-code-input" class="field-input" placeholder="Введите промокод" style="text-transform:uppercase;" />
+        <button class="btn-sm" onclick="activatePromo()">OK</button>
+      </div>
+    </div>
+
+    <!-- TRANSACTIONS HISTORY -->
+    <div class="card-box">
+      <div class="card-title"><span>🧾 История транзакций</span></div>
+      <div id="tx-history-list"><div class="empty-state" style="padding:14px;">Операций пока нет</div></div>
     </div>
   </section>
 
-  <!-- КАССА -->
-  <section id="tab-cashier" class="tab-view">
-    <div class="container" style="padding-top:14px;">
-      <div class="slip-box" style="text-align:center;">
-        <div style="font-size:12px;color:var(--muted);">Доступный баланс (1 ★ = 1.5 ₽)</div>
-        <div style="font-size:26px;font-weight:800;margin:6px 0;" id="cashierBalance">0 ★ (0 ₽)</div>
+  <!-- PAGE 5: PROFILE -->
+  <section class="page" id="page-profile">
+    <div class="card-box" style="display:flex;align-items:center;gap:12px;">
+      <div class="chat-ava" style="width:48px;height:48px;font-size:18px;" id="prof-avatar">W</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:800;font-size:16px;" id="prof-name">Игрок</div>
+        <div style="font-size:12px;color:var(--text-muted);" id="prof-username">ID: —</div>
       </div>
+    </div>
 
-      <div class="seg-toggle" style="width:100%;margin-bottom:14px;">
-        <button class="seg-btn active" style="flex:1;" id="cTabDep" onclick="switchCashierSub('dep')">Пополнить</button>
-        <button class="seg-btn" style="flex:1;" id="cTabWith" onclick="switchCashierSub('with')">Вывод</button>
-        <button class="seg-btn" style="flex:1;" id="cTabHist" onclick="switchCashierSub('hist')">История</button>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-lbl">Всего ставок</div>
+        <div class="stat-val" id="st-total">0</div>
       </div>
-
-      <!-- ПОПОЛНЕНИЕ -->
-      <div id="cashierDep">
-        <div class="pay-tiles-grid">
-          <div class="pay-tile active" id="depTileStars" onclick="selectDepMethod('STARS')">
-            <div class="pay-tile-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35L5.94 20.7L7.25 13.9L2.2 9.15L9.05 8.26L12 2Z" fill="#FBBF24"/>
-                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35V2Z" fill="#F59E0B"/>
-              </svg>
-            </div>
-            <div class="pay-tile-title">Telegram Звёзды</div>
-            <div class="pay-tile-min">Мин. 10 ★</div>
-          </div>
-
-          <div class="pay-tile" id="depTileSbp" onclick="selectDepMethod('SBP')">
-            <div class="pay-tile-icon">
-              <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
-                <path d="M20 4L32.5 11.2L20 18.4V4Z" fill="#5B57A2"/>
-                <path d="M32.5 11.2V25.6L20 18.4L32.5 11.2Z" fill="#D90751"/>
-                <path d="M32.5 25.6L20 32.8V18.4L32.5 25.6Z" fill="#FAB718"/>
-                <path d="M20 32.8L7.5 25.6L20 18.4V32.8Z" fill="#ED6F26"/>
-                <path d="M7.5 25.6V11.2L20 18.4L7.5 25.6Z" fill="#63B22F"/>
-                <path d="M7.5 11.2L20 4V18.4L7.5 11.2Z" fill="#1487C9"/>
-              </svg>
-            </div>
-            <div class="pay-tile-title">СБП</div>
-            <div class="pay-tile-min">Мин. 50 ₽</div>
-          </div>
-        </div>
-
-        <div id="depFormStars" class="slip-box">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <span style="font-weight:700;">Пополнение Telegram Stars</span>
-            <span style="font-size:12px;color:var(--muted);">Мин. 10 ★</span>
-          </div>
-          <input id="starsAmount" type="number" min="10" class="slip-input" placeholder="Сумма от 10 ★" value="50" />
-          <div class="quick-amounts">
-            <button class="q-btn" onclick="document.getElementById('starsAmount').value=10">10 ★</button>
-            <button class="q-btn" onclick="document.getElementById('starsAmount').value=50">50 ★</button>
-            <button class="q-btn" onclick="document.getElementById('starsAmount').value=100">100 ★</button>
-            <button class="q-btn" onclick="document.getElementById('starsAmount').value=500">500 ★</button>
-          </div>
-          <button class="primary-btn" onclick="payWithStars()">Оплатить Telegram Stars ★</button>
-        </div>
-
-        <div id="depFormSbp" class="slip-box" style="display:none;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <span style="font-weight:700;">Пополнение через СБП</span>
-            <span style="font-size:12px;color:var(--muted);">Мин. 50 ₽</span>
-          </div>
-          <input id="depRubAmount" type="number" min="50" class="slip-input" placeholder="Сумма от 50 ₽" value="300" />
-          <div class="quick-amounts">
-            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=50">50 ₽</button>
-            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=150">150 ₽</button>
-            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=500">500 ₽</button>
-            <button class="q-btn" onclick="document.getElementById('depRubAmount').value=1500">1500 ₽</button>
-          </div>
-          <button class="primary-btn" onclick="requestSbpDeposit()">Перейти к оплате СБП</button>
-        </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Выиграно</div>
+        <div class="stat-val" style="color:var(--green);" id="st-won">0</div>
       </div>
-
-      <!-- ВЫВОД -->
-      <div id="cashierWith" style="display:none;">
-        <div class="pay-tiles-grid">
-          <div class="pay-tile active" id="withTileStars" onclick="selectWithMethod('STARS')">
-            <div class="pay-tile-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35L5.94 20.7L7.25 13.9L2.2 9.15L9.05 8.26L12 2Z" fill="#FBBF24"/>
-                <path d="M12 2L14.95 8.26L21.8 9.15L16.75 13.9L18.06 20.7L12 17.35V2Z" fill="#F59E0B"/>
-              </svg>
-            </div>
-            <div class="pay-tile-title">Telegram Звёзды</div>
-            <div class="pay-tile-min">Мин. 1000 ★</div>
-          </div>
-
-          <div class="pay-tile" id="withTileRub" onclick="selectWithMethod('RUB')">
-            <div class="pay-tile-icon">
-              <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
-                <path d="M20 4L32.5 11.2L20 18.4V4Z" fill="#5B57A2"/>
-                <path d="M32.5 11.2V25.6L20 18.4L32.5 11.2Z" fill="#D90751"/>
-                <path d="M32.5 25.6L20 32.8V18.4L32.5 25.6Z" fill="#FAB718"/>
-                <path d="M20 32.8L7.5 25.6L20 18.4V32.8Z" fill="#ED6F26"/>
-                <path d="M7.5 25.6V11.2L20 18.4L7.5 25.6Z" fill="#63B22F"/>
-                <path d="M7.5 11.2L20 4V18.4L7.5 11.2Z" fill="#1487C9"/>
-              </svg>
-            </div>
-            <div class="pay-tile-title">СБП / Карта</div>
-            <div class="pay-tile-min">Мин. 1500 ₽</div>
-          </div>
-        </div>
-
-        <!-- ВЫВОД ЗВЁЗДАМИ -->
-        <div id="withFormStars" class="slip-box">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <span style="font-weight:700;">Вывод Telegram Stars</span>
-            <span style="font-size:12px;color:var(--muted);">Мин. 1000 ★</span>
-          </div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">
-            Звёзды будут отправлены напрямую на ваш аккаунт Telegram
-          </div>
-          <input id="withStarsAmount" type="number" min="1000" class="slip-input" placeholder="Сумма от 1000 ★" />
-          <button class="primary-btn" id="btnWithdrawStars" onclick="submitWithdrawStars()">Вывести звёзды ★</button>
-        </div>
-
-        <!-- ВЫВОД РУБЛЯМИ -->
-        <div id="withFormRub" class="slip-box" style="display:none;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <span style="font-weight:700;">Вывод на карту (СБП)</span>
-            <span style="font-size:12px;color:var(--muted);">Мин. 1500 ₽</span>
-          </div>
-          <input id="withRubAmount" type="number" min="1500" class="slip-input" placeholder="Сумма от 1500 ₽" />
-          <input id="withPhone" type="tel" class="slip-input" style="font-size:14px;font-weight:500;" placeholder="Номер телефона, привязанный к карте (+7...)" />
-
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Выберите банк для вывода:</div>
-          <div class="bank-grid">
-            <div class="bank-item active" data-bank="Сбербанк" onclick="selectBank(this, 'Сбербанк')">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" fill="#21A038"/>
-                <path d="M7.5 12.2L10.8 15.2L17.2 8.8" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span>Сбербанк</span>
-            </div>
-
-            <div class="bank-item" data-bank="Т-Банк" onclick="selectBank(this, 'Т-Банк')">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M4 4H20V13C20 17.5 12 21 12 21C12 21 4 17.5 4 13V4Z" fill="#FFDD2D"/>
-                <path d="M8.5 8H15.5V10.2H13.2V16H10.8V10.2H8.5V8Z" fill="#111"/>
-              </svg>
-              <span>Т-Банк</span>
-            </div>
-
-            <div class="bank-item" data-bank="Альфа-Банк" onclick="selectBank(this, 'Альфа-Банк')">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <rect x="2" y="2" width="20" height="20" rx="6" fill="#EF3124"/>
-                <path d="M12 6.5L8.2 15.5H10.3L11.1 13.5H12.9L13.7 15.5H15.8L12 6.5ZM11.7 11.7L12 10.8L12.3 11.7H11.7Z" fill="#fff"/>
-                <rect x="8" y="17" width="8" height="1.6" fill="#fff"/>
-              </svg>
-              <span>Альфа-Банк</span>
-            </div>
-
-            <div class="bank-item" data-bank="Озон Банк" onclick="selectBank(this, 'Озон Банк')">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <rect x="2" y="2" width="20" height="20" rx="6" fill="#005BFF"/>
-                <circle cx="12" cy="12" r="5" stroke="#fff" stroke-width="2.5"/>
-              </svg>
-              <span>Озон Банк</span>
-            </div>
-          </div>
-
-          <button class="primary-btn" id="btnWithdrawRub" onclick="submitWithdrawRub()">Заказать вывод ₽</button>
-        </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Винрейт</div>
+        <div class="stat-val" id="st-winrate">0%</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Чистый профит</div>
+        <div class="stat-val" id="st-profit">0 ★</div>
+      </div>
+    </div>
 
-      <!-- ИСТОРИЯ -->
-      <div id="cashierHist" style="display:none;">
-        <div id="txList"></div>
+    <div class="card-box">
+      <div class="card-title"><span>📈 Динамика профита</span></div>
+      <canvas id="profit-chart" height="130" style="width:100%;display:block;"></canvas>
+    </div>
+
+    <div class="card-box">
+      <div class="card-title">
+        <span>🤝 Реферальная программа</span>
+        <span class="count-pill" id="prof-refs">0 друзей</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);">
+        Приглашайте друзей и получайте <b>+5 ★</b> на баланс за каждого нового игрока!
+      </div>
+      <div class="ref-box">
+        <div class="ref-link" id="ref-link-text">https://t.me/WinStarsPlaybot</div>
+        <button class="btn-sm" onclick="copyRefLink()">Копировать</button>
       </div>
     </div>
   </section>
 
-  <!-- ПРОФИЛЬ -->
-  <section id="tab-profile" class="tab-view">
-    <div class="container" style="padding-top:14px;">
-      <div class="slip-box" style="display:flex;align-items:center;gap:12px;">
-        <div class="avatar" style="width:48px;height:48px;font-size:18px;" id="profileAvatar">W</div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:16px;" id="profileName">Игрок</div>
-          <div style="font-size:12px;color:var(--muted);">ID: <span id="profileId">-</span> • Рефералов: <b id="statRefs">0</b></div>
-        </div>
-      </div>
-
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div style="font-size:12px;color:var(--muted);">Всего ставок</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px;" id="statTotal">0</div>
-        </div>
-        <div class="stat-card">
-          <div style="font-size:12px;color:var(--muted);">Выиграно</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px;color:var(--green);" id="statWon">0</div>
-        </div>
-        <div class="stat-card">
-          <div style="font-size:12px;color:var(--muted);">Винрейт</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px;" id="statWinrate">0%</div>
-        </div>
-        <div class="stat-card">
-          <div style="font-size:12px;color:var(--muted);">Чистый профит</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px;" id="statProfit">0 ★</div>
-        </div>
-      </div>
-
-      <div class="slip-box" style="margin-top:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <span style="font-size:13px;font-weight:700;">График профита</span>
-          <span id="chartBadge" style="font-size:12px;font-weight:700;color:var(--accent);">0 ★</span>
-        </div>
-        <svg id="profitChartSvg" viewBox="0 0 300 90" style="width:100%;height:90px;display:block;"></svg>
-      </div>
-
-      <div class="slip-box">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Активация промокода</div>
-        <div style="display:flex;gap:8px;">
-          <input id="promoInput" class="slip-input" style="margin:0;text-transform:uppercase;font-size:14px;" placeholder="ВВЕДИТЕ КОД" />
-          <button class="primary-btn" style="width:auto;padding:0 18px;" onclick="activatePromo()">OK</button>
-        </div>
-      </div>
-
-      <div class="slip-box">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Пригласить друга (+5 ★ за друга)</div>
-        <div style="display:flex;gap:8px;">
-          <input id="refLinkInput" class="slip-input" style="margin:0;font-size:12px;font-weight:500;" readonly />
-          <button class="primary-btn" style="width:auto;padding:0 16px;" onclick="copyRefLink()">Копия</button>
-        </div>
+  <!-- FLOATING PURPLE COUPON BUTTON (ОДИНАР / ЭКСПРЕСС) -->
+  <div id="betslip-fab" onclick="openCouponModal()">
+    <div class="fab-left">
+      <div class="fab-count" id="fab-count">1</div>
+      <div class="fab-texts">
+        <div class="fab-title" id="fab-title">Купон • Одинар</div>
+        <div class="fab-sub" id="fab-sub">Нажмите, чтобы ввести сумму</div>
       </div>
     </div>
-  </section>
+    <div class="fab-odd" id="fab-total-odd">× 1.00</div>
+  </div>
 
+  <!-- COUPON SHEET MODAL (ОДИНАР / ЭКСПРЕСС) -->
+  <div class="modal-overlay" id="coupon-modal" onclick="if(event.target===this) closeCouponModal()">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="coupon-badge" id="cp-type-badge">ОДИНАР</span>
+          <span style="font-size:12px;color:var(--text-muted);" id="cp-events-count">1 событие</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button style="background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:700;cursor:pointer;" onclick="clearBetSlip()">Очистить</button>
+          <button class="sheet-close" onclick="closeCouponModal()">✕</button>
+        </div>
+      </div>
+
+      <div id="cp-items-list"></div>
+
+      <div class="presets-grid" id="cp-presets"></div>
+      <input type="number" id="cp-stake-input" class="field-input" placeholder="Введите сумму ставки..." oninput="recalcCouponWin()" />
+
+      <div class="coupon-summary">
+        <div class="sum-row">
+          <span>Тип купона</span>
+          <span id="cp-sum-type" style="color:#fff;font-weight:700;">Одинар</span>
+        </div>
+        <div class="sum-row">
+          <span>Общий коэффициент</span>
+          <span id="cp-sum-odd" style="color:#c4b5fd;font-weight:800;">1.00</span>
+        </div>
+        <div class="sum-row">
+          <span>Возможный выигрыш</span>
+          <span id="cp-sum-win" style="color:var(--green);">0 ★</span>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="cp-submit-btn" onclick="submitCouponBet()">Сделать ставку</button>
+    </div>
+  </div>
+
+  <!-- MATCH FULL MARKETS MODAL -->
+  <div class="modal-overlay" id="markets-modal" onclick="if(event.target===this) closeMarketsModal()">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);" id="mm-league">Лига</div>
+          <div style="font-size:15px;font-weight:800;" id="mm-title">Команда 1 — Команда 2</div>
+        </div>
+        <button class="sheet-close" onclick="closeMarketsModal()">✕</button>
+      </div>
+      <div id="mm-body"></div>
+    </div>
+  </div>
+
+  <!-- BET DETAILS MODAL -->
+  <div class="modal-overlay" id="bet-detail-modal" onclick="if(event.target===this) closeBetDetailModal()">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span class="coupon-badge" id="bd-type">КУПОН</span>
+        <button class="sheet-close" onclick="closeBetDetailModal()">✕</button>
+      </div>
+      <div id="bd-body"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAVIGATION -->
   <nav class="bottom-nav">
-    <button class="nav-item active" data-tab="events" onclick="switchTab('events')">
-      <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-      <span>События</span>
+    <button class="nav-item active" id="nav-matches" onclick="switchTab('matches')">
+      <span class="nav-ico">⚽</span>
+      <span>Матчи</span>
     </button>
-    <button class="nav-item" data-tab="bets" onclick="switchTab('bets')">
-      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-      <span>Ставки</span>
+    <button class="nav-item" id="nav-bets" onclick="switchTab('bets')">
+      <span class="nav-ico">🎫</span>
+      <span>Мои ставки</span>
     </button>
-    <button class="nav-item" data-tab="chat" onclick="switchTab('chat')">
-      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+    <button class="nav-item" id="nav-chat" onclick="switchTab('chat')">
+      <span class="nav-ico">💬</span>
       <span>Чат</span>
     </button>
-    <button class="nav-item" data-tab="cashier" onclick="switchTab('cashier')">
-      <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+    <button class="nav-item" id="nav-cashier" onclick="switchTab('cashier')">
+      <span class="nav-ico">💳</span>
       <span>Касса</span>
     </button>
-    <button class="nav-item" data-tab="profile" onclick="switchTab('profile')">
-      <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <button class="nav-item" id="nav-profile" onclick="switchTab('profile')">
+      <span class="nav-ico">👤</span>
       <span>Профиль</span>
     </button>
   </nav>
 
-  <!-- МОДАЛКА ВЫБОРА ЛИГ -->
-  <div id="leagueModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'leagueModal')">
-    <div class="rect-modal">
-      <div class="rect-modal-header">
-        <div style="font-size:16px;font-weight:800;">Выбор лиги</div>
-        <button class="modal-close-btn" onclick="document.getElementById('leagueModal').classList.remove('open')">✕</button>
-      </div>
-      <div id="leagueOptionsContainer" style="max-height:60dvh;overflow-y:auto;"></div>
-    </div>
-  </div>
-
-  <!-- МОДАЛКА ДОП. РЫНКОВ -->
-  <div id="marketsModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'marketsModal')">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div id="marketsHeroContainer"></div>
-      <div id="marketsListContainer"></div>
-    </div>
-  </div>
-
-  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА ОФОРМЛЕНИЯ СТАВКИ -->
-  <div id="betSlipModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betSlipModal')">
-    <div class="rect-modal">
-      <div class="rect-modal-header">
-        <div style="font-size:16px;font-weight:800;">Купон ставки (<span id="slipCurLabel">★</span>)</div>
-        <button class="modal-close-btn" onclick="document.getElementById('betSlipModal').classList.remove('open')">✕</button>
-      </div>
-      <div class="slip-box">
-        <div id="slipLeagueTitle" style="font-size:11px;color:var(--muted);margin-bottom:4px;"></div>
-        <div id="slipMatchTitle" style="font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border);">
-          <span id="slipSelection" style="font-size:14px;font-weight:700;color:var(--accent);"></span>
-          <span id="slipOdd" style="background:var(--accent);color:#fff;padding:3px 10px;border-radius:8px;font-weight:800;font-size:13px;"></span>
-        </div>
-      </div>
-      <input id="betAmount" type="number" class="slip-input" value="10" min="1" oninput="updatePotentialWin()" />
-      <div class="quick-amounts">
-        <button class="q-btn" onclick="setBetAmt(10)">10</button>
-        <button class="q-btn" onclick="setBetAmt(25)">25</button>
-        <button class="q-btn" onclick="setBetAmt(50)">50</button>
-        <button class="q-btn" onclick="setMaxBet()">MAX</button>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:14px;">
-        <span style="color:var(--muted);">Возможный выигрыш:</span>
-        <span id="potentialWin" style="font-weight:800;color:var(--green);">0</span>
-      </div>
-      <button class="primary-btn" id="btnSubmitBet" onclick="submitBet()">Сделать ставку</button>
-    </div>
-  </div>
-
-  <!-- ПРЯМОУГОЛЬНИК ПОДТВЕРЖДЕНИЯ СТАВКИ ("СТАВКА ПРИНЯТА") -->
-  <div id="betSuccessModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betSuccessModal')">
-    <div class="rect-modal">
-      <div class="rect-modal-header">
-        <div style="font-size:14px;font-weight:700;color:var(--muted);">Чек купона</div>
-        <button class="modal-close-btn" onclick="document.getElementById('betSuccessModal').classList.remove('open')">✕</button>
-      </div>
-      <div style="text-align:center;margin-bottom:14px;">
-        <div class="receipt-icon-circle" style="background:rgba(34,197,94,0.16);color:var(--green);">✓</div>
-        <div style="font-size:20px;font-weight:800;color:var(--green);">Ставка принята!</div>
-      </div>
-      <div class="slip-box" id="betSuccessBody"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <button class="q-btn" style="padding:13px;font-size:13px;" onclick="document.getElementById('betSuccessModal').classList.remove('open'); switchTab('bets');">Мои ставки</button>
-        <button class="primary-btn" style="padding:13px;font-size:14px;" onclick="document.getElementById('betSuccessModal').classList.remove('open')">Отлично</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ПРЯМОУГОЛЬНИК ПОДТВЕРЖДЕНИЯ ЗАЯВКИ НА ВЫВОД (5 РАБОЧИХ ДНЕЙ) -->
-  <div id="withdrawSuccessModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'withdrawSuccessModal')">
-    <div class="rect-modal">
-      <div class="rect-modal-header">
-        <div style="font-size:14px;font-weight:700;color:var(--muted);">Заявка на вывод</div>
-        <button class="modal-close-btn" onclick="document.getElementById('withdrawSuccessModal').classList.remove('open')">✕</button>
-      </div>
-      <div style="text-align:center;margin-bottom:14px;">
-        <div class="receipt-icon-circle" style="background:rgba(168,85,247,0.18);color:var(--accent);">⏳</div>
-        <div style="font-size:19px;font-weight:800;color:#fff;">Заявка принята в обработку</div>
-      </div>
-      <div class="slip-box" id="withdrawSuccessBody"></div>
-      <div style="background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.3);border-radius:12px;padding:11px 12px;font-size:12px;color:#fde047;line-height:1.4;margin-bottom:14px;text-align:center;">
-        Вывод средств осуществляется в течение <b>5 рабочих дней</b>. Уведомление о статусе придёт в бот.
-      </div>
-      <button class="primary-btn" onclick="document.getElementById('withdrawSuccessModal').classList.remove('open')">Понятно</button>
-    </div>
-  </div>
-
-  <!-- ПРЯМОУГОЛЬНАЯ МОДАЛКА ДЕТАЛЕЙ СТАВКИ -->
-  <div id="betDetailModal" class="modal-backdrop center-modal" onclick="closeModalOnBackdrop(event, 'betDetailModal')">
-    <div class="rect-modal">
-      <div class="rect-modal-header">
-        <div style="font-size:15px;font-weight:800;color:var(--muted);">Детали купона</div>
-        <button class="modal-close-btn" onclick="document.getElementById('betDetailModal').classList.remove('open')">✕</button>
-      </div>
-      <div id="betDetailContent"></div>
-    </div>
-  </div>
-
   <script>
-    const API_BASE = "https://winstarsbot.onrender.com";
-    const WS_BASE = "wss://winstarsbot.onrender.com";
-    const STAR_RATE = 1.5;
+    const API_BASE_URL = "https://winstarsbot.onrender.com";
+    const WS_CHAT_URL = "wss://winstarsbot.onrender.com/ws/chat";
 
-    const tg = window.Telegram?.WebApp;
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
     if (tg) {
+      tg.ready();
       tg.expand();
-      tg.setHeaderColor("#0c0912");
-      tg.setBackgroundColor("#0c0912");
     }
 
-    const tgUser = tg?.initDataUnsafe?.user || {
-      id: 8543184091,
-      first_name: "геноцидов",
-      username: "",
-      photo_url: "",
+    const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : null;
+    const USER_ID = tgUser ? String(tgUser.id) : "demo_user_1";
+    const USER_NAME = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") : "Игрок";
+    const USER_USERNAME = tgUser && tgUser.username ? tgUser.username : "";
+    const USER_PHOTO = tgUser && tgUser.photo_url ? tgUser.photo_url : "";
+
+    let STAR_RATE = 1.5;
+    let BOT_USERNAME = "WinStarsPlaybot";
+    let currentCurrency = "STARS"; // 'STARS' | 'RUB'
+    let currentLineMode = "live";  // 'live' | 'prematch'
+    let selectedLeague = "ALL";
+    let betsFilter = "all";
+
+    let userData = {
+      id: USER_ID,
+      name: USER_NAME,
+      username: USER_USERNAME,
+      photo_url: USER_PHOTO,
+      balance: 0,
+      referrals: 0,
+      total_bets: 0,
+      won_bets: 0,
+      profit: 0
     };
 
-    const fullTgName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ").trim() || "Игрок";
+    let liveMatches = [];
+    let prematchMatches = [];
+    let userBets = [];
+    let betSlip = []; // Купон событий для одинаров и экспрессов
+    let activeModalMatchId = null;
+    let chatSocket = null;
 
-    const state = {
-      userId: String(tgUser.id),
-      userName: fullTgName,
-      userUsername: tgUser.username || "",
-      userPhoto: tgUser.photo_url || "",
-      botUsername: "WinStarsPlaybot",
-      balanceStars: 0,
-      currency: "STARS",
-      mode: "live",
-      selectedLeague: "all",
-      betsFilter: "all",
-      selectedBank: "Сбербанк",
-      live: [],
-      prematch: [],
-      betsCache: [],
-      activeMatchId: null,
-      activeBetDetailIdx: null,
-      slip: null,
-      ws: null,
-      placingBet: false,
-      withdrawing: false,
-    };
-
-    function escapeHtml(str) {
-      return String(str || "")
+    function esc(str) {
+      return String(str ?? "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+        .replace(/"/g, "&quot;");
     }
 
     function showToast(msg) {
       const el = document.getElementById("toast");
       el.textContent = msg;
-      el.style.display = "block";
-      setTimeout(() => (el.style.display = "none"), 2600);
+      el.classList.add("show");
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.classList.remove("show"), 2600);
     }
 
     function formatMoney(starsVal) {
       const s = Number(starsVal || 0);
-      if (state.currency === "RUB") {
-        const rub = s * STAR_RATE;
-        return `${Number.isInteger(rub) ? rub : rub.toFixed(2)} ₽`;
+      if (currentCurrency === "RUB") {
+        return `${(s * STAR_RATE).toFixed(2)} ₽`;
       }
       return `${Number.isInteger(s) ? s : s.toFixed(2)} ★`;
     }
 
-    function updateBalanceUI(starsVal) {
-      state.balanceStars = Number(starsVal || 0);
-      const rub = (state.balanceStars * STAR_RATE).toFixed(2);
-      const st = Number.isInteger(state.balanceStars) ? state.balanceStars : state.balanceStars.toFixed(2);
-      document.getElementById("balanceVal").textContent = formatMoney(state.balanceStars);
-      document.getElementById("cashierBalance").textContent = `${st} ★ (${rub} ₽)`;
-      document.getElementById("curMenuStarsBal").textContent = `${st} ★`;
-      document.getElementById("curMenuRubBal").textContent = `${rub} ₽`;
-    }
-
-    function toggleCurrencyMenu(e) {
-      e.stopPropagation();
-      document.getElementById("currencyDropdown").classList.toggle("open");
-    }
-
-    function selectCurrency(cur) {
-      state.currency = cur;
-      document.getElementById("curOptStars").classList.toggle("active", cur === "STARS");
-      document.getElementById("curOptRub").classList.toggle("active", cur === "RUB");
-      document.getElementById("curCheckStars").style.display = cur === "STARS" ? "inline" : "none";
-      document.getElementById("curCheckRub").style.display = cur === "RUB" ? "inline" : "none";
-      document.getElementById("currencyDropdown").classList.remove("open");
-      updateBalanceUI(state.balanceStars);
-
-      // Онлайн пересчёт валюты в разделе Ставки и в открытом окне деталей купона
-      renderBetsList();
-      if (
-        document.getElementById("betDetailModal").classList.contains("open") &&
-        state.activeBetDetailIdx !== null
-      ) {
-        openBetDetail(state.activeBetDetailIdx);
+    function setCurrency(cur) {
+      currentCurrency = cur;
+      document.getElementById("cur-stars").classList.toggle("active", cur === "STARS");
+      document.getElementById("cur-rub").classList.toggle("active", cur === "RUB");
+      updateHeaderBalance();
+      updateProfileUI();
+      if (document.getElementById("coupon-modal").classList.contains("open")) {
+        renderCouponModal();
       }
-
-      showToast(`Валюта: ${cur === "STARS" ? "Telegram Stars (★)" : "Рубли (₽)"}`);
+      renderBets();
     }
 
-    document.addEventListener("click", () => {
-      document.getElementById("currencyDropdown").classList.remove("open");
-    });
-
-    function getInitials(name) {
-      const clean = (name || "КМ").replace(/[^а-яА-Яa-zA-Z0-9\s]/g, "").trim();
-      const parts = clean.split(/\s+/);
-      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-      return clean.slice(0, 2).toUpperCase() || "КМ";
-    }
-
-    function logoHtml(url, name) {
-      const initials = escapeHtml(getInitials(name));
-      if (!url) return `<div class="team-logo-box">${initials}</div>`;
-      return `<div class="team-logo-box"><img src="${escapeHtml(url)}" alt="" onerror="this.parentElement.textContent='${initials}'" /></div>`;
+    function updateHeaderBalance() {
+      document.getElementById("header-balance").textContent = formatMoney(userData.balance);
     }
 
     function switchTab(tab) {
-      document.querySelectorAll(".tab-view").forEach((el) => el.classList.remove("active"));
-      document.querySelectorAll(".nav-item").forEach((el) => el.classList.remove("active"));
-      document.getElementById(`tab-${tab}`).classList.add("active");
-      document.querySelector(`.nav-item[data-tab="${tab}"]`).classList.add("active");
+      document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+      document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+      document.getElementById(`page-${tab}`).classList.add("active");
+      document.getElementById(`nav-${tab}`).classList.add("active");
 
       if (tab === "bets") loadUserBets();
-      if (tab === "profile") refreshProfile();
       if (tab === "cashier") loadTransactions();
-      if (tab === "chat") loadChatHistoryHttp();
-    }
-
-    function switchCashierSub(sub) {
-      document.getElementById("cTabDep").classList.toggle("active", sub === "dep");
-      document.getElementById("cTabWith").classList.toggle("active", sub === "with");
-      document.getElementById("cTabHist").classList.toggle("active", sub === "hist");
-      document.getElementById("cashierDep").style.display = sub === "dep" ? "block" : "none";
-      document.getElementById("cashierWith").style.display = sub === "with" ? "block" : "none";
-      document.getElementById("cashierHist").style.display = sub === "hist" ? "block" : "none";
-      if (sub === "hist") loadTransactions();
-    }
-
-    function selectDepMethod(method) {
-      document.getElementById("depTileStars").classList.toggle("active", method === "STARS");
-      document.getElementById("depTileSbp").classList.toggle("active", method === "SBP");
-      document.getElementById("depFormStars").style.display = method === "STARS" ? "block" : "none";
-      document.getElementById("depFormSbp").style.display = method === "SBP" ? "block" : "none";
-    }
-
-    function selectWithMethod(method) {
-      document.getElementById("withTileStars").classList.toggle("active", method === "STARS");
-      document.getElementById("withTileRub").classList.toggle("active", method === "RUB");
-      document.getElementById("withFormStars").style.display = method === "STARS" ? "block" : "none";
-      document.getElementById("withFormRub").style.display = method === "RUB" ? "block" : "none";
-    }
-
-    function selectBank(el, bankName) {
-      state.selectedBank = bankName;
-      document.querySelectorAll(".bank-item").forEach((b) => b.classList.remove("active"));
-      el.classList.add("active");
-    }
-
-    function setMode(mode) {
-      state.mode = mode;
-      document.getElementById("btnLive").classList.toggle("active", mode === "live");
-      document.getElementById("btnPrematch").classList.toggle("active", mode === "prematch");
-      updateLeagueLabel();
-      renderMatches();
-    }
-
-    function updateLeagueLabel() {
-      const list = state[state.mode] || [];
-      const leagues = [...new Set(list.map((m) => m.league))];
-      if (state.selectedLeague !== "all" && !leagues.includes(state.selectedLeague)) {
-        state.selectedLeague = "all";
+      if (tab === "profile") {
+        updateProfileUI();
+        drawProfitChart();
       }
-      const labelEl = document.getElementById("selectedLeagueLabel");
-      labelEl.textContent = state.selectedLeague === "all"
-        ? `Все лиги (${leagues.length})`
-        : state.selectedLeague;
+      if (tab === "chat") {
+        const box = document.getElementById("chat-messages");
+        box.scrollTop = box.scrollHeight;
+      }
     }
 
-    function openLeagueModal() {
-      const list = state[state.mode] || [];
-      const counts = {};
-      list.forEach((m) => {
-        counts[m.league] = (counts[m.league] || 0) + 1;
-      });
-      const leagues = Object.keys(counts);
+    /* ================= INITIALIZATION & LINE POLLING ================= */
+    async function initApp() {
+      try {
+        const qs = new URLSearchParams({
+          name: USER_NAME,
+          username: USER_USERNAME,
+          photo_url: USER_PHOTO
+        });
+        const res = await fetch(`${API_BASE_URL}/api/init/${encodeURIComponent(USER_ID)}?${qs}`);
+        const data = await res.json();
+        if (data.user) userData = { ...userData, ...data.user };
+        if (data.star_rate) STAR_RATE = Number(data.star_rate);
+        if (data.bot_username) BOT_USERNAME = data.bot_username;
+        liveMatches = data.live || [];
+        prematchMatches = data.prematch || [];
 
-      const container = document.getElementById("leagueOptionsContainer");
-      let html = `
-        <button class="league-list-item ${state.selectedLeague === "all" ? "active" : ""}" onclick="chooseLeague('all')">
-          <span>Все лиги</span>
-          <span class="league-count-pill">${list.length}</span>
-        </button>
-      `;
-      html += leagues.map((l) => `
-        <button class="league-list-item ${state.selectedLeague === l ? "active" : ""}" onclick="chooseLeague('${escapeHtml(l).replace(/'/g, "\\'")}')">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(l)}</span>
-          <span class="league-count-pill">${counts[l]}</span>
-        </button>
-      `).join("");
+        if (!liveMatches.length && prematchMatches.length) {
+          currentLineMode = "prematch";
+          document.getElementById("tab-live").classList.remove("active");
+          document.getElementById("tab-prematch").classList.add("active");
+        }
 
-      container.innerHTML = html;
-      document.getElementById("leagueModal").classList.add("open");
+        updateHeaderBalance();
+        updateProfileUI();
+        updateMatchCounters();
+        renderLeagueChips();
+        renderMatches();
+      } catch (e) {
+        document.getElementById("matches-container").innerHTML =
+          '<div class="empty-state">Не удалось загрузить линию. Проверьте соединение.</div>';
+      }
+
+      loadUserBets();
+      initChat();
+      setInterval(refreshMatchesSilent, 12000);
     }
 
-    function chooseLeague(league) {
-      state.selectedLeague = league;
-      document.getElementById("leagueModal").classList.remove("open");
-      updateLeagueLabel();
+    async function refreshMatchesSilent() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/matches`);
+        const data = await res.json();
+        liveMatches = data.live || [];
+        prematchMatches = data.prematch || [];
+        updateMatchCounters();
+        renderLeagueChips();
+        renderMatches();
+      } catch (_) {}
+    }
+
+    function updateMatchCounters() {
+      document.getElementById("live-count").textContent = liveMatches.length;
+      document.getElementById("prematch-count").textContent = prematchMatches.length;
+    }
+
+    function setLineMode(mode) {
+      currentLineMode = mode;
+      selectedLeague = "ALL";
+      document.getElementById("tab-live").classList.toggle("active", mode === "live");
+      document.getElementById("tab-prematch").classList.toggle("active", mode === "prematch");
+      renderLeagueChips();
       renderMatches();
+    }
+
+    function renderLeagueChips() {
+      const list = currentLineMode === "live" ? liveMatches : prematchMatches;
+      const leagues = Array.from(new Set(list.map((m) => m.league).filter(Boolean)));
+      const box = document.getElementById("league-chips");
+
+      let html = `<button class="league-chip ${selectedLeague === "ALL" ? "active" : ""}" onclick="selectLeague('ALL')">Все (${list.length})</button>`;
+      leagues.forEach((lg) => {
+        const active = selectedLeague === lg ? "active" : "";
+        html += `<button class="league-chip ${active}" data-league="${esc(lg)}" onclick="selectLeague(this.dataset.league)">${esc(lg)}</button>`;
+      });
+      box.innerHTML = html;
+    }
+
+    function selectLeague(lg) {
+      selectedLeague = lg;
+      renderLeagueChips();
+      renderMatches();
+    }
+
+    function renderTeamLogo(logoUrl, teamName) {
+      const initials = (teamName || "?").slice(0, 2).toUpperCase();
+      if (logoUrl) {
+        return `<div class="team-logo-box"><img src="${esc(logoUrl)}" alt="" onerror="this.parentElement.textContent='${esc(initials)}'" /></div>`;
+      }
+      return `<div class="team-logo-box">${esc(initials)}</div>`;
+    }
+
+    function isOutcomeSelected(matchId, selection) {
+      return betSlip.some(
+        (x) => String(x.match_id) === String(matchId) && String(x.selection) === String(selection)
+      );
     }
 
     function renderMatches() {
-      const container = document.getElementById("matchesList");
-      let list = state[state.mode] || [];
-      if (state.selectedLeague !== "all") {
-        list = list.filter((m) => m.league === state.selectedLeague);
-      }
+      const list = currentLineMode === "live" ? liveMatches : prematchMatches;
+      const q = document.getElementById("match-search").value.trim().toLowerCase();
+      const container = document.getElementById("matches-container");
 
-      if (!list.length) {
-        container.innerHTML = `<div style="text-align:center;color:var(--muted);padding:40px 0;">Нет активных событий в выбранной категории</div>`;
+      const filtered = list.filter((m) => {
+        if (selectedLeague !== "ALL" && m.league !== selectedLeague) return false;
+        if (q) {
+          const hay = `${m.team1} ${m.team2} ${m.league}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = `<div class="empty-state">${
+          currentLineMode === "live"
+            ? "Сейчас нет активных Live-матчей. Переключитесь на «Линию»."
+            : "Матчи по вашему фильтру не найдены."
+        }</div>`;
         return;
       }
 
-      container.innerHTML = list.map((m) => {
-        const statusHtml = m.is_live
-          ? `<div class="match-status"><span class="live-dot"></span><span>LIVE • ${escapeHtml(m.time_label)}</span></div>`
-          : `<div class="match-status prematch"><span>${escapeHtml(m.time_label)}</span></div>`;
+      const grouped = {};
+      filtered.forEach((m) => {
+        if (!grouped[m.league]) grouped[m.league] = [];
+        grouped[m.league].push(m);
+      });
 
-        const scoreHtml = m.is_live
-          ? `<div class="score-center">${m.score1}:${m.score2}</div>`
-          : `<div class="score-center vs">VS</div>`;
+      let html = "";
+      for (const [league, matches] of Object.entries(grouped)) {
+        html += `<div class="league-block">
+          <div class="league-header">
+            <span>🏆 ${esc(league)}</span>
+            <span>${matches.length}</span>
+          </div>`;
 
-        return `
+        matches.forEach((m) => {
+          const hasX = Number(m.odds?.X || 0) > 1.0;
+          const p1Sel = isOutcomeSelected(m.id, "П1") ? "selected" : "";
+          const xSel = isOutcomeSelected(m.id, "X") ? "selected" : "";
+          const p2Sel = isOutcomeSelected(m.id, "П2") ? "selected" : "";
+
+          html += `
           <div class="match-card">
-            <div class="match-card-header">
-              ${statusHtml}
-              <div class="match-league">${escapeHtml(m.league)}</div>
+            <div class="match-top">
+              <span class="match-time-badge ${m.is_live ? "is-live" : ""}">
+                ${m.is_live ? '<span class="live-dot"></span>' : "🕒"} ${esc(m.time_label)}
+              </span>
+              <button class="markets-more-btn" onclick="openMarketsModal('${esc(m.id)}')">+ Роспись</button>
             </div>
-            <div class="match-body" onclick="openMarkets('${escapeHtml(m.id)}')">
-              <div class="team-col">
-                ${logoHtml(m.logo1, m.team1)}
-                <div class="team-name">${escapeHtml(m.team1)}</div>
+
+            <div class="teams-wrap" onclick="openMarketsModal('${esc(m.id)}')">
+              <div class="team-row">
+                <div class="team-info">
+                  ${renderTeamLogo(m.logo1, m.team1)}
+                  <span class="team-name">${esc(m.team1)}</span>
+                </div>
+                ${m.is_live ? `<span class="team-score">${m.score1}</span>` : ""}
               </div>
-              ${scoreHtml}
-              <div class="team-col">
-                ${logoHtml(m.logo2, m.team2)}
-                <div class="team-name">${escapeHtml(m.team2)}</div>
+              <div class="team-row">
+                <div class="team-info">
+                  ${renderTeamLogo(m.logo2, m.team2)}
+                  <span class="team-name">${esc(m.team2)}</span>
+                </div>
+                ${m.is_live ? `<span class="team-score">${m.score2}</span>` : ""}
               </div>
             </div>
-            <div class="odds-row">
-              <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', 'П1', ${m.odds.P1})">
-                <span class="odd-label">П1</span>
-                <span class="odd-val">${m.odds.P1}</span>
+
+            <div class="odds-row ${hasX ? "" : "two-cols"}">
+              <button class="odd-btn ${p1Sel}" data-mid="${esc(m.id)}" data-sel="П1" data-odd="${m.odds.P1}" onclick="onOddClick(this)">
+                <span class="o-lbl">П1</span>
+                <span class="o-val">${Number(m.odds.P1).toFixed(2)}</span>
               </button>
-              <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', 'X', ${m.odds.X || 3.25})">
-                <span class="odd-label">X</span>
-                <span class="odd-val">${m.odds.X || 3.25}</span>
-              </button>
-              <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', 'П2', ${m.odds.P2})">
-                <span class="odd-label">П2</span>
-                <span class="odd-val">${m.odds.P2}</span>
+              ${
+                hasX
+                  ? `<button class="odd-btn ${xSel}" data-mid="${esc(m.id)}" data-sel="X" data-odd="${m.odds.X}" onclick="onOddClick(this)">
+                      <span class="o-lbl">X</span>
+                      <span class="o-val">${Number(m.odds.X).toFixed(2)}</span>
+                    </button>`
+                  : ""
+              }
+              <button class="odd-btn ${p2Sel}" data-mid="${esc(m.id)}" data-sel="П2" data-odd="${m.odds.P2}" onclick="onOddClick(this)">
+                <span class="o-lbl">П2</span>
+                <span class="o-val">${Number(m.odds.P2).toFixed(2)}</span>
               </button>
             </div>
-          </div>
-        `;
-      }).join("");
+          </div>`;
+        });
+
+        html += `</div>`;
+      }
+
+      container.innerHTML = html;
     }
 
-    function renderMarketsHero(m) {
-      const scoreText = m.is_live ? `${m.score1} : ${m.score2}` : "VS";
-      const badgeClass = m.is_live ? "hero-time-badge" : "hero-time-badge prematch";
-      const dot = m.is_live ? `<span class="live-dot"></span>` : "";
-      const timeText = m.is_live ? `LIVE • ${m.time_label}` : m.time_label;
-
-      document.getElementById("marketsHeroContainer").innerHTML = `
-        <div class="market-match-hero">
-          <div class="hero-league">${escapeHtml(m.league)}</div>
-          <div class="hero-scoreboard">
-            <div class="hero-team">
-              ${logoHtml(m.logo1, m.team1)}
-              <span>${escapeHtml(m.team1)}</span>
-            </div>
-            <div class="hero-center">
-              <div class="hero-score">${scoreText}</div>
-              <div class="${badgeClass}">${dot}<span>${escapeHtml(timeText)}</span></div>
-            </div>
-            <div class="hero-team">
-              ${logoHtml(m.logo2, m.team2)}
-              <span>${escapeHtml(m.team2)}</span>
-            </div>
-          </div>
-        </div>
-      `;
+    /* ================= COUPON / EXPRESS LOGIC ================= */
+    function findMatchById(matchId) {
+      const idStr = String(matchId);
+      return (
+        liveMatches.find((m) => String(m.id) === idStr) ||
+        prematchMatches.find((m) => String(m.id) === idStr) ||
+        null
+      );
     }
 
-    function renderMarketsBody(m) {
-      const groups = m.markets || [];
-      document.getElementById("marketsListContainer").innerHTML = groups.map((g) => {
-        const colsClass = g.outcomes.length === 3 ? "market-grid cols-3" : "market-grid";
-        return `
-          <div class="market-group">
-            <div class="market-title">${escapeHtml(g.title)}</div>
-            <div class="${colsClass}">
-              ${g.outcomes.map((o) => `
-                <button class="odd-btn" onclick="openBetSlip('${escapeHtml(m.id)}', '${escapeHtml(o.label)}', ${o.odd})">
-                  <span class="odd-label">${escapeHtml(o.label)}</span>
-                  <span class="odd-val">${o.odd}</span>
-                </button>
-              `).join("")}
-            </div>
-          </div>
-        `;
-      }).join("");
+    function onOddClick(btn) {
+      const matchId = btn.dataset.mid;
+      const selection = btn.dataset.sel;
+      const odd = parseFloat(btn.dataset.odd);
+      toggleBetSlipItem(matchId, selection, odd);
     }
 
-    async function openMarkets(matchId) {
-      const all = [...state.live, ...state.prematch];
-      const match = all.find((x) => x.id === matchId);
-      if (!match) return;
+    function toggleBetSlipItem(matchId, selection, odd) {
+      const mId = String(matchId);
+      const sel = String(selection).trim();
+      const oddNum = Math.round(Number(odd) * 100) / 100;
+      if (!mId || !sel || !(oddNum > 1.0)) return;
 
-      state.activeMatchId = matchId;
-      renderMarketsHero(match);
-      renderMarketsBody(match);
-      document.getElementById("marketsModal").classList.add("open");
-
-      try {
-        const res = await fetch(`${API_BASE}/api/match/${matchId}/markets`);
-        if (res.ok && state.activeMatchId === matchId) {
-          const fresh = await res.json();
-          renderMarketsHero(fresh);
-          renderMarketsBody(fresh);
+      const idx = betSlip.findIndex((item) => String(item.match_id) === mId);
+      if (idx !== -1) {
+        if (betSlip[idx].selection === sel) {
+          // Повторный клик по тому же исходу — удаляем из купона
+          betSlip.splice(idx, 1);
+        } else {
+          // Другой исход в том же матче — заменяем в купоне
+          betSlip[idx].selection = sel;
+          betSlip[idx].odd = oddNum;
         }
-      } catch (e) {}
+      } else {
+        const m = findMatchById(mId);
+        betSlip.push({
+          match_id: mId,
+          match_title: m ? `${m.team1} - ${m.team2}` : `Матч #${mId}`,
+          league: m ? m.league : "",
+          selection: sel,
+          odd: oddNum
+        });
+      }
+
+      if (tg && tg.HapticFeedback) {
+        tg.HapticFeedback.selectionChanged();
+      }
+      updateBetSlipUI();
     }
 
-    function openBetSlip(matchId, selection, odd) {
-      if (!odd || odd <= 1) return;
-      const all = [...state.live, ...state.prematch];
-      const m = all.find((x) => x.id === matchId);
-      if (!m) return;
-
-      state.slip = {
-        matchId,
-        league: m.league,
-        title: `${m.team1} - ${m.team2}`,
-        selection,
-        odd: Number(odd),
-      };
-
-      const unit = state.currency === "RUB" ? "₽" : "★";
-      document.getElementById("slipCurLabel").textContent = unit;
-      document.getElementById("slipLeagueTitle").textContent = state.slip.league;
-      document.getElementById("slipMatchTitle").textContent = state.slip.title;
-      document.getElementById("slipSelection").textContent = selection;
-      document.getElementById("slipOdd").textContent = state.slip.odd.toFixed(2);
-      updatePotentialWin();
-      document.getElementById("betSlipModal").classList.add("open");
+    function getTotalCouponOdd() {
+      if (!betSlip.length) return 1.0;
+      const prod = betSlip.reduce((acc, ev) => acc * Number(ev.odd || 1), 1);
+      return Math.round(prod * 100) / 100;
     }
 
-    function setBetAmt(val) {
-      document.getElementById("betAmount").value = Math.max(1, Math.floor(val || 1));
-      updatePotentialWin();
+    function updateBetSlipUI() {
+      const fab = document.getElementById("betslip-fab");
+      const cnt = betSlip.length;
+
+      if (cnt === 0) {
+        fab.style.display = "none";
+        closeCouponModal();
+      } else {
+        const isExpress = cnt > 1;
+        fab.style.display = "flex";
+        document.getElementById("fab-count").textContent = String(cnt);
+        document.getElementById("fab-title").textContent = isExpress
+          ? "Купон • Экспресс"
+          : "Купон • Одинар";
+        document.getElementById("fab-sub").textContent = isExpress
+          ? `${cnt} события • Нажмите для ставки`
+          : `${betSlip[0].match_title} (${betSlip[0].selection})`;
+        document.getElementById("fab-total-odd").textContent = `× ${getTotalCouponOdd().toFixed(2)}`;
+      }
+
+      // Обновляем подсветку кнопок в линии и в модалке росписи
+      document.querySelectorAll(".odd-btn[data-mid][data-sel]").forEach((btn) => {
+        const active = isOutcomeSelected(btn.dataset.mid, btn.dataset.sel);
+        btn.classList.toggle("selected", active);
+      });
+
+      if (document.getElementById("coupon-modal").classList.contains("open")) {
+        renderCouponModal();
+      }
     }
 
-    function setMaxBet() {
-      const maxVal = state.currency === "RUB"
-        ? Math.floor(state.balanceStars * STAR_RATE)
-        : Math.floor(state.balanceStars);
-      setBetAmt(maxVal);
+    function openCouponModal() {
+      if (!betSlip.length) return;
+      document.getElementById("coupon-modal").classList.add("open");
+      renderCouponModal();
     }
 
-    function updatePotentialWin() {
-      if (!state.slip) return;
-      const amt = Number(document.getElementById("betAmount").value || 0);
-      const win = (amt * state.slip.odd).toFixed(2);
-      const unit = state.currency === "RUB" ? "₽" : "★";
-      document.getElementById("potentialWin").textContent = `${win} ${unit}`;
+    function closeCouponModal() {
+      document.getElementById("coupon-modal").classList.remove("open");
     }
 
-    async function submitBet() {
-      if (!state.slip || state.placingBet) return;
-      const amount = Number(document.getElementById("betAmount").value || 0);
-      const btn = document.getElementById("btnSubmitBet");
-      state.placingBet = true;
+    function removeBetSlipIndex(idx) {
+      betSlip.splice(idx, 1);
+      updateBetSlipUI();
+    }
+
+    function clearBetSlip() {
+      betSlip = [];
+      updateBetSlipUI();
+    }
+
+    function renderCouponModal() {
+      const cnt = betSlip.length;
+      const isExpress = cnt > 1;
+      const totalOdd = getTotalCouponOdd();
+
+      document.getElementById("cp-type-badge").textContent = isExpress ? "ЭКСПРЕСС" : "ОДИНАР";
+      document.getElementById("cp-events-count").textContent =
+        cnt === 1 ? "1 событие" : cnt < 5 ? `${cnt} события` : `${cnt} событий`;
+      document.getElementById("cp-sum-type").textContent = isExpress
+        ? `Экспресс (${cnt})`
+        : "Одинар";
+      document.getElementById("cp-sum-odd").textContent = totalOdd.toFixed(2);
+
+      const listEl = document.getElementById("cp-items-list");
+      listEl.innerHTML = betSlip
+        .map(
+          (item, i) => `
+          <div class="coupon-item">
+            <div class="coupon-item-main">
+              <div class="coupon-item-league">${esc(item.league)}</div>
+              <div class="coupon-item-match">${esc(item.match_title)}</div>
+              <div class="coupon-item-sel">Исход: ${esc(item.selection)}</div>
+            </div>
+            <div class="coupon-item-right">
+              <span class="coupon-item-odd">${Number(item.odd).toFixed(2)}</span>
+              <button class="coupon-item-del" onclick="removeBetSlipIndex(${i})">✕</button>
+            </div>
+          </div>`
+        )
+        .join("");
+
+      const sym = currentCurrency === "RUB" ? "₽" : "★";
+      const presets = currentCurrency === "RUB" ? [50, 150, 300, 500] : [10, 25, 50, 100];
+      const maxVal =
+        currentCurrency === "RUB"
+          ? Math.floor(Number(userData.balance || 0) * STAR_RATE)
+          : Math.floor(Number(userData.balance || 0));
+
+      document.getElementById("cp-presets").innerHTML =
+        presets
+          .map(
+            (v) =>
+              `<button class="preset-btn" onclick="document.getElementById('cp-stake-input').value=${v};recalcCouponWin()">${v} ${sym}</button>`
+          )
+          .join("") +
+        `<button class="preset-btn" onclick="document.getElementById('cp-stake-input').value=${Math.max(1, maxVal)};recalcCouponWin()">МАКС</button>`;
+
+      recalcCouponWin();
+    }
+
+    function recalcCouponWin() {
+      const stake = parseFloat(document.getElementById("cp-stake-input").value) || 0;
+      const win = (stake * getTotalCouponOdd()).toFixed(2);
+      const sym = currentCurrency === "RUB" ? "₽" : "★";
+      document.getElementById("cp-sum-win").textContent = `${win} ${sym}`;
+    }
+
+    async function submitCouponBet() {
+      if (!betSlip.length) return;
+      const amount = parseFloat(document.getElementById("cp-stake-input").value);
+      if (!(amount > 0)) {
+        showToast("Введите сумму ставки");
+        return;
+      }
+
+      const btn = document.getElementById("cp-submit-btn");
       btn.disabled = true;
+      btn.textContent = "Оформляем купон...";
 
       try {
-        const res = await fetch(`${API_BASE}/api/bet`, {
+        const res = await fetch(`${API_BASE_URL}/api/bet`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user_id: state.userId,
-            match_id: state.slip.matchId,
-            selection: state.slip.selection,
-            odd: state.slip.odd,
-            amount,
-            currency: state.currency,
-          }),
+            user_id: USER_ID,
+            match_id: betSlip[0].match_id,
+            selection: betSlip[0].selection,
+            odd: getTotalCouponOdd(),
+            amount: amount,
+            currency: currentCurrency,
+            events: betSlip
+          })
         });
         const data = await res.json();
         if (!res.ok) {
-          showToast(data.detail || "Ошибка ставки");
+          showToast(data.detail || "Ошибка при оформлении ставки");
           return;
         }
 
-        updateBalanceUI(data.balance);
-        document.getElementById("betSlipModal").classList.remove("open");
+        if (typeof data.balance === "number") {
+          userData.balance = data.balance;
+          updateHeaderBalance();
+        }
+        userData.total_bets = Number(userData.total_bets || 0) + 1;
+        updateProfileUI();
 
-        const unit = state.currency === "RUB" ? "₽" : "★";
-        const potWin = (amount * state.slip.odd).toFixed(2);
-        document.getElementById("betSuccessBody").innerHTML = `
-          <div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:4px;">${escapeHtml(state.slip.league)}</div>
-          <div style="font-size:15px;font-weight:800;text-align:center;margin-bottom:10px;">${escapeHtml(state.slip.title)}</div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;">
-            <span style="color:var(--muted);">Выбранный исход:</span>
-            <b>${escapeHtml(state.slip.selection)}</b>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;">
-            <span style="color:var(--muted);">Итоговый кэф:</span>
-            <b style="color:var(--accent);">@ ${state.slip.odd.toFixed(2)}</b>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;">
-            <span style="color:var(--muted);">Сумма ставки:</span>
-            <b>${amount} ${unit}</b>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:14px;padding-top:8px;border-top:1px solid var(--border);">
-            <span style="color:var(--muted);">Возможный выигрыш:</span>
-            <b style="color:var(--green);">${potWin} ${unit}</b>
-          </div>
-        `;
-        document.getElementById("betSuccessModal").classList.add("open");
+        document.getElementById("cp-stake-input").value = "";
+        clearBetSlip();
+        showToast("✅ Ставка принята!");
+        loadUserBets();
       } catch (e) {
         showToast("Ошибка соединения с сервером");
       } finally {
-        state.placingBet = false;
         btn.disabled = false;
+        btn.textContent = "Сделать ставку";
       }
     }
 
-    /* РАЗДЕЛ СТАВКИ: ДИНАМИЧЕСКАЯ ВАЛЮТА ПО ВЫБОРУ ПОЛЬЗОВАТЕЛЯ */
-    function getBetDisplayAmounts(b) {
-      const stakeStars = b.amount_stars != null
-        ? Number(b.amount_stars)
-        : (b.currency === "RUB" ? Number(b.amount) / STAR_RATE : Number(b.amount));
+    /* ================= FULL MATCH MARKETS MODAL ================= */
+    async function openMarketsModal(matchId) {
+      activeModalMatchId = String(matchId);
+      const cached = findMatchById(matchId);
+      document.getElementById("markets-modal").classList.add("open");
+      document.getElementById("mm-league").textContent = cached ? cached.league : "Матч";
+      document.getElementById("mm-title").textContent = cached
+        ? `${cached.team1} — ${cached.team2}${cached.is_live ? ` (${cached.score1}:${cached.score2})` : ""}`
+        : "Загрузка...";
 
-      const rawPayoutStars = b.payout_stars != null
-        ? Number(b.payout_stars)
-        : (b.currency === "RUB" ? Number(b.payout || 0) / STAR_RATE : Number(b.payout || 0));
-
-      const potWinStars = b.status === "won" && rawPayoutStars > 0
-        ? rawPayoutStars
-        : stakeStars * Number(b.odd || 1);
-
-      if (state.currency === "RUB") {
-        return {
-          unit: "₽",
-          stake: (stakeStars * STAR_RATE).toFixed(2).replace(/\.00$/, ""),
-          win: (potWinStars * STAR_RATE).toFixed(2),
-        };
-      }
-      return {
-        unit: "★",
-        stake: stakeStars.toFixed(2).replace(/\.00$/, ""),
-        win: potWinStars.toFixed(2),
-      };
-    }
-
-    function setBetsFilter(filter) {
-      state.betsFilter = filter;
-      document.getElementById("bTabAll").classList.toggle("active", filter === "all");
-      document.getElementById("bTabPending").classList.toggle("active", filter === "pending");
-      document.getElementById("bTabSettled").classList.toggle("active", filter === "settled");
-      renderBetsList();
-    }
-
-    async function loadUserBets() {
-      const box = document.getElementById("betsList");
-      box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Загрузка...</div>`;
-      const res = await fetch(`${API_BASE}/api/bets/${state.userId}`);
-      state.betsCache = await res.json();
-      renderBetsList();
-    }
-
-    function renderBetsList() {
-      const box = document.getElementById("betsList");
-      if (!box) return;
-      let list = state.betsCache || [];
-
-      if (state.betsFilter === "pending") {
-        list = list.filter((b) => b.status === "active" || b.status === "pending");
-      } else if (state.betsFilter === "settled") {
-        list = list.filter((b) => ["won", "lost", "void", "refund"].includes(b.status));
+      if (cached && cached.markets) {
+        renderMatchMarkets(cached);
+      } else {
+        document.getElementById("mm-body").innerHTML = '<div class="empty-state">Загрузка рынков...</div>';
       }
 
-      if (!list.length) {
-        box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:30px;">В этой вкладке пока нет купонов</div>`;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/match/${encodeURIComponent(matchId)}/markets`);
+        if (res.ok) {
+          const full = await res.json();
+          if (activeModalMatchId === String(matchId)) {
+            renderMatchMarkets(full);
+          }
+        }
+      } catch (_) {}
+    }
+
+    function renderMatchMarkets(match) {
+      const markets = match.markets || [];
+      if (!markets.length) {
+        document.getElementById("mm-body").innerHTML =
+          '<div class="empty-state">Дополнительные рынки для этого матча временно недоступны.</div>';
         return;
       }
 
-      const labels = {
-        active: "В ожидании",
-        pending: "В ожидании",
-        won: "Выигрыш",
-        lost: "Проигрыш",
-        void: "Возврат",
-        refund: "Возврат",
-      };
-
-      box.innerHTML = list.map((b) => {
-        const realIdx = state.betsCache.indexOf(b);
-        const vals = getBetDisplayAmounts(b);
-        const st = b.status || "active";
-        return `
-          <div class="bet-item" onclick="openBetDetail(${realIdx})">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-              <span style="font-size:12px;color:var(--muted);">${escapeHtml(b.league || "")}</span>
-              <span class="badge ${st}">${labels[st] || st}</span>
-            </div>
-            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(b.match_title)} ${b.final_score ? `(${escapeHtml(b.final_score)})` : ""}</div>
-            <div style="display:flex;justify-content:space-between;font-size:13px;">
-              <span>${escapeHtml(b.selection)} @ <b>${b.odd}</b></span>
-              <span>Ставка: <b>${vals.stake} ${vals.unit}</b></span>
-            </div>
-          </div>
-        `;
-      }).join("");
+      document.getElementById("mm-body").innerHTML = markets
+        .map((mkt) => {
+          const colsClass = mkt.outcomes.length === 3 ? "cols-3" : "";
+          const buttons = mkt.outcomes
+            .map((o) => {
+              const selCls = isOutcomeSelected(match.id, o.label) ? "selected" : "";
+              return `
+              <button class="odd-btn ${selCls}" data-mid="${esc(match.id)}" data-sel="${esc(o.label)}" data-odd="${o.odd}" onclick="onOddClick(this)">
+                <span class="o-lbl">${esc(o.label)}</span>
+                <span class="o-val">${Number(o.odd).toFixed(2)}</span>
+              </button>`;
+            })
+            .join("");
+          return `<div class="market-group">
+            <div class="market-title">${esc(mkt.title)}</div>
+            <div class="market-grid ${colsClass}">${buttons}</div>
+          </div>`;
+        })
+        .join("");
     }
 
-    function openBetDetail(idx) {
-      const b = state.betsCache[idx];
+    function closeMarketsModal() {
+      activeModalMatchId = null;
+      document.getElementById("markets-modal").classList.remove("open");
+    }
+
+    /* ================= USER BETS ================= */
+    async function loadUserBets() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/bets/${encodeURIComponent(USER_ID)}`);
+        if (res.ok) {
+          userBets = await res.json();
+          renderBets();
+          drawProfitChart();
+        }
+      } catch (_) {}
+    }
+
+    function setBetsFilter(f, btn) {
+      betsFilter = f;
+      document.querySelectorAll(".filter-pill").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      renderBets();
+    }
+
+    function statusMeta(st) {
+      if (st === "won") return { text: "Выигрыш", cls: "st-won", ico: "✅" };
+      if (st === "lost") return { text: "Проигрыш", cls: "st-lost", ico: "❌" };
+      if (st === "void") return { text: "Возврат", cls: "st-void", ico: "↩️" };
+      return { text: "В игре", cls: "st-active", ico: "⏳" };
+    }
+
+    function renderBets() {
+      const container = document.getElementById("bets-container");
+      const filtered = userBets.filter((b) => {
+        if (betsFilter === "active") return b.status === "active";
+        if (betsFilter === "settled") return b.status !== "active";
+        return true;
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = '<div class="empty-state">Ставок в этом разделе пока нет.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered
+        .map((b, idx) => {
+          const st = statusMeta(b.status);
+          const events = b.events && b.events.length ? b.events : [b];
+          const isExp = events.length > 1 || b.bet_type === "express";
+          const sym = b.currency === "RUB" ? "₽" : "★";
+
+          const legsHtml = events
+            .map((ev) => {
+              const evSt = statusMeta(ev.status || b.status);
+              return `
+              <div class="bet-leg">
+                <div style="min-width:0;flex:1;">
+                  <div class="bet-leg-title">${esc(ev.match_title)} ${ev.final_score ? `(${esc(ev.final_score)})` : ""}</div>
+                  <div class="bet-leg-sub">${esc(ev.selection)} • кф ${Number(ev.odd || b.odd).toFixed(2)}</div>
+                </div>
+                <span>${evSt.ico}</span>
+              </div>`;
+            })
+            .join("");
+
+          const potOrPay =
+            b.status === "won"
+              ? `<span style="color:var(--green);font-weight:800;">+${Number(b.payout).toFixed(2)} ${sym}</span>`
+              : b.status === "void"
+              ? `<span style="color:#cbd5e1;font-weight:700;">Возврат ${Number(b.amount).toFixed(2)} ${sym}</span>`
+              : `<span>Возможный: <b style="color:#fff;">${(Number(b.amount) * Number(b.odd)).toFixed(2)} ${sym}</b></span>`;
+
+          return `
+          <div class="bet-card" onclick="openBetDetail(${idx})">
+            <div class="bet-card-head">
+              <span class="bet-type-tag">${isExp ? `ЭКСПРЕСС (${events.length})` : "ОДИНАР"}</span>
+              <span class="status-badge ${st.cls}">${st.text}</span>
+            </div>
+            ${legsHtml}
+            <div class="bet-card-foot">
+              <span>Ставка: <b style="color:#fff;">${Number(b.amount).toFixed(2)} ${sym}</b> (×${Number(b.odd).toFixed(2)})</span>
+              ${potOrPay}
+            </div>
+          </div>`;
+        })
+        .join("");
+    }
+
+    function openBetDetail(filteredIdx) {
+      const filtered = userBets.filter((b) => {
+        if (betsFilter === "active") return b.status === "active";
+        if (betsFilter === "settled") return b.status !== "active";
+        return true;
+      });
+      const b = filtered[filteredIdx];
       if (!b) return;
-      state.activeBetDetailIdx = idx;
-      const vals = getBetDisplayAmounts(b);
-      const headers = {
-        active: { title: "В ожидании!", color: "#facc15" },
-        pending: { title: "В ожидании!", color: "#facc15" },
-        won: { title: "Ставка сыграла!", color: "var(--green)" },
-        lost: { title: "Ставка проиграла!", color: "var(--red)" },
-        void: { title: "Возврат ставки", color: "var(--muted)" },
-      };
-      const h = headers[b.status] || headers.active;
 
-      document.getElementById("betDetailContent").innerHTML = `
-        <div style="text-align:center;margin-bottom:14px;">
-          <div style="font-size:20px;font-weight:800;color:${h.color};">${h.title}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${escapeHtml(b.league)}</div>
+      const events = b.events && b.events.length ? b.events : [b];
+      const isExp = events.length > 1 || b.bet_type === "express";
+      const sym = b.currency === "RUB" ? "₽" : "★";
+      const st = statusMeta(b.status);
+
+      document.getElementById("bd-type").textContent = isExp
+        ? `ЭКСПРЕСС • ${events.length} СОБ.`
+        : "ОДИНАР";
+
+      document.getElementById("bd-body").innerHTML = `
+        <div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:12px;color:var(--text-muted);">Статус купона</span>
+          <span class="status-badge ${st.cls}">${st.text}</span>
         </div>
-        <div class="slip-box" style="margin-bottom:0;">
-          <div style="font-weight:700;font-size:15px;margin-bottom:10px;text-align:center;">${escapeHtml(b.match_title)}</div>
-          ${b.final_score ? `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;"><span style="color:var(--muted);">Итоговый счёт:</span><b>${escapeHtml(b.final_score)}</b></div>` : ""}
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
-            <span style="color:var(--muted);">Выбранный исход:</span>
-            <b>${escapeHtml(b.selection)} @ ${b.odd}</b>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
-            <span style="color:var(--muted);">Сумма ставки:</span>
-            <b>${vals.stake} ${vals.unit}</b>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:14px;padding-top:8px;border-top:1px solid var(--border);">
-            <span style="color:var(--muted);">${b.status === "won" ? "Выплата:" : "Возможный выигрыш:"}</span>
-            <b style="color:var(--green);">${vals.win} ${vals.unit}</b>
-          </div>
+        ${events
+          .map((ev) => {
+            const evSt = statusMeta(ev.status || b.status);
+            return `
+            <div class="coupon-item">
+              <div class="coupon-item-main">
+                <div class="coupon-item-league">${esc(ev.league || "")}</div>
+                <div class="coupon-item-match">${esc(ev.match_title)} ${ev.final_score ? `[${esc(ev.final_score)}]` : ""}</div>
+                <div class="coupon-item-sel">${esc(ev.selection)}</div>
+              </div>
+              <div class="coupon-item-right">
+                <span class="coupon-item-odd">${Number(ev.odd || b.odd).toFixed(2)}</span>
+                <span>${evSt.ico}</span>
+              </div>
+            </div>`;
+          })
+          .join("")}
+        <div class="coupon-summary">
+          <div class="sum-row"><span>Сумма ставки</span><span>${Number(b.amount).toFixed(2)} ${sym}</span></div>
+          <div class="sum-row"><span>Итоговый коэффициент</span><span>${Number(b.odd).toFixed(2)}</span></div>
+          <div class="sum-row"><span>Выплата</span><span style="color:var(--green);">${
+            b.status === "won"
+              ? `+${Number(b.payout).toFixed(2)} ${sym}`
+              : b.status === "lost"
+              ? `0 ${sym}`
+              : `${(Number(b.amount) * Number(b.odd)).toFixed(2)} ${sym}`
+          }</span></div>
         </div>
       `;
-      document.getElementById("betDetailModal").classList.add("open");
+
+      document.getElementById("bet-detail-modal").classList.add("open");
     }
 
-    /* КАССА: ПОПОЛНЕНИЕ, ВЫВОД (С ЗАЩИТОЙ И ЧЕКОМ) И ИСТОРИЯ */
-    async function payWithStars() {
-      const stars = parseInt(document.getElementById("starsAmount").value || "0", 10);
-      if (stars < 10) return showToast("Минимальное пополнение 10 ★");
-      const res = await fetch(`${API_BASE}/api/invoice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: state.userId, stars }),
-      });
-      const data = await res.json();
-      if (!res.ok) return showToast(data.detail || "Ошибка счёта");
-      if (tg && tg.openInvoice) {
-        tg.openInvoice(data.invoice_url, (status) => {
-          if (status === "paid") {
-            showToast(`Оплачено ${stars} ★!`);
-            refreshProfile();
+    function closeBetDetailModal() {
+      document.getElementById("bet-detail-modal").classList.remove("open");
+    }
+
+    /* ================= CHAT (WEBSOCKET + HTTP FALLBACK) ================= */
+    async function initChat() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/chat/history`);
+        if (res.ok) {
+          const msgs = await res.json();
+          renderChatHistory(msgs);
+        }
+      } catch (_) {}
+
+      connectChatWS();
+    }
+
+    function connectChatWS() {
+      try {
+        chatSocket = new WebSocket(WS_CHAT_URL);
+        chatSocket.onopen = () => {
+          document.getElementById("chat-status").textContent = "● Онлайн";
+        };
+        chatSocket.onmessage = (ev) => {
+          const data = JSON.parse(ev.data);
+          if (data.type === "history") {
+            renderChatHistory(data.messages || []);
+          } else if (data.type === "message" && data.message) {
+            appendChatMessage(data.message);
           }
-        });
+        };
+        chatSocket.onclose = () => {
+          document.getElementById("chat-status").textContent = "○ Переподключение...";
+          setTimeout(connectChatWS, 4000);
+        };
+      } catch (_) {}
+    }
+
+    function renderChatHistory(msgs) {
+      const box = document.getElementById("chat-messages");
+      box.innerHTML = "";
+      msgs.forEach(appendChatMessage);
+    }
+
+    function appendChatMessage(m) {
+      const box = document.getElementById("chat-messages");
+      const isMine = String(m.user_id) === String(USER_ID);
+      const initial = (m.user || "И").slice(0, 1).toUpperCase();
+      const avaHtml = m.photo_url
+        ? `<img src="${esc(m.photo_url)}" alt="" onerror="this.parentElement.textContent='${esc(initial)}'" />`
+        : esc(initial);
+
+      const div = document.createElement("div");
+      div.className = `chat-msg ${isMine ? "mine" : ""}`;
+      div.innerHTML = `
+        <div class="chat-ava">${avaHtml}</div>
+        <div class="chat-bubble">
+          <div class="chat-meta">${esc(m.user)} <span>${esc(m.time || "")}</span></div>
+          <div class="chat-text">${esc(m.text)}</div>
+        </div>`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendChatMessage(e) {
+      e.preventDefault();
+      const inp = document.getElementById("chat-input");
+      const text = inp.value.trim();
+      if (!text) return;
+      inp.value = "";
+
+      const payload = {
+        user_id: USER_ID,
+        user: userData.name || USER_NAME,
+        username: userData.username || USER_USERNAME,
+        photo_url: userData.photo_url || USER_PHOTO,
+        text: text
+      };
+
+      if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+        chatSocket.send(JSON.stringify(payload));
       } else {
-        window.open(data.invoice_url, "_blank");
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/chat/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.message) appendChatMessage(data.message);
+        } catch (_) {
+          showToast("Не удалось отправить сообщение");
+        }
       }
     }
 
-    async function requestSbpDeposit() {
-      const amount = Number(document.getElementById("depRubAmount").value || 0);
-      if (amount < 50) return showToast("Минимальное пополнение 50 ₽");
-      const res = await fetch(`${API_BASE}/api/cashier/deposit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: state.userId, amount, currency: "RUB", method: "Рубли" }),
-      });
-      const data = await res.json();
-      showToast(data.message || data.detail || "Запрос создан");
+    /* ================= CASHIER ================= */
+    function setCashierTab(tab) {
+      document.getElementById("cash-tab-dep").classList.toggle("active", tab === "deposit");
+      document.getElementById("cash-tab-wd").classList.toggle("active", tab === "withdraw");
+      document.getElementById("cashier-deposit-block").style.display = tab === "deposit" ? "block" : "none";
+      document.getElementById("cashier-withdraw-block").style.display = tab === "withdraw" ? "block" : "none";
     }
 
-    function showWithdrawReceipt(data) {
-      document.getElementById("withdrawSuccessBody").innerHTML = `
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
-          <span style="color:var(--muted);">Способ вывода:</span>
-          <b>${escapeHtml(data.method || "")}</b>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
-          <span style="color:var(--muted);">Сумма вывода:</span>
-          <b style="color:var(--accent);font-size:15px;">${escapeHtml(data.amount_display || "")}</b>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;">
-          <span style="color:var(--muted);">Реквизиты:</span>
-          <b>${escapeHtml(data.details || "")}</b>
-        </div>
-      `;
-      document.getElementById("withdrawSuccessModal").classList.add("open");
+    function toggleWithdrawFields() {
+      const m = document.getElementById("wd-method").value;
+      document.getElementById("wd-sbp-fields").style.display = m === "RUB" ? "block" : "none";
     }
 
-    async function submitWithdrawStars() {
-      if (state.withdrawing) return;
-      const amount = Number(document.getElementById("withStarsAmount").value || 0);
-      if (amount < 1000) return showToast("Минимальный вывод 1000 ★");
-
-      const btn = document.getElementById("btnWithdrawStars");
-      state.withdrawing = true;
-      btn.disabled = true;
-
+    async function depositStars() {
+      const stars = parseInt(document.getElementById("dep-stars-input").value, 10);
+      if (!(stars >= 10)) {
+        showToast("Минимальное пополнение 10 ★");
+        return;
+      }
       try {
-        const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
+        const res = await fetch(`${API_BASE_URL}/api/invoice`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: state.userId,
-            amount,
-            currency: "STARS",
-            method: "Telegram Stars",
-          }),
+          body: JSON.stringify({ user_id: USER_ID, stars })
         });
         const data = await res.json();
-        if (!res.ok) return showToast(data.detail || "Ошибка вывода");
-        updateBalanceUI(data.balance);
-        document.getElementById("withStarsAmount").value = "";
-        showWithdrawReceipt(data);
-      } catch (e) {
-        showToast("Ошибка соединения с сервером");
-      } finally {
-        state.withdrawing = false;
-        btn.disabled = false;
+        if (!res.ok || !data.invoice_url) {
+          showToast(data.detail || "Ошибка создания счёта");
+          return;
+        }
+        if (tg && tg.openInvoice) {
+          tg.openInvoice(data.invoice_url, async (status) => {
+            if (status === "paid") {
+              showToast(`Баланс пополнен на ${stars} ★!`);
+              await initApp();
+              loadTransactions();
+            }
+          });
+        } else {
+          window.open(data.invoice_url, "_blank");
+        }
+      } catch (_) {
+        showToast("Ошибка соединения");
       }
     }
 
-    async function submitWithdrawRub() {
-      if (state.withdrawing) return;
-      const amount = Number(document.getElementById("withRubAmount").value || 0);
-      const phone = document.getElementById("withPhone").value.trim();
-      if (amount < 1500) return showToast("Минимальный вывод 1500 ₽");
-      if (!phone) return showToast("Укажите номер телефона");
+    async function depositRub() {
+      const amount = parseFloat(document.getElementById("dep-rub-input").value);
+      if (!(amount >= 50)) {
+        showToast("Минимальное пополнение 50 ₽");
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/cashier/deposit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: USER_ID, amount, currency: "RUB", method: "sbp" })
+        });
+        const data = await res.json();
+        showToast(data.message || "Заявка создана");
+        loadTransactions();
+      } catch (_) {
+        showToast("Ошибка соединения");
+      }
+    }
 
-      const btn = document.getElementById("btnWithdrawRub");
-      state.withdrawing = true;
-      btn.disabled = true;
+    async function submitWithdraw() {
+      const cur = document.getElementById("wd-method").value;
+      const amount = parseFloat(document.getElementById("wd-amount").value);
+      const bank = document.getElementById("wd-bank").value;
+      const details = document.getElementById("wd-phone").value.trim();
+
+      if (!(amount > 0)) {
+        showToast("Введите сумму вывода");
+        return;
+      }
 
       try {
-        const res = await fetch(`${API_BASE}/api/cashier/withdraw`, {
+        const res = await fetch(`${API_BASE_URL}/api/cashier/withdraw`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user_id: state.userId,
+            user_id: USER_ID,
             amount,
-            currency: "RUB",
-            method: "Рубли",
-            bank: state.selectedBank,
-            details: phone,
-          }),
+            currency: cur,
+            method: cur === "RUB" ? "sbp" : "stars",
+            bank: cur === "RUB" ? bank : "",
+            details: cur === "RUB" ? details : ""
+          })
         });
         const data = await res.json();
-        if (!res.ok) return showToast(data.detail || "Ошибка вывода");
-        updateBalanceUI(data.balance);
-        document.getElementById("withRubAmount").value = "";
-        showWithdrawReceipt(data);
-      } catch (e) {
-        showToast("Ошибка соединения с сервером");
-      } finally {
-        state.withdrawing = false;
-        btn.disabled = false;
+        if (!res.ok) {
+          showToast(data.detail || "Ошибка заявки на вывод");
+          return;
+        }
+        if (typeof data.balance === "number") {
+          userData.balance = data.balance;
+          updateHeaderBalance();
+        }
+        document.getElementById("wd-amount").value = "";
+        showToast("✅ Заявка на вывод отправлена!");
+        loadTransactions();
+      } catch (_) {
+        showToast("Ошибка соединения");
+      }
+    }
+
+    async function activatePromo() {
+      const code = document.getElementById("promo-code-input").value.trim().toUpperCase();
+      if (!code) {
+        showToast("Введите промокод");
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/promo/activate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: USER_ID, code })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.detail || "Промокод недействителен");
+          return;
+        }
+        userData.balance = data.balance;
+        updateHeaderBalance();
+        document.getElementById("promo-code-input").value = "";
+        showToast(`🎁 Промокод активирован! +${data.bonus} ★`);
+        loadTransactions();
+      } catch (_) {
+        showToast("Ошибка соединения");
       }
     }
 
     async function loadTransactions() {
-      const box = document.getElementById("txList");
-      const res = await fetch(`${API_BASE}/api/transactions/${state.userId}`);
-      const list = await res.json();
-      if (!list.length) {
-        box.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px;">Операций пока нет</div>`;
-        return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(USER_ID)}`);
+        if (!res.ok) return;
+        const list = await res.json();
+        const box = document.getElementById("tx-history-list");
+        if (!list.length) {
+          box.innerHTML = '<div class="empty-state" style="padding:14px;">Операций пока нет</div>';
+          return;
+        }
+        box.innerHTML = list
+          .map((t) => {
+            const isDep = t.type === "deposit";
+            const amt =
+              t.currency === "RUB" ? `${t.amount_rub} ₽` : `${t.amount_stars} ★`;
+            const stCls =
+              t.status === "completed"
+                ? "st-won"
+                : t.status === "rejected"
+                ? "st-lost"
+                : "st-active";
+            const stTxt =
+              t.status === "completed"
+                ? "Выполнено"
+                : t.status === "rejected"
+                ? "Отклонено"
+                : "В обработке";
+            return `
+            <div class="bet-leg">
+              <div>
+                <div class="bet-leg-title">${isDep ? "Пополнение" : "Вывод"} (${esc(t.method)})</div>
+                <div style="font-size:11px;color:var(--text-muted);">${esc(t.reject_reason || t.details || "")}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-weight:800;color:${isDep ? "var(--green)" : "#fff"};">${isDep ? "+" : "-"}${amt}</div>
+                <span class="status-badge ${stCls}">${stTxt}</span>
+              </div>
+            </div>`;
+          })
+          .join("");
+      } catch (_) {}
+    }
+
+    /* ================= PROFILE & PROFIT CHART ================= */
+    function updateProfileUI() {
+      document.getElementById("prof-name").textContent = userData.name || USER_NAME;
+      document.getElementById("prof-username").textContent = userData.username
+        ? `@${userData.username} • ID ${USER_ID}`
+        : `ID ${USER_ID}`;
+
+      const avaEl = document.getElementById("prof-avatar");
+      if (userData.photo_url) {
+        avaEl.innerHTML = `<img src="${esc(userData.photo_url)}" alt="" />`;
+      } else {
+        avaEl.textContent = (userData.name || "W").slice(0, 1).toUpperCase();
       }
-      const statusLabels = {
-        completed: "Выполнено",
-        pending: "В обработке (до 5 раб. дней)",
-        rejected: "Отклонено (возврат)",
-        created: "Создано",
-      };
-      box.innerHTML = list.map((t) => {
-        const isWithdraw = t.type === "withdraw";
-        const isRub = t.currency === "RUB" || t.method === "Рубли" || String(t.method).includes("СБП");
-        const curLabel = isRub ? "Рубли" : "Telegram Stars";
-        const title = isWithdraw ? `Вывод (${curLabel})` : `Пополнение (${curLabel})`;
-        const amountStr = isRub
-          ? `${t.amount_rub ?? Math.round((t.amount_stars || 0) * STAR_RATE)} ₽`
-          : `${t.amount_stars || 0} ★`;
-        const color = isWithdraw ? "var(--red)" : "var(--green)";
-        const sign = isWithdraw ? "-" : "+";
-        const reasonStr = t.reject_reason ? ` • Причина: ${escapeHtml(t.reject_reason)}` : "";
 
-        return `
-          <div class="bet-item" style="cursor:default;">
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
-              <b>${escapeHtml(title)}</b>
-              <b style="color:${color};font-size:14px;">${sign}${amountStr}</b>
-            </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px;">
-              Статус: ${escapeHtml(statusLabels[t.status] || t.status || "")}${reasonStr}
-            </div>
-          </div>
-        `;
-      }).join("");
-    }
+      const total = Number(userData.total_bets || 0);
+      const won = Number(userData.won_bets || 0);
+      const winrate = total > 0 ? Math.round((won / total) * 100) : 0;
+      const profitStars = Number(userData.profit || 0);
 
-    /* ПРОФИЛЬ */
-    function renderProfitChart(bets, totalProfit) {
-      const svg = document.getElementById("profitChartSvg");
-      const badge = document.getElementById("chartBadge");
-      const points = [0];
-      let acc = 0;
+      document.getElementById("st-total").textContent = total;
+      document.getElementById("st-won").textContent = won;
+      document.getElementById("st-winrate").textContent = `${winrate}%`;
 
-      const settled = [...bets]
-        .filter((b) => b.status === "won" || b.status === "lost")
-        .reverse();
+      const profEl = document.getElementById("st-profit");
+      profEl.textContent = `${profitStars >= 0 ? "+" : ""}${formatMoney(profitStars)}`;
+      profEl.style.color = profitStars >= 0 ? "var(--green)" : "var(--red)";
 
-      settled.forEach((b) => {
-        const sAmt = b.currency === "RUB" ? b.amount / STAR_RATE : b.amount;
-        if (b.status === "won") acc += sAmt * (b.odd - 1);
-        else acc -= sAmt;
-        points.push(acc);
-      });
-
-      if (points.length === 1) points.push(totalProfit || 0);
-
-      const minV = Math.min(...points, -1);
-      const maxV = Math.max(...points, 1);
-      const range = maxV - minV || 1;
-      const isPositive = points[points.length - 1] >= 0;
-      const strokeColor = isPositive ? "#22c55e" : "#ef4444";
-
-      badge.style.color = strokeColor;
-      badge.textContent = `${isPositive ? "+" : ""}${points[points.length - 1].toFixed(1)} ★`;
-
-      const coords = points.map((v, i) => {
-        const x = (i / (points.length - 1)) * 280 + 10;
-        const y = 78 - ((v - minV) / range) * 64;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      });
-
-      svg.innerHTML = `
-        <line x1="10" y1="45" x2="290" y2="45" stroke="rgba(255,255,255,0.08)" stroke-dasharray="4" />
-        <polyline fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(" ")}" />
-      `;
-    }
-
-    async function refreshProfile() {
-      const [initRes, betsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}`),
-        fetch(`${API_BASE}/api/bets/${state.userId}`),
-      ]);
-      const data = await initRes.json();
-      const bets = await betsRes.json();
-      const u = data.user || {};
-
-      updateBalanceUI(u.balance);
-      const total = u.total_bets || bets.length || 0;
-      const won = u.won_bets || 0;
-      const wr = total ? Math.round((won / total) * 100) : 0;
-      const profit = Number(u.profit ?? u.net_profit ?? 0);
-
-      document.getElementById("statRefs").textContent = u.referrals || 0;
-      document.getElementById("statTotal").textContent = total;
-      document.getElementById("statWon").textContent = won;
-      document.getElementById("statWinrate").textContent = `${wr}%`;
-      document.getElementById("statProfit").textContent = formatMoney(profit);
-      renderProfitChart(bets, profit);
-    }
-
-    async function activatePromo() {
-      const code = document.getElementById("promoInput").value.trim();
-      if (!code) return showToast("Введите промокод");
-      const res = await fetch(`${API_BASE}/api/promo/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: state.userId, code }),
-      });
-      const data = await res.json();
-      if (!res.ok) return showToast(data.detail || "Ошибка промокода");
-      updateBalanceUI(data.balance);
-      document.getElementById("promoInput").value = "";
-      showToast(`Промокод активирован! +${data.bonus} ★`);
+      const refs = Number(userData.referrals || 0);
+      document.getElementById("prof-refs").textContent = `${refs} друзей`;
+      document.getElementById("ref-link-text").textContent =
+        `https://t.me/${BOT_USERNAME}?start=ref_${USER_ID}`;
     }
 
     function copyRefLink() {
-      const inp = document.getElementById("refLinkInput");
-      inp.select();
-      navigator.clipboard?.writeText(inp.value);
-      showToast("Реферальная ссылка скопирована");
-    }
-
-    /* ЧАТ */
-    function renderChatMsgHtml(m) {
-      const name = escapeHtml(m.user || m.username || "Игрок");
-      const t = escapeHtml(m.time || "");
-      const txt = escapeHtml(m.text || m.message || "");
-      const letter = (m.user || "И")[0]?.toUpperCase() || "И";
-      const avatarHtml = m.photo_url
-        ? `<div class="chat-avatar"><img src="${escapeHtml(m.photo_url)}" alt="" onerror="this.parentElement.textContent='${escapeHtml(letter)}'" /></div>`
-        : `<div class="chat-avatar">${escapeHtml(letter)}</div>`;
-
-      return `
-        <div class="chat-msg">
-          ${avatarHtml}
-          <div class="chat-body">
-            <div class="chat-header-line">
-              <b style="font-size:13px;color:#fff;">${name}</b>
-              <span style="color:var(--muted);font-size:11px;">${t}</span>
-            </div>
-            <div style="color:#e2e8f0;line-height:1.35;word-break:break-word;">${txt}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    function appendChatMsg(box, m) {
-      box.insertAdjacentHTML("beforeend", renderChatMsgHtml(m));
-    }
-
-    async function loadChatHistoryHttp() {
-      try {
-        const res = await fetch(`${API_BASE}/api/chat/history`);
-        if (res.ok) {
-          const msgs = await res.json();
-          const box = document.getElementById("chatMessages");
-          box.innerHTML = msgs.map((m) => renderChatMsgHtml(m)).join("");
-          box.scrollTop = box.scrollHeight;
-        }
-      } catch (e) {}
-    }
-
-    function initChat() {
-      loadChatHistoryHttp();
-      try {
-        state.ws = new WebSocket(`${WS_BASE}/ws/chat`);
-        state.ws.onmessage = (e) => {
-          const data = JSON.parse(e.data);
-          const box = document.getElementById("chatMessages");
-          if (data.type === "history") {
-            box.innerHTML = (data.messages || []).map((m) => renderChatMsgHtml(m)).join("");
-          } else if (data.type === "message") {
-            appendChatMsg(box, data.message);
-          }
-          box.scrollTop = box.scrollHeight;
-        };
-        state.ws.onclose = () => {
-          setTimeout(initChat, 4000);
-        };
-      } catch (e) {}
-    }
-
-    async function sendChat() {
-      const inp = document.getElementById("chatInput");
-      const text = inp.value.trim();
-      if (!text) return;
-
-      const payload = {
-        user_id: state.userId,
-        user: state.userName,
-        username: state.userUsername,
-        photo_url: state.userPhoto,
-        text,
-      };
-      inp.value = "";
-
-      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify(payload));
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_BASE}/api/chat/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (res.ok && data.message) {
-          const box = document.getElementById("chatMessages");
-          appendChatMsg(box, data.message);
-          box.scrollTop = box.scrollHeight;
-        } else {
-          showToast(data.detail || "Не удалось отправить");
-        }
-      } catch (e) {
-        showToast("Ошибка отправки сообщения");
+      const link = document.getElementById("ref-link-text").textContent;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link);
+        showToast("Реферальная ссылка скопирована!");
       }
     }
 
-    function closeModalOnBackdrop(e, id) {
-      if (e.target.id === id) {
-        document.getElementById(id).classList.remove("open");
-        if (id === "marketsModal") state.activeMatchId = null;
-        if (id === "betDetailModal") state.activeBetDetailIdx = null;
-      }
+    function drawProfitChart() {
+      const canvas = document.getElementById("profit-chart");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width || 320;
+      const h = 130;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      const settled = [...userBets]
+        .filter((b) => b.status === "won" || b.status === "lost")
+        .reverse();
+
+      const points = [0];
+      let acc = 0;
+      settled.forEach((b) => {
+        const stake = Number(b.amount_stars || 0);
+        const pay = Number(b.payout_stars || 0);
+        acc += pay - stake;
+        points.push(Number(acc.toFixed(2)));
+      });
+      if (points.length === 1) points.push(0);
+
+      const minV = Math.min(...points, -5);
+      const maxV = Math.max(...points, 5);
+      const span = maxV - minV || 1;
+      const pad = 14;
+
+      // Нулевая линия
+      const zeroY = h - pad - ((0 - minV) / span) * (h - pad * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, zeroY);
+      ctx.lineTo(w - pad, zeroY);
+      ctx.stroke();
+
+      // Линия графика
+      ctx.strokeStyle = acc >= 0 ? "#10b981" : "#f43f5e";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      points.forEach((val, idx) => {
+        const x = pad + (idx / (points.length - 1)) * (w - pad * 2);
+        const y = h - pad - ((val - minV) / span) * (h - pad * 2);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     }
 
-    async function boot() {
-      document.getElementById("profileName").textContent = state.userName;
-      document.getElementById("profileId").textContent = state.userId;
-      const letter = state.userName[0]?.toUpperCase() || "W";
-      if (state.userPhoto) {
-        document.getElementById("userAvatar").innerHTML = `<img src="${escapeHtml(state.userPhoto)}" />`;
-        document.getElementById("profileAvatar").innerHTML = `<img src="${escapeHtml(state.userPhoto)}" />`;
-      } else {
-        document.getElementById("userAvatar").textContent = letter;
-        document.getElementById("profileAvatar").textContent = letter;
-      }
-
-      const initUrl = `${API_BASE}/api/init/${state.userId}?name=${encodeURIComponent(state.userName)}&username=${encodeURIComponent(state.userUsername)}&photo_url=${encodeURIComponent(state.userPhoto)}`;
-      const res = await fetch(initUrl);
-      const data = await res.json();
-      state.botUsername = data.bot_username || "WinStarsPlaybot";
-      document.getElementById("refLinkInput").value = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
-
-      updateBalanceUI(data.user?.balance || 0);
-      state.live = data.live || [];
-      state.prematch = data.prematch || [];
-      updateLeagueLabel();
-      renderMatches();
-      initChat();
-
-      setInterval(async () => {
-        try {
-          const r = await fetch(`${API_BASE}/api/matches`);
-          const d = await r.json();
-          state.live = d.live || [];
-          state.prematch = d.prematch || [];
-          updateLeagueLabel();
-          renderMatches();
-
-          if (state.activeMatchId) {
-            const active = [...state.live, ...state.prematch].find((x) => x.id === state.activeMatchId);
-            if (active) renderMarketsHero(active);
-          }
-        } catch (e) {}
-      }, 10000);
-    }
-
-    boot();
+    initApp();
   </script>
 </body>
 </html>
